@@ -57,6 +57,41 @@ claude mcp add wrds --scope user -- node /absolute/path/to/wrds-mcp/src/server.j
 | `wrds_list_tables` | Tables in a schema |
 | `wrds_describe_table` | Columns and types |
 | `wrds_query` | Read-only SQL (`SELECT`/`WITH` only) |
+| `wrds_resolve_tickers` | Map tickers to CRSP permnos for a date window; flags tickers reused by another company |
+| `wrds_backtest_signal` | Test whether a technical signal preceded better-than-baseline returns |
+
+## Validating a signal
+
+The question `wrds_backtest_signal` answers: when this fired historically, what happened next — **and was it better than doing nothing?**
+
+The baseline is the whole point. A 58% hit rate reads like edge until you see the unconditional rate over the same names and dates was 57%. Every result is reported against that baseline, so:
+
+```
+ 5d  signal mean 0.957%  hit 57.5%   baseline 0.888%  hit 56.8%   EDGE +0.069%
+```
+
+...reads as "no edge", which is the useful answer.
+
+Conditions are ANDed. `price_above`/`price_below` compare close to the indicator; `above`/`below` compare the indicator to a constant (`value`) or to another indicator (`compare`):
+
+```json
+[
+  { "indicator": "ema", "period": 20, "op": "price_above" },
+  { "indicator": "rsi", "period": 14, "op": "below", "value": 60 },
+  { "indicator": "sma", "period": 50, "op": "above", "compare": { "indicator": "sma", "period": 200 } }
+]
+```
+
+Default horizons are 5/10/20 trading days — swing holds. Day-trading horizons aren't measurable on a daily file; the shortest honest window is next-day close.
+
+### Read the results honestly
+
+- **`edge_over_stderr` below ~2 is noise.** It's a signal-to-noise ratio, not a p-value — forward windows overlap because signals are sampled daily, so observations aren't independent.
+- **Testing your own watchlist is survivorship-biased.** Those names were selected with hindsight; any edge measured on them is an upper bound.
+- **Returns are gross** — no commission, slippage, or borrow.
+- **No look-ahead.** Indicators use data up to bar *i*; the forward return is measured from bar *i+1*'s close, since a signal seen at a close can only be acted on afterwards. Unit-tested, including a case proving a spike at the signal bar is invisible to its own forward return.
+- **CRSP daily ends 2024-12-31.** This validates a rule; it does not tell you about last week.
+- Watch the ticker-reuse warning — `AVGO` and `APP` both belonged to different companies earlier. An unfiltered window splices two firms into one series.
 
 ### Discover, don't assume
 

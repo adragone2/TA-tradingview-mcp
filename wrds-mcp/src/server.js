@@ -12,6 +12,19 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as wrds from './wrds.js';
+import * as backtest from './backtest.js';
+
+const CONDITION_SCHEMA = z.object({
+  indicator: z.enum(['sma', 'ema', 'rsi', 'close']).describe('Which indicator to evaluate'),
+  period: z.coerce.number().optional().describe('Lookback period (default 14)'),
+  op: z.enum(['above', 'below', 'price_above', 'price_below'])
+    .describe('price_above/price_below compare close to the indicator; above/below compare the indicator to value or compare'),
+  value: z.coerce.number().optional().describe('Constant to compare against, e.g. RSI below 60'),
+  compare: z.object({
+    indicator: z.enum(['sma', 'ema', 'rsi', 'close']),
+    period: z.coerce.number().optional(),
+  }).optional().describe('Compare against another indicator instead of a constant, e.g. SMA50 above SMA200'),
+});
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -112,6 +125,30 @@ server.tool(
     limit: z.coerce.number().optional().describe('Row cap when the query has no LIMIT (default 1000, max 50000)'),
   },
   wrap(({ sql, params, limit }) => wrds.query({ sql, params, limit })),
+);
+
+server.tool(
+  'wrds_resolve_tickers',
+  'Map tickers to CRSP permnos for a date window. Run this before a backtest to see which names resolve, and to catch tickers that were reused by a different company during the window.',
+  {
+    tickers: z.array(z.string()).describe('Ticker symbols, e.g. ["AMD","AMZN"]'),
+    start: z.string().describe('Window start, YYYY-MM-DD'),
+    end: z.string().describe('Window end, YYYY-MM-DD'),
+  },
+  wrap(({ tickers, start, end }) => backtest.resolveTickers({ tickers, start, end })),
+);
+
+server.tool(
+  'wrds_backtest_signal',
+  'Test whether a technical signal actually preceded better-than-baseline returns, using CRSP daily data. Conditions are ANDed. Always reports the unconditional baseline over the same names and dates alongside the signal — the signal number alone is meaningless without it. Returns are gross of costs, forward windows overlap, and CRSP daily data ends in 2024, so this validates a rule rather than predicting tomorrow.',
+  {
+    tickers: z.array(z.string()).describe('Tickers to test, max 100'),
+    conditions: z.array(CONDITION_SCHEMA).describe('Signal definition; all conditions must hold on the same bar'),
+    start: z.string().optional().describe('Start date YYYY-MM-DD (default 2005-01-01)'),
+    end: z.string().optional().describe('End date YYYY-MM-DD (default 2024-12-31 — CRSP daily coverage ends there)'),
+    horizons: z.array(z.coerce.number()).optional().describe('Forward horizons in trading days (default [5,10,20], suited to swing holds)'),
+  },
+  wrap((args) => backtest.backtestSignal(args)),
 );
 
 process.stderr.write(
