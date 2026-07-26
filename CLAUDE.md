@@ -93,6 +93,16 @@ Colours are applied explicitly by default, so labels are always visible. Only pa
 
 Before the user has restarted Claude, MCP tools aren't loaded — the equivalent CLI is `node src/cli/index.js doctor`, which calls the same core functions.
 
+### "Run my morning brief" / "what should I look at today?"
+`morning_brief` returns per-symbol data across every timeframe in `rules.timeframes`. Grade it against `rules.bias_criteria` and follow the `instruction` field in the response — it defines the required output format and tiering.
+
+Rules that matter:
+- **KEY LEVEL must come from the data.** Use `drawn_levels`, `drawn_labels`, or the high/low in `price_action`. If nothing supports a level, write `n/a`. Never invent a price.
+- If a symbol has an `error` or `warning`, say its reading is unreliable rather than grading it.
+- With multiple timeframes, treat the first as bias and later ones as timing, and call out disagreement.
+- Scanning drives the live chart and restores it afterwards. Don't run it repeatedly in one session without reason — it takes ~2.5s per symbol-timeframe and briefly takes over the user's chart.
+- `include_levels: false` and `max_symbols` make it faster when the user wants a quick look.
+
 ### "morning_brief has no rules" / "set up my rules"
 - `rules_status` → show which `rules.json` is in use, if any
 - `rules_init` → create `rules.json` from the template (won't overwrite without `force: true`)

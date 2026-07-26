@@ -185,7 +185,7 @@ This is the feature that turns this from a toolkit into a daily habit.
 
 1. TradingView is open (launched with debug port)
 2. Run: `tv brief` in your terminal (or ask Claude: *"run morning_brief"*)
-3. Claude scans every symbol in your watchlist, reads your indicator values, applies your `rules.json` criteria, and prints:
+3. Claude scans every symbol in your watchlist across each timeframe in `rules.timeframes`, reads your indicator values, your price-action summary and any levels your Pine indicators draw, applies your `rules.json` criteria, and prints:
 
 ```
 BTCUSD  | BIAS: Bearish  | KEY LEVEL: 94,200  | WATCH: RSI crossing 50 on 4H
@@ -197,6 +197,21 @@ Overall: Cautious session. BTC leading bearish, SOL the exception — watch for 
 
 4. Save it: *"save this brief"* (uses `session_save`)
 5. Next morning, compare: *"get yesterday's session"* (uses `session_get`)
+
+Symbols are grouped into tiers — A (criteria clearly met), B (needs confirmation), C (no setup) — so a long watchlist collapses into a short list worth your attention.
+
+**Multi-timeframe.** Set `timeframes` in `rules.json` (highest first). The first is treated as your bias timeframe and later ones as timing, and disagreement between them is called out explicitly.
+
+**Grounded levels.** `KEY LEVEL` comes from real data — levels your Pine indicators drew, their labels, or the scanned high/low. If nothing supports a level, the brief says `n/a` instead of inventing a number.
+
+**Your chart is handed back.** Scanning has to drive the live chart, so the symbol and timeframe you were on are restored afterwards — including if the scan fails part-way.
+
+```bash
+tv brief                                  # your rules.json watchlist and timeframes
+tv brief --symbols BTCUSD,ETHUSD          # ad-hoc list
+tv brief --timeframes 240,60              # override timeframes
+tv brief --no-levels --max 10             # faster, smaller scan
+```
 
 ---
 
