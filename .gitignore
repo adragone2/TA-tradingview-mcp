@@ -11,3 +11,6 @@ safety-check-log.json
 
 # Local API credentials
 .env
+
+# Watchlist/state backups — local restore points, not for the repo
+backups/
