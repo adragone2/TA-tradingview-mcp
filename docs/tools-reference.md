@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **111 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **114 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -204,6 +204,15 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`position_draw`** — Draw TradingView's native Long/Short Position tool — shaded risk and reward boxes with entry, stop and target, and a size TradingView computes from ac
 - **`position_read`** — Read Long/Short Position tools off the chart as plain prices — entry, stop, target, R:R and quantity
 - **`position_size`** — Position size for a trade already drawn on the chart, given an account size and risk percent
+
+### structure_* (1)
+
+- **`structure_analyze`** — Market structure from the chart's own price data: swing highs and lows, each labelled HH/HL/LH/LL, the resulting trend, and every break of structure (
+
+### levels_* (2)
+
+- **`levels_find`** — Support and resistance levels computed from price history, each carrying the evidence that earned it: how many SEPARATE times price tested it, how man
+- **`levels_draw`** — Draw computed key levels on the chart — horizontal lines for tight levels, shaded rectangles for zones — green for support, red for resistance, thickn
 
 ---
 

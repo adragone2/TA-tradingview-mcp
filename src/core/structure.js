@@ -1,0 +1,519 @@
+/**
+ * Market structure and key levels, computed from price data.
+ *
+ * Two things a chart cannot tell you by looking at it, and that no other tool
+ * here computes:
+ *
+ *   1. Where the swing highs and lows actually are, and what they imply —
+ *      trend, break of structure (BOS), change of character (CHoCH).
+ *   2. Which price levels have earned attention, and WHY — how many separate
+ *      times price tested them, how much volume traded there, whether a round
+ *      number sits on top.
+ *
+ * The "why" is the point. A level with no evidence behind it is a guess with a
+ * price attached, and those are indistinguishable from real levels once they
+ * are drawn on a chart. Every level this produces carries its own evidence, and
+ * `reason` is assembled from that evidence rather than written by hand.
+ *
+ * Everything down to `analyzeStructure` is pure — bars in, findings out — so
+ * the detection can be tested without a live chart.
+ */
+import * as data from './data.js';
+import { COLORS, resolveTime, drawShape } from './drawing.js';
+import { evaluate, getChartApi } from '../connection.js';
+
+/** A level wider than this fraction of price is reported as a zone, not a line. */
+const ZONE_SPAN_PCT = 0.6;
+
+const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+const round = (n, dp = 8) => (n == null ? null : Math.round(n * 10 ** dp) / 10 ** dp);
+
+/**
+ * Normalize whatever getOhlcv returned into {time, open, high, low, close, volume}.
+ * Bars arrive in a couple of shapes depending on the path they came through, and
+ * silently mis-reading one of them would poison every level downstream.
+ */
+export function normalizeBars(raw) {
+  const list = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.bars) ? raw.bars : []);
+  const out = [];
+  for (const b of list) {
+    if (!b) continue;
+    const bar = Array.isArray(b)
+      ? { time: b[0], open: b[1], high: b[2], low: b[3], close: b[4], volume: b[5] }
+      : {
+          time: num(b.time ?? b.t ?? b.timestamp),
+          open: num(b.open ?? b.o),
+          high: num(b.high ?? b.h),
+          low: num(b.low ?? b.l),
+          close: num(b.close ?? b.c),
+          volume: num(b.volume ?? b.v),
+        };
+    if (![bar.high, bar.low, bar.close].every((v) => Number.isFinite(v))) continue;
+    out.push(bar);
+  }
+  out.sort((a, b) => (a.time || 0) - (b.time || 0));
+  return out;
+}
+
+/**
+ * Fractal swing detection: a bar is a swing high when its high is the highest
+ * in the window `lookback` bars either side.
+ *
+ * The comparison is deliberately asymmetric — STRICTLY beyond every bar to the
+ * left, ties allowed to the right. On a flat shelf every bar is tied for the
+ * highest, so a symmetric test marks the whole shelf and then clusters it into
+ * a fistful of "levels" that are really one. Asymmetry marks the shelf once, at
+ * the bar where price first reached it.
+ */
+export function findSwings(bars, { lookback = 5 } = {}) {
+  const L = Math.max(1, Math.floor(lookback));
+  const swings = [];
+
+  for (let i = L; i < bars.length - L; i++) {
+    const bar = bars[i];
+    let isHigh = true, isLow = true;
+
+    for (let j = i - L; j < i; j++) {
+      if (bars[j].high >= bar.high) isHigh = false;
+      if (bars[j].low <= bar.low) isLow = false;
+    }
+    for (let j = i + 1; j <= i + L; j++) {
+      if (bars[j].high > bar.high) isHigh = false;
+      if (bars[j].low < bar.low) isLow = false;
+    }
+
+    if (isHigh) swings.push({ index: i, time: bar.time, price: bar.high, kind: 'high' });
+    if (isLow) swings.push({ index: i, time: bar.time, price: bar.low, kind: 'low' });
+  }
+
+  swings.sort((a, b) => a.index - b.index);
+  return swings;
+}
+
+/**
+ * Reduce swings to a strictly alternating high/low sequence.
+ *
+ * Two highs in a row is not a structure — it is one leg the detector saw twice.
+ * Keeping the more extreme of the pair is what makes HH/HL/LH/LL meaningful.
+ */
+export function alternateSwings(swings) {
+  const out = [];
+  for (const s of swings) {
+    const last = out[out.length - 1];
+    if (!last || last.kind !== s.kind) { out.push(s); continue; }
+    const replace = s.kind === 'high' ? s.price > last.price : s.price < last.price;
+    if (replace) out[out.length - 1] = s;
+  }
+  return out;
+}
+
+/**
+ * Classify trend and label each swing HH / HL / LH / LL, then derive BOS and
+ * CHoCH from the sequence.
+ *
+ * BOS   — a swing extends the trend (higher high in an uptrend).
+ * CHoCH — the trend's defining low/high fails, the first sign it has turned.
+ *
+ * These are read off confirmed swings, so they are what the structure HAS done.
+ * A swing needs `lookback` bars to its right before it is confirmed, so the
+ * most recent bars are deliberately not represented — that lag is the price of
+ * not inventing structure that has yet to happen.
+ */
+export function classifyStructure(alt) {
+  const labelled = [];
+  let prevHigh = null, prevLow = null;
+
+  for (const s of alt) {
+    let label = null;
+    if (s.kind === 'high') {
+      if (prevHigh != null) label = s.price > prevHigh ? 'HH' : 'LH';
+      prevHigh = s.price;
+    } else {
+      if (prevLow != null) label = s.price > prevLow ? 'HL' : 'LL';
+      prevLow = s.price;
+    }
+    labelled.push({ ...s, label });
+  }
+
+  const events = [];
+  let trend = 'undetermined';
+
+  for (const s of labelled) {
+    if (!s.label) continue;
+    if (s.label === 'HH' && trend !== 'down') {
+      if (trend === 'up') events.push({ type: 'BOS', direction: 'bullish', time: s.time, price: s.price });
+      trend = 'up';
+    } else if (s.label === 'LL' && trend !== 'up') {
+      if (trend === 'down') events.push({ type: 'BOS', direction: 'bearish', time: s.time, price: s.price });
+      trend = 'down';
+    } else if (s.label === 'LL' && trend === 'up') {
+      events.push({ type: 'CHoCH', direction: 'bearish', time: s.time, price: s.price });
+      trend = 'down';
+    } else if (s.label === 'HH' && trend === 'down') {
+      events.push({ type: 'CHoCH', direction: 'bullish', time: s.time, price: s.price });
+      trend = 'up';
+    }
+  }
+
+  // The last confirmed high and low agreeing is what makes a trend, rather than
+  // the last event alone — one HH inside a downtrend is noise, not a reversal.
+  const lastHigh = [...labelled].reverse().find((s) => s.kind === 'high' && s.label);
+  const lastLow = [...labelled].reverse().find((s) => s.kind === 'low' && s.label);
+  let current = 'range';
+  if (lastHigh?.label === 'HH' && lastLow?.label === 'HL') current = 'uptrend';
+  else if (lastHigh?.label === 'LH' && lastLow?.label === 'LL') current = 'downtrend';
+  else if (lastHigh && lastLow) current = 'range';
+  else current = 'undetermined';
+
+  return { trend: current, swings: labelled, events, last_high: lastHigh || null, last_low: lastLow || null };
+}
+
+/**
+ * Is `price` sitting on a psychologically round number, and how significant is
+ * the roundness? Step scales with magnitude — 100 is round for a $95 stock and
+ * unremarkable for Bitcoin.
+ */
+export function roundNumberNear(price, tolerancePct) {
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const magnitude = 10 ** Math.floor(Math.log10(price));
+  const tol = price * (tolerancePct / 100);
+  // Only the magnitude and its half count. Including magnitude/10 would make
+  // any level near a multiple of 10 "round" for a $500 stock — which is nearly
+  // all of them, and a reason that fires everywhere is not a reason.
+  for (const step of [magnitude, magnitude / 2]) {
+    if (step <= 0) continue;
+    const nearest = Math.round(price / step) * step;
+    if (nearest > 0 && Math.abs(price - nearest) <= tol) {
+      return { value: round(nearest, 6), step: round(step, 6) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Count how many SEPARATE times price visited a band, and how many bars traded
+ * inside it.
+ *
+ * The distinction is the whole point. Twenty consecutive bars grinding along a
+ * level is one test, not twenty — counting bars would score a slow drift as the
+ * most-respected level on the chart. A visit ends once price leaves the band and
+ * stays out for `gap` bars.
+ */
+export function countTests(bars, low, high, { gap = 3 } = {}) {
+  let tests = 0, barsInBand = 0, volumeInBand = 0;
+  let inside = false, outsideRun = 0;
+  let lastIndex = null;
+
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const touching = b.low <= high && b.high >= low;
+    if (touching) {
+      barsInBand++;
+      volumeInBand += Number.isFinite(b.volume) ? b.volume : 0;
+      lastIndex = i;
+      if (!inside) { tests++; inside = true; }
+      outsideRun = 0;
+    } else if (inside) {
+      outsideRun++;
+      if (outsideRun >= gap) inside = false;
+    }
+  }
+
+  return { tests, bars_in_band: barsInBand, volume_in_band: volumeInBand, last_index: lastIndex };
+}
+
+/**
+ * Find key levels, each with the evidence that earned it a place.
+ *
+ * Swings are clustered by price, then each cluster is scored on what actually
+ * happened there: how many independent swings formed it, how many separate
+ * tests it survived, how much volume traded in it, and whether a round number
+ * coincides. Clusters that clear `min_touches` are returned; the rest are
+ * dropped rather than reported weakly.
+ */
+export function findKeyLevels(bars, {
+  lookback = 5,
+  tolerance_pct = 0.75,
+  min_touches = 2,
+  max_levels = 12,
+  max_distance_pct = 25,
+  current_price = null,
+} = {}) {
+  if (bars.length < lookback * 2 + 5) {
+    return { levels: [], note: `Only ${bars.length} bars — not enough to detect structure. Ask for more with count.` };
+  }
+
+  const swings = findSwings(bars, { lookback });
+  const price = Number.isFinite(current_price) ? current_price : bars[bars.length - 1].close;
+  const avgVolume = bars.reduce((s, b) => s + (Number.isFinite(b.volume) ? b.volume : 0), 0) / bars.length;
+
+  // Greedy price clustering. Swings sorted by price, so members of a cluster are
+  // adjacent; a new swing joins while it stays within tolerance of the running mean.
+  const sorted = [...swings].sort((a, b) => a.price - b.price);
+  const clusters = [];
+  for (const s of sorted) {
+    const c = clusters[clusters.length - 1];
+    if (c && Math.abs(s.price - c.mean) <= c.mean * (tolerance_pct / 100)) {
+      c.members.push(s);
+      c.mean = c.members.reduce((sum, m) => sum + m.price, 0) / c.members.length;
+    } else {
+      clusters.push({ members: [s], mean: s.price });
+    }
+  }
+
+  const levels = [];
+  for (const c of clusters) {
+    const prices = c.members.map((m) => m.price);
+    const lo = Math.min(...prices), hi = Math.max(...prices);
+    const band = c.mean * (tolerance_pct / 100);
+    // Widen a single-swing cluster to the tolerance band so a lone swing is
+    // still tested fairly against the price data.
+    const bandLow = Math.min(lo, c.mean - band);
+    const bandHigh = Math.max(hi, c.mean + band);
+
+    const t = countTests(bars, bandLow, bandHigh);
+    if (t.tests < min_touches) continue;
+
+    const spanPct = ((hi - lo) / c.mean) * 100;
+    const isZone = spanPct >= ZONE_SPAN_PCT;
+    const roundNum = roundNumberNear(c.mean, tolerance_pct);
+    const volumeRatio = avgVolume > 0 ? t.volume_in_band / (avgVolume * Math.max(1, t.bars_in_band)) : null;
+    const barsSince = t.last_index == null ? null : bars.length - 1 - t.last_index;
+
+    const highs = c.members.filter((m) => m.kind === 'high').length;
+    const lows = c.members.filter((m) => m.kind === 'low').length;
+
+    // Score is deliberately simple and additive: every term is something that
+    // happened, and each is reported alongside so the number can be checked.
+    const score =
+      t.tests * 2 +
+      c.members.length +
+      (roundNum ? 2 : 0) +
+      (volumeRatio && volumeRatio > 1.25 ? 2 : 0) +
+      (highs > 0 && lows > 0 ? 2 : 0);          // flipped S/R — held from both sides
+
+    const reasons = [];
+    reasons.push(`${t.tests} test${t.tests === 1 ? '' : 's'}`);
+    if (highs && lows) reasons.push(`flipped (${highs} swing high${highs === 1 ? '' : 's'}, ${lows} swing low${lows === 1 ? '' : 's'})`);
+    else if (highs) reasons.push(`${highs} swing high${highs === 1 ? '' : 's'}`);
+    else if (lows) reasons.push(`${lows} swing low${lows === 1 ? '' : 's'}`);
+    if (roundNum) reasons.push(`round number ${roundNum.value}`);
+    if (volumeRatio && volumeRatio > 1.25) reasons.push(`${volumeRatio.toFixed(1)}x average volume`);
+    reasons.push(`${t.bars_in_band} bars traded within it`);
+
+    levels.push({
+      price: round(c.mean, 6),
+      ...(isZone ? { zone: { low: round(lo, 6), high: round(hi, 6) } } : {}),
+      kind: isZone ? 'zone' : 'line',
+      side: c.mean > price ? 'resistance' : 'support',
+      tests: t.tests,
+      bars_in_band: t.bars_in_band,
+      swing_highs: highs,
+      swing_lows: lows,
+      volume_ratio: volumeRatio == null ? null : round(volumeRatio, 2),
+      round_number: roundNum ? roundNum.value : null,
+      bars_since_last_test: barsSince,
+      distance_pct: round(((c.mean - price) / price) * 100, 2),
+      score,
+      reason: reasons.join(' + '),
+    });
+  }
+
+  // A level 50% away is real history, but it is not a level for today's chart
+  // and it outscores nearby ones simply by having had longer to accumulate
+  // tests. Filtered by distance, and the exclusion is reported rather than
+  // quietly applied.
+  const limit = Number.isFinite(max_distance_pct) && max_distance_pct > 0 ? max_distance_pct : Infinity;
+  const inRange = levels.filter((l) => Math.abs(l.distance_pct) <= limit);
+  const tooFar = levels.length - inRange.length;
+
+  inRange.sort((a, b) => b.score - a.score);
+  const kept = inRange.slice(0, max_levels).sort((a, b) => b.price - a.price);
+
+  return {
+    levels: kept,
+    current_price: round(price, 6),
+    swings_detected: swings.length,
+    bars_analyzed: bars.length,
+    ...(tooFar ? { excluded_far: `${tooFar} qualifying level(s) sit further than ${limit}% from price and were excluded. Raise max_distance_pct to include them.` } : {}),
+    ...(inRange.length > kept.length ? { truncated: `${inRange.length} levels qualified within range; showing the ${kept.length} strongest. Raise max_levels to see the rest.` } : {}),
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Chart-facing wrappers
+ * ------------------------------------------------------------------ */
+
+async function loadBars(count) {
+  const raw = await data.getOhlcv({ count, summary: false });
+  const bars = normalizeBars(raw);
+  if (!bars.length) throw new Error('No price bars came back from the chart. Check the symbol is loaded.');
+  return bars;
+}
+
+/** Market structure for the chart as it stands: trend, swings, BOS and CHoCH. */
+export async function analyzeStructure({ count = 200, lookback = 5, max_swings = 20 } = {}) {
+  const bars = await loadBars(count);
+  const swings = findSwings(bars, { lookback });
+  const alt = alternateSwings(swings);
+  const s = classifyStructure(alt);
+
+  const recent = s.swings.slice(-max_swings).map((x) => ({
+    kind: x.kind, label: x.label, price: round(x.price, 6), time: x.time,
+  }));
+
+  return {
+    success: true,
+    trend: s.trend,
+    bars_analyzed: bars.length,
+    lookback,
+    last_price: round(bars[bars.length - 1].close, 6),
+    last_swing_high: s.last_high ? { price: round(s.last_high.price, 6), label: s.last_high.label, time: s.last_high.time } : null,
+    last_swing_low: s.last_low ? { price: round(s.last_low.price, 6), label: s.last_low.label, time: s.last_low.time } : null,
+    swings: recent,
+    events: s.events.slice(-10).map((e) => ({ ...e, price: round(e.price, 6) })),
+    ...(s.swings.length > recent.length ? { note: `${s.swings.length} swings found; showing the last ${recent.length}.` } : {}),
+    caveat: `Swings need ${lookback} bars to their right before they confirm, so the most recent ${lookback} bars are not yet represented. Structure describes what price has done, not what it will do.`,
+  };
+}
+
+/** Key levels for the chart as it stands, each with its evidence. */
+export async function keyLevels({ count = 300, lookback = 5, tolerance_pct = 0.75, min_touches = 2, max_levels = 12, max_distance_pct = 25 } = {}) {
+  const bars = await loadBars(count);
+  const result = findKeyLevels(bars, { lookback, tolerance_pct, min_touches, max_levels, max_distance_pct });
+
+  const supports = result.levels.filter((l) => l.side === 'support');
+  const resistances = result.levels.filter((l) => l.side === 'resistance');
+
+  return {
+    success: true,
+    ...result,
+    counts: { support: supports.length, resistance: resistances.length },
+    nearest_support: supports[0] ? { price: supports[0].price, distance_pct: supports[0].distance_pct } : null,
+    nearest_resistance: resistances[resistances.length - 1]
+      ? { price: resistances[resistances.length - 1].price, distance_pct: resistances[resistances.length - 1].distance_pct }
+      : null,
+    note: 'Levels are derived from this chart\'s price history only. They describe where price has reacted before, not where it will react next.',
+  };
+}
+
+/**
+ * Chart label for a level.
+ *
+ * Compact by default. The full reason is 80-odd characters, which on a chart
+ * with levels a few percent apart guarantees overlapping labels and buries the
+ * price action underneath them. The complete evidence always comes back in the
+ * tool result, so the chart carries the level and the session carries the
+ * argument — which is the right division of labour between them.
+ */
+export function labelFor(lvl, detail = 'compact') {
+  const price = String(round(lvl.price, 4));
+  if (detail === 'price') return price;
+  if (detail === 'full') return `${price} — ${lvl.reason}`;
+
+  // Test count always, then at most two more — in descending order of how much
+  // they distinguish one level from another. A label that lists everything is
+  // back to being too long to read.
+  const extras = [];
+  if (lvl.swing_highs > 0 && lvl.swing_lows > 0) extras.push('flipped');
+  if (lvl.round_number) extras.push(`round ${lvl.round_number}`);
+  if (lvl.volume_ratio && lvl.volume_ratio > 1.25) extras.push(`${lvl.volume_ratio}x vol`);
+  return [`${price}`, `${lvl.tests} tests`, ...extras.slice(0, 2)].join(' · ');
+}
+
+/**
+ * Draw computed levels — lines for tight ones, shaded rectangles for zones.
+ *
+ * Grouped so they can be cleared in one call without touching the user's own
+ * drawings, and labelled with the evidence rather than the price alone: a line
+ * that says "4 tests + round number 600" can be argued with, one that says
+ * "600" cannot.
+ */
+export async function drawKeyLevels({
+  count = 300, lookback = 5, tolerance_pct = 0.75, min_touches = 2, max_levels = 8,
+  max_distance_pct = 25, group, label_detail = 'compact', extend_bars = 0,
+} = {}) {
+  const bars = await loadBars(count);
+  const found = findKeyLevels(bars, { lookback, tolerance_pct, min_touches, max_levels, max_distance_pct });
+  if (!found.levels.length) {
+    return { success: true, drawn: 0, levels: [], note: found.note || 'No levels cleared the evidence threshold. Lower min_touches or raise tolerance_pct.' };
+  }
+
+  const apiPath = await getChartApi();
+  const state = await evaluate(`(function(){try{return ${apiPath}.symbol();}catch(e){return null;}})()`);
+  const ticker = (state || 'chart').replace(/^.*:/, '');
+  const groupName = group || `levels-${ticker}`;
+
+  const lastTime = await resolveTime('last_bar');
+  const barSeconds = bars.length > 1 ? Math.max(1, (bars[bars.length - 1].time - bars[0].time) / (bars.length - 1)) : 86400;
+  const startTime = bars[0].time || lastTime;
+  const endTime = lastTime + Math.round(extend_bars * barSeconds);
+
+  const drawn = [];
+  let ok = 0;
+
+  // Levels sit close together by nature, and a label anchored the same way on
+  // each one lands on top of its neighbour — unreadable, and worse, it hides
+  // the evidence that is the whole point of the label. Alternating the anchor
+  // by price rank separates adjacent labels vertically.
+  const rank = new Map(
+    [...found.levels].sort((a, b) => a.price - b.price).map((lvl, i) => [lvl, i]),
+  );
+
+  for (const lvl of found.levels) {
+    const colour = lvl.side === 'support' ? COLORS.target : COLORS.stop;
+    const label = labelFor(lvl, label_detail);
+    const vertAlign = rank.get(lvl) % 2 === 0 ? 'bottom' : 'top';
+    // Strength earns width, so the chart reads at a glance.
+    const width = lvl.score >= 12 ? 3 : lvl.score >= 8 ? 2 : 1;
+
+    try {
+      const res = lvl.zone
+        ? await drawShape({
+            shape: 'rectangle',
+            point: { price: lvl.zone.high, time: startTime },
+            point2: { price: lvl.zone.low, time: endTime },
+            text: label,
+            group: groupName,
+            overrides: {
+              color: colour, linewidth: 1, backgroundColor: colour,
+              fillBackground: true, transparency: 88,
+              showLabel: true, textcolor: colour, fontsize: 11,
+            },
+          })
+        : await drawShape({
+            shape: 'horizontal_line',
+            point: { price: lvl.price, time: startTime },
+            text: label,
+            group: groupName,
+            overrides: {
+              linecolor: colour, linewidth: width, linestyle: 0,
+              showLabel: true, textcolor: colour, fontsize: 11,
+              horzLabelsAlign: 'left', vertLabelsAlign: vertAlign,
+            },
+          });
+
+      if (res.entity_id) {
+        ok++;
+        drawn.push({ price: lvl.price, kind: lvl.kind, side: lvl.side, score: lvl.score, reason: lvl.reason, entity_id: res.entity_id });
+      } else {
+        drawn.push({ price: lvl.price, error: 'TradingView accepted the shape but did not expose an id for it.' });
+      }
+    } catch (e) {
+      drawn.push({ price: lvl.price, error: e.message });
+    }
+  }
+
+  const failed = drawn.filter((d) => d.error);
+  return {
+    success: true,
+    group: groupName,
+    drawn: ok,
+    requested: found.levels.length,
+    current_price: found.current_price,
+    levels: drawn,
+    ...(failed.length ? { warning: `${failed.length} of ${found.levels.length} level(s) failed to draw.` } : {}),
+    clear_hint: `Remove with draw_clear group="${groupName}".`,
+    note: 'Levels derived from this chart\'s price history. Labels carry the evidence behind each one — check it rather than taking the level on trust.',
+  };
+}

@@ -7,6 +7,7 @@ import { registerTaWallsTools } from "./tools/ta_walls.js";
 import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
 import { registerTaDecisionTools } from "./tools/ta_decisions.js";
 import { registerPositionToolTools } from "./tools/position_tool.js";
+import { registerStructureTools } from "./tools/structure.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -30,7 +31,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 111 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 114 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -73,6 +74,16 @@ Pine Script development:
 - pine_set_source → inject code, pine_smart_compile → compile + check errors
 - pine_get_errors → read errors, pine_get_console → read log output
 - WARNING: pine_get_source can return 200KB+ for complex scripts — avoid unless editing
+
+Structure and levels — computed from the bars, never eyeballed:
+- structure_analyze → swing highs/lows labelled HH/HL/LH/LL, trend, BOS, CHoCH.
+  Use this before describing a trend. Do not read structure off a screenshot.
+- levels_find → support/resistance with the EVIDENCE for each: separate tests,
+  swings formed, volume traded there, round numbers. Wide clusters come back
+  as zones, not lines.
+- levels_draw → draws them, labelled with that evidence, grouped for clearing.
+- Quote a level's reason when you report it. A level without evidence is a
+  guess with a price attached, and looks identical once drawn.
 
 Marking up a trade:
 - draw_trade_plan → entry/stop/targets/break-even in ONE call, colour-coded,
@@ -162,6 +173,7 @@ registerTaWallsTools(server);
 registerWatchlistSyncTools(server);
 registerTaDecisionTools(server);
 registerPositionToolTools(server);
+registerStructureTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

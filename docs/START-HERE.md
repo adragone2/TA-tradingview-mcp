@@ -32,7 +32,10 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 |---|---|
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | [chart-analysis](../skills/chart-analysis/SKILL.md) skill |
+| "What's the trend?" / "where's the structure?" | [market-structure](../skills/market-structure/SKILL.md) skill — `structure_analyze`, never read off a screenshot |
+| "Where are support and resistance?" | `levels_find` → `levels_draw`. Quote each level's `reason` |
 | "Mark my entry / stop / targets" | `draw_trade_plan` — one call, never hand-built from `draw_shape` |
+| "How much should I buy?" | `position_size`, or `position_read` for a plan the user drew by hand |
 | "What should I look at today?" | `morning_brief`, or [catalyst-aware-brief](../skills/catalyst-aware-brief/SKILL.md) for event risk |
 | "Add the walls" / "plot gamma levels" | [walls-overlay](../skills/walls-overlay/SKILL.md) skill |
 | "Do I already own this?" / "does it report soon?" | `ta_trading_context` |
