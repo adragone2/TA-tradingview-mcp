@@ -1,154 +1,75 @@
 # TradingView MCP — Claude Instructions
 
-68 tools for reading and controlling a live TradingView Desktop chart via CDP (port 9222).
+**Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-## Decision Tree — Which Tool When
+100 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
-### "What's on my chart right now?"
-1. `chart_get_state` → symbol, timeframe, chart type, list of all indicators with entity IDs
-2. `data_get_study_values` → current numeric values from all visible indicators (RSI, MACD, BBands, EMAs, etc.)
-3. `quote_get` → real-time price, OHLC, volume for current symbol
+## The three layers — don't confuse them
 
-### "What levels/lines/labels are showing?"
-Custom Pine indicators draw with `line.new()`, `label.new()`, `table.new()`, `box.new()`. These are invisible to normal data tools. Use:
+| Layer | Tools | Job |
+|---|---|---|
+| **TradingView MCP** (here) | everything except `ta_*` | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **Tactical Alpha** (VPS) | `ta_*`, `walls_*` | Portfolio, earnings, regime, walls, watchlists. **Investing.** TA is the master system. |
+| **WRDS** (`wrds-mcp` server) | `wrds_*` | Historical research. **Not live** — CRSP ends 2024. |
 
-1. `data_get_pine_lines` → horizontal price levels drawn by indicators (deduplicated, sorted high→low)
-2. `data_get_pine_labels` → text annotations with prices (e.g., "PDH 24550", "Bias Long ✓")
-3. `data_get_pine_tables` → table data formatted as rows (e.g., session stats, analytics dashboards)
-4. `data_get_pine_boxes` → price zones / ranges as {high, low} pairs
+`ta_investing_brief` and `morning_brief` are different views, not duplicates.
 
-Use `study_filter` parameter to target a specific indicator by name substring (e.g., `study_filter: "Profiler"`).
+## Documentation
 
-### "Give me price data"
-- `data_get_ohlcv` with `summary: true` → compact stats (high, low, range, change%, avg volume, last 5 bars)
-- `data_get_ohlcv` without summary → all bars (use `count` to limit, default 100)
-- `quote_get` → single latest price snapshot
+| File | For |
+|---|---|
+| [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 100 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
+| [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
+| [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
+| [docs/architecture.md](docs/architecture.md) | How the layers connect |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
+| `skills/` | Step-by-step procedures, invoked by name |
 
-### "Analyze my chart" (full report workflow)
-1. `quote_get` → current price
-2. `data_get_study_values` → all indicator readings
-3. `data_get_pine_lines` → key price levels from custom indicators
-4. `data_get_pine_labels` → labeled levels with context (e.g., "Settlement", "ASN O/U")
-5. `data_get_pine_tables` → session stats, analytics tables
-6. `data_get_ohlcv` with `summary: true` → price action summary
-7. `capture_screenshot` → visual confirmation
+## Decision tree
 
-### "Change the chart"
-- `chart_set_symbol` → switch ticker (e.g., "AAPL", "ES1!", "NYMEX:CL1!")
-- `chart_set_timeframe` → switch resolution (e.g., "1", "5", "15", "60", "D", "W")
-- `chart_set_type` → switch chart style (Candles, HeikinAshi, Line, Area, Renko, etc.)
-- `chart_manage_indicator` → add or remove studies (use full name: "Relative Strength Index", not "RSI")
-- `chart_scroll_to_date` → jump to a date (ISO format: "2025-01-15")
-- `chart_set_visible_range` → zoom to exact date range (unix timestamps)
+| The user asks | Do |
+|---|---|
+| Anything is broken | `tv_doctor` — every failing check carries its fix |
+| "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
+| "Analyse this chart" | `chart-analysis` skill |
+| "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
+| "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
+| "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
+| "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
+| "What's the regime?" | `ta_regime` — also carries position sizing |
+| "Write a Pine script" | `pine-develop` skill |
+| "Did this ever work?" | `wrds_backtest_signal` |
+| "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
 
-### "Work on Pine Script"
-1. `pine_set_source` → inject code into editor
-2. `pine_smart_compile` → compile with auto-detection + error check
-3. `pine_get_errors` → read compilation errors
-4. `pine_get_console` → read log.info() output
-5. `pine_get_source` → read current code back (WARNING: can be very large for complex scripts)
-6. `pine_save` → save to TradingView cloud
-7. `pine_new` → create blank indicator/strategy/library
-8. `pine_open` → load a saved script by name
+## Rules
 
-### "Practice trading with replay"
-1. `replay_start` with `date: "2025-03-01"` → enter replay mode
-2. `replay_step` → advance one bar
-3. `replay_autoplay` → auto-advance (set speed with `speed` param in ms)
-4. `replay_trade` with `action: "buy"/"sell"/"close"` → execute trades
-5. `replay_status` → check position, P&L, current date
-6. `replay_stop` → return to realtime
+Each of these exists because it has already gone wrong here.
 
-### "Screen multiple symbols"
-- `batch_run` with `symbols: ["ES1!", "NQ1!", "YM1!"]` and `action: "screenshot"` or `"get_ohlcv"`
+**Verify — don't trust a success flag.** Eight tools in this codebase were found reporting `success: true` while doing nothing, because their tests asserted things that could not fail. If a tool claims success but the chart didn't change, believe the chart.
 
-### "Draw on the chart"
-- `draw_trade_plan` → **use this for any entry/stop/target request.** Draws all levels colour-coded and labelled in one call, returns R:R per target, and validates the levels against the direction. Don't hand-build a plan out of several `draw_shape` calls — that is what produced overlapping, unreadable markup.
-- `draw_shape` → single shapes: horizontal_line, trend_line, rectangle, text. `point.price` is required; `point.time` is optional and accepts `"now"`, `"last_bar"`, an ISO date, or a unix timestamp. Pass `group` to tag related shapes.
-- `draw_list` → see what's drawn. Each entry is flagged `created_by_mcp` with its `group`. Pass `include_points: true` to read coordinates in the same call — use this to read a trade the user drew by hand.
-- `draw_list_groups` → see which plans/groups exist
-- `draw_remove_one` → remove by ID
-- `draw_clear` → **defaults to `scope: "mcp"`**, removing only drawings this tool created. Pass `group` to remove one plan.
+**Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
-**Never call `draw_clear` with `scope: "all"` without asking the user first.** It deletes their own drawings and cannot be undone.
+**A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.
 
-Colours are applied explicitly by default, so labels are always visible. Only pass `overrides` when the user asks for a specific style — don't set colours to white or leave them unset.
+**Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 
-### "Manage alerts"
-- `alert_create` → set price alert (condition: "crossing", "greater_than", "less_than")
-- `alert_list` → view active alerts
-- `alert_delete` → remove alerts
+**Not trade advice.** These tools render the user's own criteria and TA's own output. R:R and position size are arithmetic on numbers they supplied.
 
-### "Navigate the UI"
-- `ui_open_panel` → open/close pine-editor, strategy-tester, watchlist, alerts, trading
-- `ui_click` → click buttons by aria-label, text, or data-name
-- `layout_switch` → load a saved layout by name
-- `ui_fullscreen` → toggle fullscreen
-- `capture_screenshot` → take a screenshot (regions: "full", "chart", "strategy_tester")
+## Context management
 
-### "TradingView isn't running" / "nothing works" / setup problems
-1. `tv_doctor` → **start here for any failure.** Runs all checks (node, TradingView install, CDP port, MCP server load, live chart read, rules.json) and returns a `fix` string on every failing check. Report the `fix` verbatim rather than improvising a workaround.
-2. `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux
-3. `tv_health_check` → verify connection only (narrower than `tv_doctor`)
+- `data_get_ohlcv` — always `summary: true` unless individual bars are needed
+- Pine graphics tools — always pass `study_filter`; never `verbose` unless asked
+- `pine_get_source` can return 200KB+ — avoid unless editing
+- `chart_get_state` once at the start; reuse entity IDs
+- Prefer `capture_screenshot` over pulling large datasets for visual context
 
-Before the user has restarted Claude, MCP tools aren't loaded — the equivalent CLI is `node src/cli/index.js doctor`, which calls the same core functions.
-
-### "Run my morning brief" / "what should I look at today?"
-`morning_brief` returns per-symbol data across every timeframe in `rules.timeframes`. Grade it against `rules.bias_criteria` and follow the `instruction` field in the response — it defines the required output format and tiering.
-
-Rules that matter:
-- **KEY LEVEL must come from the data.** Use `drawn_levels`, `drawn_labels`, or the high/low in `price_action`. If nothing supports a level, write `n/a`. Never invent a price.
-- If a symbol has an `error` or `warning`, say its reading is unreliable rather than grading it.
-- With multiple timeframes, treat the first as bias and later ones as timing, and call out disagreement.
-- Scanning drives the live chart and restores it afterwards. Don't run it repeatedly in one session without reason — it takes ~2.5s per symbol-timeframe and briefly takes over the user's chart.
-- `include_levels: false` and `max_symbols` make it faster when the user wants a quick look.
-
-### "morning_brief has no rules" / "set up my rules"
-- `rules_status` → show which `rules.json` is in use, if any
-- `rules_init` → create `rules.json` from the template (won't overwrite without `force: true`)
-
-`morning_brief` no longer fails without `rules.json` — it falls back to the live TradingView watchlist plus generic bias criteria and sets `using_defaults: true`. When you see that flag, say so in one line and point the user at `rules_init`; don't present generic criteria as if they were the user's own system.
-
-## Context Management Rules
-
-These tools can return large payloads. Follow these rules to avoid context bloat:
-
-1. **Always use `summary: true` on `data_get_ohlcv`** unless you specifically need individual bars
-2. **Always use `study_filter`** on pine tools when you know which indicator you want — don't scan all studies unnecessarily
-3. **Never use `verbose: true`** on pine tools unless the user specifically asks for raw drawing data with IDs/colors
-4. **Avoid calling `pine_get_source`** on complex scripts — it can return 200KB+. Only read if you need to edit the code.
-5. **Avoid calling `data_get_indicator`** on protected/encrypted indicators — their inputs are encoded blobs. Use `data_get_study_values` instead for current values.
-6. **Use `capture_screenshot`** for visual context instead of pulling large datasets — a screenshot is ~300KB but gives you the full visual picture
-7. **Call `chart_get_state` once** at the start to get entity IDs, then reference them — don't re-call repeatedly
-8. **Cap your OHLCV requests** — `count: 20` for quick analysis, `count: 100` for deeper work, `count: 500` only when specifically needed
-
-### Output Size Estimates (compact mode)
-| Tool | Typical Output |
-|------|---------------|
-| `quote_get` | ~200 bytes |
-| `data_get_study_values` | ~500 bytes (all indicators) |
-| `data_get_pine_lines` | ~1-3 KB per study (deduplicated levels) |
-| `data_get_pine_labels` | ~2-5 KB per study (capped at 50) |
-| `data_get_pine_tables` | ~1-4 KB per study (formatted rows) |
-| `data_get_pine_boxes` | ~1-2 KB per study (deduplicated zones) |
-| `data_get_ohlcv` (summary) | ~500 bytes |
-| `data_get_ohlcv` (100 bars) | ~8 KB |
-| `capture_screenshot` | ~300 bytes (returns file path, not image data) |
-
-## Tool Conventions
+## Conventions
 
 - All tools return `{ success: true/false, ... }`
-- Entity IDs (from `chart_get_state`) are session-specific — don't cache across sessions
-- Pine indicators must be **visible** on chart for pine graphics tools to read their data
-- `chart_manage_indicator` requires **full indicator names**: "Relative Strength Index" not "RSI", "Moving Average Exponential" not "EMA", "Bollinger Bands" not "BB"
-- Screenshots save to `screenshots/` directory with timestamps
-- OHLCV capped at 500 bars, trades at 20 per request
-- Pine labels capped at 50 per study by default (pass `max_labels` to override)
-
-## Architecture
-
-```
-Claude Code ←→ MCP Server (stdio) ←→ CDP (localhost:9222) ←→ TradingView Desktop (Electron)
-```
-
-Pine graphics path: `study._graphics._primitivesCollection.dwglines.get('lines').get(false)._primitivesDataById`
+- Entity IDs are session-specific — don't cache across sessions
+- `chart_manage_indicator` needs **full names**: "Relative Strength Index", not "RSI"
+- Pine indicators must be **visible** for the pine graphics tools to read them
+- Screenshots land in `screenshots/`
+- On Git Bash, prefix commands passing `/api/...` paths with `MSYS_NO_PATHCONV=1`
