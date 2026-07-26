@@ -68,9 +68,37 @@ export async function connect() {
   throw new Error(`CDP connection failed after ${MAX_RETRIES} attempts: ${lastError?.message}`);
 }
 
+// When set, connect() binds to this specific target instead of picking the
+// first chart page. Tab switching needs this: activating a tab in the UI does
+// not move an existing CDP session, so without it every evaluate() after a
+// switch still runs against the previous tab.
+let preferredTargetId = null;
+
+/**
+ * Pin CDP to a specific target id (or pass null to go back to auto-selection).
+ * Drops the current connection so the next call rebinds.
+ */
+export async function setPreferredTarget(targetId) {
+  preferredTargetId = targetId || null;
+  await disconnect();
+  return preferredTargetId;
+}
+
+export function getPreferredTarget() {
+  return preferredTargetId;
+}
+
 async function findChartTarget() {
   const resp = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`);
   const targets = await resp.json();
+
+  if (preferredTargetId) {
+    const pinned = targets.find(t => t.id === preferredTargetId && t.type === 'page');
+    if (pinned) return pinned;
+    // The pinned tab is gone (closed externally); fall back rather than fail.
+    preferredTargetId = null;
+  }
+
   // Prefer targets with tradingview.com/chart in the URL
   return targets.find(t => t.type === 'page' && /tradingview\.com\/chart/i.test(t.url))
     || targets.find(t => t.type === 'page' && /tradingview/i.test(t.url))
