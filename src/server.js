@@ -1,6 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerHealthTools } from "./tools/health.js";
+import { registerDoctorTools } from "./tools/doctor.js";
+import { registerTaApiTools } from "./tools/ta_api.js";
+import { registerTaWallsTools } from "./tools/ta_walls.js";
+import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -24,7 +28,22 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 78 tools for reading and controlling a live TradingView Desktop chart.
+    instructions: `TradingView MCP — 103 tools. A live TradingView Desktop chart, plus the
+Tactical Alpha (TA) API for the investing context a chart cannot show.
+
+FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
+the layers, the daily routines, and which tool answers which question. This
+block is only a summary.
+
+THE LAYERS — do not confuse them:
+- TradingView MCP (here): charts, levels, entries, drawings. TRADING.
+- Tactical Alpha via ta_* tools: portfolio, earnings, regime, walls. INVESTING,
+  and the master system. It holds the databases and watchlists.
+- WRDS (separate wrds-mcp server): historical research and signal validation.
+  Not real time — CRSP daily ends 2024.
+
+WHEN ANYTHING IS BROKEN: tv_doctor first. It checks every precondition and each
+failing check carries the exact command to fix it.
 
 TOOL SELECTION GUIDE — use this to pick the right tool:
 
@@ -53,26 +72,74 @@ Pine Script development:
 - pine_get_errors → read errors, pine_get_console → read log output
 - WARNING: pine_get_source can return 200KB+ for complex scripts — avoid unless editing
 
+Marking up a trade:
+- draw_trade_plan → entry/stop/targets/break-even in ONE call, colour-coded,
+  returns R:R per target. Never hand-build a plan from several draw_shape calls.
+- draw_shape → single shapes. point.price required; point.time optional and
+  accepts "now", "last_bar", or an ISO date.
+- draw_list (include_points:true) → read back what is drawn, including a trade
+  the user drew by hand. Each entry is flagged created_by_mcp.
+- draw_clear → defaults to scope "mcp": removes ONLY what these tools drew.
+  NEVER pass scope:"all" without asking — it deletes the user's own drawings.
+
+Gamma walls (TA → the Institutional Matrix indicator):
+- walls_coverage → which tickers TA has walls for (~44, equities and ETFs)
+- walls_apply → write TA's walls into the indicator on the current chart
+- Requires the TA-Trading layout. Check age_hours: past ~30h on a trading day
+  TA's scan did not run, and the levels are stale positioning.
+
+Investing context from TA (things the chart cannot tell you):
+- ta_trading_context → for given tickers: do I already hold this, does it report
+  soon, what regime are we in. Call BEFORE acting on a chart setup.
+- ta_portfolio, ta_earnings, ta_regime, ta_alerts, ta_get (any endpoint)
+- ta_regime carries position sizing (max_new_position_pct, position_multiplier)
+
+Morning routine: morning_brief → grade against rules.json → session_save.
+  KEY LEVEL must come from the data returned, never invented.
+Setup/config: tv_doctor, rules_init, rules_status
 Screenshots: capture_screenshot → regions: "full", "chart", "strategy_tester"
 Replay: replay_start → replay_step → replay_trade → replay_status → replay_stop
-Batch: batch_run → run action across multiple symbols/timeframes
-Drawing: draw_shape → horizontal_line, trend_line, rectangle, text
-Alerts: alert_create, alert_list, alert_delete
+  Pass an explicit recent date; the default first-available date can wedge the chart.
+Batch: batch_run → run action across multiple symbols/timeframes, restores the chart
+Alerts: alert_list, alert_create, alert_delete
+  alert_create makes a REAL alert that can fire. Check the price is on the
+  correct side of spot. alert_delete needs explicit alert_ids.
 Launch: tv_launch → auto-detect and start TradingView with CDP on any platform
 Panes: pane_list, pane_set_layout (s, 2h, 2v, 4, 6, 8), pane_focus, pane_set_symbol
-Tabs: tab_list, tab_new, tab_close, tab_switch
+Layouts: layout_list, layout_switch ("TA-Trading" has the Institutional Matrix)
+Watchlist: watchlist_read (sections), watchlist_sync_plan, watchlist_sync
+  Sync from TA is ADDITIVE ONLY — never removes. Plan before applying.
+Tabs: tab_list, tab_switch. tab_new/tab_close do NOT work on TradingView Desktop —
+  the tab strip is application chrome that CDP input cannot reach.
 
 CONTEXT MANAGEMENT:
 - ALWAYS use summary=true on data_get_ohlcv
 - ALWAYS use study_filter on pine tools when you know which indicator you want
 - NEVER use verbose=true unless user specifically asks for raw data
 - Prefer capture_screenshot for visual context over pulling large datasets
-- Call chart_get_state ONCE at start, reuse entity IDs`,
+- Call chart_get_state ONCE at start, reuse entity IDs
+
+HONESTY RULES — these exist because tools here have historically claimed success
+while doing nothing:
+- Report what a tool actually returned. If it reports a warning or a partial
+  result, say so rather than summarising it as success.
+- Never state a price level that did not come from the data. If nothing supports
+  it, say n/a.
+- Freshness is not implied by a successful call. TA stamps age on its responses;
+  read it and say how old the data is.
+- These tools drive the user's live chart and can create real alerts. Confirm
+  before anything destructive or account-visible.
+- Nothing here is trade advice. It renders the user's own criteria and TA's own
+  output; present it as context, not as a recommendation.`,
   },
 );
 
 // Register all tool groups
 registerHealthTools(server);
+registerDoctorTools(server);
+registerTaApiTools(server);
+registerTaWallsTools(server);
+registerWatchlistSyncTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

@@ -1,6 +1,12 @@
 {
   "watchlist": ["BTCUSD", "ETHUSD", "SOLUSD"],
+
+  "//timeframes": "Read per symbol, highest first. The first is treated as your bias timeframe, later ones as timing. Remove to use default_timeframe only.",
+  "timeframes": ["240", "60"],
   "default_timeframe": "240",
+
+  "//max_symbols": "Safety cap on how many watchlist symbols one brief will scan (default 25).",
+  "max_symbols": 25,
 
   "bias_criteria": {
     "bullish": [

@@ -28,8 +28,114 @@ export async function click({ by, value }) {
   return { success: true, clicked: result };
 }
 
+/**
+ * Is the Pine Editor actually on screen?
+ *
+ * Detected by the Monaco instance being visible, NOT by the bottom panel's
+ * height. On TradingView 3.3+ the editor opens in a detached window and the
+ * bottom bar stays collapsed, so a height check reports "closed" for an editor
+ * that is plainly open.
+ */
+async function pineEditorVisible() {
+  return evaluate(`
+    (function() {
+      // TradingView keeps TWO .monaco-editor.pine-editor-monaco nodes: a 0x0
+      // template and the real editor. querySelector returns the template, so
+      // check every instance and take "visible" to mean any has real size.
+      //
+      // Size, not offsetParent: these panels are position:fixed, and
+      // offsetParent is always null for fixed elements — which reports a
+      // plainly visible editor as closed.
+      var all = document.querySelectorAll('.monaco-editor');
+      for (var i = 0; i < all.length; i++) {
+        var r = all[i].getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return true;
+      }
+      return false;
+    })()
+  `);
+}
+
 export async function openPanel({ panel, action }) {
-  const isBottomPanel = panel === 'pine-editor' || panel === 'strategy-tester';
+  // The Pine Editor moved out of the bottom widget bar in TradingView 3.3.
+  // bottomWidgetBar.showWidget/activateScriptEditorTab still exist but no
+  // longer open it, so drive the toolbar button and verify the result.
+  if (panel === 'pine-editor') {
+    const before = await pineEditorVisible();
+    const wanted = action === 'toggle' ? !before : action === 'open';
+
+    if (before === wanted) {
+      return { success: true, panel, action, was_open: before, performed: before ? 'already_open' : 'already_closed', verified: true };
+    }
+
+    // Opening and closing use different controls: the toolbar button opens the
+    // editor but does not toggle it shut, so closing goes through the panel's
+    // own Close control.
+    const clicked = wanted
+      ? await evaluate(`
+          (function() {
+            var btn = document.querySelector('[data-name="pine-dialog-button"]')
+                   || document.querySelector('[aria-label="Pine"]')
+                   || document.querySelector('[data-name="scripteditor"]');
+            if (btn) { btn.click(); return 'toolbar_button'; }
+            // Older builds: the editor really did live in the bottom bar.
+            try {
+              var bwb = window.TradingView && window.TradingView.bottomWidgetBar;
+              if (bwb && typeof bwb.activateScriptEditorTab === 'function') { bwb.activateScriptEditorTab(); return 'bottom_widget_bar'; }
+            } catch (e) { /* fall through */ }
+            return null;
+          })()
+        `)
+      : await evaluate(`
+          (function() {
+            var m = document.querySelector('.monaco-editor.pine-editor-monaco')
+                 || document.querySelector('.monaco-editor');
+            if (!m) return 'already_gone';
+            var root = m;
+            for (var i = 0; i < 8 && root.parentElement; i++) root = root.parentElement;
+            var btns = root.querySelectorAll('button,[role=button]');
+            for (var j = 0; j < btns.length; j++) {
+              var b = btns[j];
+              var lbl = (b.getAttribute('aria-label') || '') + '|' + (b.getAttribute('title') || '');
+              if (/^close$|\\|close$/i.test(lbl) && b.offsetParent !== null) { b.click(); return 'panel_close'; }
+            }
+            for (var k = 0; k < btns.length; k++) {
+              var c = btns[k];
+              var l2 = (c.getAttribute('aria-label') || '') + '|' + (c.getAttribute('title') || '');
+              if (/collapse/i.test(l2) && c.offsetParent !== null) { c.click(); return 'panel_collapse'; }
+            }
+            return null;
+          })()
+        `);
+
+    if (!clicked) {
+      throw new Error(
+        wanted
+          ? 'Could not find a control to open the Pine Editor (looked for the "Pine" toolbar button and the bottom widget bar). Open it manually and retry.'
+          : 'Could not find a control to close the Pine Editor (looked for its Close and Collapse buttons). Close it manually.',
+      );
+    }
+
+    // Verify rather than assume — the previous implementation reported
+    // "opened" while the editor stayed shut.
+    let after = before;
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      after = await pineEditorVisible();
+      if (after === wanted) break;
+    }
+
+    if (after !== wanted) {
+      throw new Error(
+        `Clicked ${clicked} but the Pine Editor is still ${after ? 'open' : 'closed'} after ~3.6s. ` +
+        'TradingView may have changed its layout, or the click was intercepted by a dialog.',
+      );
+    }
+
+    return { success: true, panel, action, was_open: before, performed: wanted ? 'opened' : 'closed', via: clicked, verified: true };
+  }
+
+  const isBottomPanel = panel === 'strategy-tester';
   if (isBottomPanel) {
     const widgetName = panel === 'pine-editor' ? 'pine-editor' : 'backtesting';
     const result = await evaluate(`

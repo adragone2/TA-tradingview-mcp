@@ -3,7 +3,32 @@
  */
 import { getClient, getTargetInfo, evaluate } from '../connection.js';
 import { existsSync } from 'fs';
-import { execSync, spawn } from 'child_process';
+import { join } from 'path';
+import { execFileSync, spawn } from 'child_process';
+
+/**
+ * Locate a Microsoft Store (MSIX) install of TradingView Desktop.
+ *
+ * Store packages live under C:\Program Files\WindowsApps, whose ACL blocks
+ * directory listing for normal processes — so the path cannot be globbed, only
+ * queried. The version is part of the folder name and changes on update, so
+ * this must stay dynamic. The exe itself is execute-permitted, which is what
+ * lets us pass --remote-debugging-port at all.
+ */
+function findWindowsStoreInstall() {
+  try {
+    const out = execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command',
+      "Get-AppxPackage -Name 'TradingView*' | Select-Object -First 1 -ExpandProperty InstallLocation",
+    ], { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+
+    if (!out) return null;
+    const exe = join(out.split('\n')[0].trim(), 'TradingView.exe');
+    return existsSync(exe) ? exe : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function healthCheck() {
   await getClient();
@@ -96,8 +121,27 @@ export async function uiState() {
       ui.bottom_panel = { open: !!(bottom && bottom.offsetHeight > 50), height: bottom ? bottom.offsetHeight : 0 };
       var right = document.querySelector('[class*="layout__area--right"]');
       ui.right_panel = { open: !!(right && right.offsetWidth > 50), width: right ? right.offsetWidth : 0 };
-      var monacoEl = document.querySelector('.monaco-editor.pine-editor-monaco');
-      ui.pine_editor = { open: !!monacoEl, width: monacoEl ? monacoEl.offsetWidth : 0, height: monacoEl ? monacoEl.offsetHeight : 0 };
+      // Measured, not inferred from the bottom panel. Two things break the
+      // obvious checks on TradingView 3.3+:
+      //   - the editor opens detached, so the bottom bar stays collapsed
+      //   - there are two .monaco-editor.pine-editor-monaco nodes, a 0x0
+      //     template and the real one, and querySelector returns the template
+      //   - the panel is position:fixed, so offsetParent is always null
+      // Taking the largest instance by area sidesteps all three.
+      var monacoAll = document.querySelectorAll('.monaco-editor');
+      var best = null, bestArea = 0;
+      for (var mi = 0; mi < monacoAll.length; mi++) {
+        var mr = monacoAll[mi].getBoundingClientRect();
+        var area = mr.width * mr.height;
+        if (area > bestArea) { bestArea = area; best = mr; }
+      }
+      ui.pine_editor = {
+        open: bestArea > 0,
+        detached: bestArea > 0 && !(bottom && bottom.offsetHeight > 50),
+        instances: monacoAll.length,
+        width: best ? Math.round(best.width) : 0,
+        height: best ? Math.round(best.height) : 0,
+      };
       var stratPanel = document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]');
       ui.strategy_tester = { open: !!(stratPanel && stratPanel.offsetParent) };
       var widgetbar = document.querySelector('[data-name="widgetbar-wrap"]');
@@ -159,9 +203,12 @@ export async function uiState() {
   return { success: true, ...state };
 }
 
-export async function launch({ port, kill_existing } = {}) {
-  const cdpPort = port || 9222;
-  const killFirst = kill_existing !== false;
+/**
+ * Locate the TradingView Desktop binary for the current platform.
+ * Returns { path, platform, candidates } — path is null when not found.
+ * Shared by launch() and the doctor preflight so both agree on where to look.
+ */
+export function findTradingViewBinary() {
   const platform = process.platform;
 
   const pathMap = {
@@ -170,6 +217,7 @@ export async function launch({ port, kill_existing } = {}) {
       `${process.env.HOME}/Applications/TradingView.app/Contents/MacOS/TradingView`,
     ],
     win32: [
+      `${process.env.LOCALAPPDATA}\\Programs\\TradingView\\TradingView.exe`,
       `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`,
       `${process.env.PROGRAMFILES}\\TradingView\\TradingView.exe`,
       `${process.env['PROGRAMFILES(X86)']}\\TradingView\\TradingView.exe`,
@@ -183,29 +231,53 @@ export async function launch({ port, kill_existing } = {}) {
     ],
   };
 
+  const candidates = (pathMap[platform] || pathMap.linux).filter(Boolean);
+
   let tvPath = null;
-  const candidates = pathMap[platform] || pathMap.linux;
+  let installType = null;
+
   for (const p of candidates) {
-    if (p && existsSync(p)) { tvPath = p; break; }
+    if (existsSync(p)) { tvPath = p; installType = 'desktop'; break; }
+  }
+
+  // Store installs are common on Windows 11 and are invisible to path probing.
+  if (!tvPath && platform === 'win32') {
+    const store = findWindowsStoreInstall();
+    if (store) { tvPath = store; installType = 'microsoft_store'; }
   }
 
   if (!tvPath) {
     try {
-      const cmd = platform === 'win32' ? 'where TradingView.exe' : 'which tradingview';
-      tvPath = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0];
-      if (tvPath && !existsSync(tvPath)) tvPath = null;
-    } catch { /* ignore */ }
+      const [cmd, args] = platform === 'win32'
+        ? ['where', ['TradingView.exe']]
+        : ['which', ['tradingview']];
+      // stdio: stderr ignored — `where` on Windows logs "Could not find files"
+      // to stderr on a miss, which would pollute the CLI's JSON output.
+      const found = execFileSync(cmd, args, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim().split('\n')[0].trim();
+      if (found && existsSync(found)) { tvPath = found; installType = 'on_path'; }
+    } catch { /* not on PATH */ }
   }
 
   if (!tvPath && platform === 'darwin') {
     try {
-      const found = execSync('mdfind "kMDItemFSName == TradingView.app" | head -1', { timeout: 5000 }).toString().trim();
-      if (found) {
-        const candidate = `${found}/Contents/MacOS/TradingView`;
-        if (existsSync(candidate)) tvPath = candidate;
+      const out = execFileSync('mdfind', ['kMDItemFSName == TradingView.app'], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      const first = out.split('\n')[0]?.trim();
+      if (first) {
+        const candidate = `${first}/Contents/MacOS/TradingView`;
+        if (existsSync(candidate)) { tvPath = candidate; installType = 'spotlight'; }
       }
-    } catch { /* ignore */ }
+    } catch { /* spotlight unavailable */ }
   }
+
+  return { path: tvPath, platform, candidates, install_type: installType };
+}
+
+export async function launch({ port, kill_existing } = {}) {
+  const cdpPort = port || 9222;
+  const killFirst = kill_existing !== false;
+
+  const { path: tvPath, platform, candidates } = findTradingViewBinary();
 
   if (!tvPath) {
     throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-port=${cdpPort}`);
@@ -213,8 +285,8 @@ export async function launch({ port, kill_existing } = {}) {
 
   if (killFirst) {
     try {
-      if (platform === 'win32') execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });
-      else execSync('pkill -f TradingView', { timeout: 5000 });
+      if (platform === 'win32') execFileSync('taskkill', ['/F', '/IM', 'TradingView.exe'], { timeout: 5000 });
+      else execFileSync('pkill', ['-f', 'TradingView'], { timeout: 5000 });
       await new Promise(r => setTimeout(r, 1500));
     } catch { /* may not be running */ }
   }

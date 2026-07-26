@@ -140,14 +140,18 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
     });
 
     it('tv_launch — auto-detect binary (verify path resolution only)', async () => {
-      // tv_launch is destructive (kills TradingView), so we only test path detection
+      // tv_launch is destructive (kills TradingView), so we only test detection.
+      // Uses the shared resolver rather than a local path list, so this covers
+      // every platform and install type — including Microsoft Store packages,
+      // whose location cannot be probed by path and must be queried.
+      const { findTradingViewBinary } = await import('../src/core/health.js');
+      const { path, platform, candidates } = findTradingViewBinary();
+      assert.ok(
+        path,
+        `TradingView binary not found on ${platform}. Searched: ${candidates.join(', ')}`,
+      );
       const { existsSync } = await import('fs');
-      const paths = [
-        '/Applications/TradingView.app/Contents/MacOS/TradingView',
-        `${process.env.HOME}/Applications/TradingView.app/Contents/MacOS/TradingView`,
-      ];
-      const found = paths.some(p => existsSync(p));
-      assert.ok(found, 'TradingView binary found on disk');
+      assert.ok(existsSync(path), `resolved path does not exist: ${path}`);
     });
   });
 
@@ -1030,19 +1034,29 @@ val = array.get(a, 5)`;
     });
 
     it('ui_open_panel — open/close pine-editor', async () => {
-      const bwb = await apiExists(BOTTOM_BAR);
-      assert.ok(bwb, 'bottomWidgetBar exists');
+      // Exercises the real openPanel and asserts the panel actually moved.
+      //
+      // The previous version drove bottomWidgetBar directly and asserted
+      // `typeof isOpen === 'boolean'`, which holds whether the panel opened or
+      // not — so it could not fail. Meanwhile openPanel was reporting
+      // "opened" for an editor that stayed shut.
+      const { openPanel } = await import('../src/core/ui.js');
+      const { uiState } = await import('../src/core/health.js');
+      const isOpen = async () => (await uiState()).pine_editor.open;
 
-      // Open
-      await evaluate(`${BOTTOM_BAR}.showWidget('pine-editor')`);
-      await sleep(500);
-      const isOpen = await evaluate(`!!document.querySelector('.monaco-editor.pine-editor-monaco')`);
+      const started = await isOpen();
 
-      // Close
-      await evaluate(`${BOTTOM_BAR}.hideWidget('pine-editor')`);
-      await sleep(300);
+      await openPanel({ panel: 'pine-editor', action: 'open' });
+      assert.equal(await isOpen(), true, 'Pine Editor is open after open');
 
-      assert.ok(typeof isOpen === 'boolean', 'Panel toggle works');
+      const again = await openPanel({ panel: 'pine-editor', action: 'open' });
+      assert.equal(again.performed, 'already_open', 'opening an open panel is a no-op');
+
+      await openPanel({ panel: 'pine-editor', action: 'close' });
+      assert.equal(await isOpen(), false, 'Pine Editor is closed after close');
+
+      // Leave the layout as we found it.
+      if (started) await openPanel({ panel: 'pine-editor', action: 'open' });
     });
 
     it('ui_fullscreen — find fullscreen button', async () => {
@@ -1169,13 +1183,27 @@ val = array.get(a, 5)`;
       const available = await evaluate(wv(`${REPLAY_API}.isReplayAvailable()`));
       if (!available) return; // Skip if replay not available for current symbol
 
-      await evaluate(`${REPLAY_API}.showReplayToolbar()`);
-      await sleep(500);
-      await evaluate(`${REPLAY_API}.selectFirstAvailableDate()`);
-      await sleep(500);
+      // Uses the real start() with a date derived from the chart's own data.
+      //
+      // The previous version called selectFirstAvailableDate() directly, which
+      // can land decades before the symbol had data (2011 on BITSTAMP:BTCUSD).
+      // That leaves the chart with no bars and every pane reading "This symbol
+      // doesn't exist" — a state replay cannot be stopped out of, which is what
+      // made replay_stop fail while this test still reported success.
+      const lastBar = await evaluate(`
+        (function() {
+          try { var b = ${BARS_PATH}; var v = b.valueAt(b.lastIndex()); return v ? v[0] : null; }
+          catch(e) { return null; }
+        })()
+      `);
+      assert.ok(lastBar, 'chart has data before entering replay');
 
-      const started = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
-      assert.ok(started, 'Replay started');
+      const safeDate = new Date((lastBar - 5 * 24 * 3600) * 1000).toISOString().split('T')[0];
+      const { start } = await import('../src/core/replay.js');
+      const result = await start({ date: safeDate });
+
+      assert.equal(result.success, true, `start() succeeded for ${safeDate}`);
+      assert.ok(result.replay_started, 'Replay started');
     });
 
     it('replay_step — advance one bar', async () => {
@@ -1234,10 +1262,15 @@ val = array.get(a, 5)`;
       const started = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
       if (!started) return;
 
-      await evaluate(`${REPLAY_API}.stopReplay()`);
-      await evaluate(`${REPLAY_API}.goToRealtime()`);
-      await evaluate(`${REPLAY_API}.hideReplayToolbar()`);
-      await sleep(500);
+      // Exercises the real stop() rather than re-implementing the sequence, so
+      // this catches regressions in the shipped code path. stop() verifies the
+      // exit itself and throws if replay is still active, which is what makes
+      // a wedged chart visible instead of silently reported as success.
+      const { stop } = await import('../src/core/replay.js');
+      const result = await stop();
+
+      assert.equal(result.success, true, 'stop() reported success');
+      assert.equal(result.replay_started, false, 'stop() confirmed replay ended');
 
       const stoppedNow = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
       assert.ok(!stoppedNow, 'Replay stopped');

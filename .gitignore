@@ -8,3 +8,6 @@ discovery-log.json
 # Local user config / runtime state (added during audit fork prep)
 rules.json
 safety-check-log.json
+
+# Local API credentials
+.env

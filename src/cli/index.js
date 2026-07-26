@@ -11,6 +11,8 @@
 
 // Register all commands
 import "./commands/health.js";
+import "./commands/doctor.js";
+import "./commands/ta.js";
 import "./commands/chart.js";
 import "./commands/data.js";
 import "./commands/pine.js";
