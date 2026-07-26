@@ -121,8 +121,27 @@ export async function uiState() {
       ui.bottom_panel = { open: !!(bottom && bottom.offsetHeight > 50), height: bottom ? bottom.offsetHeight : 0 };
       var right = document.querySelector('[class*="layout__area--right"]');
       ui.right_panel = { open: !!(right && right.offsetWidth > 50), width: right ? right.offsetWidth : 0 };
-      var monacoEl = document.querySelector('.monaco-editor.pine-editor-monaco');
-      ui.pine_editor = { open: !!monacoEl, width: monacoEl ? monacoEl.offsetWidth : 0, height: monacoEl ? monacoEl.offsetHeight : 0 };
+      // Measured, not inferred from the bottom panel. Two things break the
+      // obvious checks on TradingView 3.3+:
+      //   - the editor opens detached, so the bottom bar stays collapsed
+      //   - there are two .monaco-editor.pine-editor-monaco nodes, a 0x0
+      //     template and the real one, and querySelector returns the template
+      //   - the panel is position:fixed, so offsetParent is always null
+      // Taking the largest instance by area sidesteps all three.
+      var monacoAll = document.querySelectorAll('.monaco-editor');
+      var best = null, bestArea = 0;
+      for (var mi = 0; mi < monacoAll.length; mi++) {
+        var mr = monacoAll[mi].getBoundingClientRect();
+        var area = mr.width * mr.height;
+        if (area > bestArea) { bestArea = area; best = mr; }
+      }
+      ui.pine_editor = {
+        open: bestArea > 0,
+        detached: bestArea > 0 && !(bottom && bottom.offsetHeight > 50),
+        instances: monacoAll.length,
+        width: best ? Math.round(best.width) : 0,
+        height: best ? Math.round(best.height) : 0,
+      };
       var stratPanel = document.querySelector('[data-name="backtesting"]') || document.querySelector('[class*="strategyReport"]');
       ui.strategy_tester = { open: !!(stratPanel && stratPanel.offsetParent) };
       var widgetbar = document.querySelector('[data-name="widgetbar-wrap"]');

@@ -1034,19 +1034,29 @@ val = array.get(a, 5)`;
     });
 
     it('ui_open_panel — open/close pine-editor', async () => {
-      const bwb = await apiExists(BOTTOM_BAR);
-      assert.ok(bwb, 'bottomWidgetBar exists');
+      // Exercises the real openPanel and asserts the panel actually moved.
+      //
+      // The previous version drove bottomWidgetBar directly and asserted
+      // `typeof isOpen === 'boolean'`, which holds whether the panel opened or
+      // not — so it could not fail. Meanwhile openPanel was reporting
+      // "opened" for an editor that stayed shut.
+      const { openPanel } = await import('../src/core/ui.js');
+      const { uiState } = await import('../src/core/health.js');
+      const isOpen = async () => (await uiState()).pine_editor.open;
 
-      // Open
-      await evaluate(`${BOTTOM_BAR}.showWidget('pine-editor')`);
-      await sleep(500);
-      const isOpen = await evaluate(`!!document.querySelector('.monaco-editor.pine-editor-monaco')`);
+      const started = await isOpen();
 
-      // Close
-      await evaluate(`${BOTTOM_BAR}.hideWidget('pine-editor')`);
-      await sleep(300);
+      await openPanel({ panel: 'pine-editor', action: 'open' });
+      assert.equal(await isOpen(), true, 'Pine Editor is open after open');
 
-      assert.ok(typeof isOpen === 'boolean', 'Panel toggle works');
+      const again = await openPanel({ panel: 'pine-editor', action: 'open' });
+      assert.equal(again.performed, 'already_open', 'opening an open panel is a no-op');
+
+      await openPanel({ panel: 'pine-editor', action: 'close' });
+      assert.equal(await isOpen(), false, 'Pine Editor is closed after close');
+
+      // Leave the layout as we found it.
+      if (started) await openPanel({ panel: 'pine-editor', action: 'open' });
     });
 
     it('ui_fullscreen — find fullscreen button', async () => {
