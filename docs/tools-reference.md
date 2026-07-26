@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **100 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **103 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -116,8 +116,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`session_save`** — Save today's morning brief to ~/.tradingview-mcp/sessions/YYYY-MM-DD.json for future reference.
 - **`session_get`** — Retrieve a saved session brief
 
-### watchlist_* (2)
+### watchlist_* (5)
 
+- **`watchlist_read`** — Read the active TradingView watchlist split into its sections
+- **`watchlist_sync_plan`** — Show what syncing from Tactical Alpha would change, without writing anything
+- **`watchlist_sync`** — Sync the TradingView watchlist from Tactical Alpha
 - **`watchlist_get`** — Get all symbols from the current TradingView watchlist with last price, change, and change%
 - **`watchlist_add`** — Add a symbol to the TradingView watchlist
 

@@ -4,6 +4,7 @@ import { registerHealthTools } from "./tools/health.js";
 import { registerDoctorTools } from "./tools/doctor.js";
 import { registerTaApiTools } from "./tools/ta_api.js";
 import { registerTaWallsTools } from "./tools/ta_walls.js";
+import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -27,7 +28,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 100 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 103 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -43,8 +44,6 @@ THE LAYERS — do not confuse them:
 
 WHEN ANYTHING IS BROKEN: tv_doctor first. It checks every precondition and each
 failing check carries the exact command to fix it.
-
-TOOL SELECTION GUIDE — use this to pick the right tool:
 
 TOOL SELECTION GUIDE — use this to pick the right tool:
 
@@ -108,6 +107,8 @@ Alerts: alert_list, alert_create, alert_delete
 Launch: tv_launch → auto-detect and start TradingView with CDP on any platform
 Panes: pane_list, pane_set_layout (s, 2h, 2v, 4, 6, 8), pane_focus, pane_set_symbol
 Layouts: layout_list, layout_switch ("TA-Trading" has the Institutional Matrix)
+Watchlist: watchlist_read (sections), watchlist_sync_plan, watchlist_sync
+  Sync from TA is ADDITIVE ONLY — never removes. Plan before applying.
 Tabs: tab_list, tab_switch. tab_new/tab_close do NOT work on TradingView Desktop —
   the tab strip is application chrome that CDP input cannot reach.
 
@@ -138,6 +139,7 @@ registerHealthTools(server);
 registerDoctorTools(server);
 registerTaApiTools(server);
 registerTaWallsTools(server);
+registerWatchlistSyncTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
