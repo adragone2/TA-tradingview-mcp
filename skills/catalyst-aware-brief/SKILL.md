@@ -24,11 +24,9 @@ Only equities and ETFs have earnings. Skip the lookup for:
 
 Check **only Tier A and Tier B symbols**. Looking up catalysts for a C-tier name the user won't trade wastes calls and time.
 
-## Step 3: Look up catalysts
+## Step 3: Look up the upcoming catalyst
 
-**Prefer a real data source if one is connected.** Check whether `mcp__capiq__*` or `mcp__factset__*` tools exist. If so, use them — they are authoritative for earnings dates and estimates.
-
-**Otherwise fall back to search.** Use `mcp__brave-search__brave_web_search` (or `brave_news_search` for recent announcements):
+Use `mcp__brave-search__brave_web_search` (or `brave_news_search` for recent announcements):
 
 ```
 "<TICKER> next earnings date confirmed"
@@ -36,7 +34,26 @@ Check **only Tier A and Tier B symbols**. Looking up catalysts for a C-tier name
 
 Treat search results as **unverified**. An earnings date scraped from a web page is a claim, not a fact.
 
+> **Why not WRDS?** WRDS is not a forward calendar. Verified against this
+> subscription: `ciq_keydev.wrds_keydev` holds a deep historical event archive
+> but essentially no future-dated rows. Do not query it for "when does X
+> report" — it will not know. Use it for Step 3b instead.
+
 For each symbol record: the event, the date, and where it came from.
+
+## Step 3b: Historical base rate (optional, needs WRDS)
+
+If the `wrds_*` tools are connected, this is where they earn their place. Rather than guessing how much an event matters, measure it:
+
+- `ciq_keydev.wrds_keydev` — past events per company, with `eventtype`, `headline`, `announcedate` and a `gvkey` to join on
+- CRSP daily returns — the actual move around those dates
+
+That supports statements like "this name has moved ±8% on its last eight earnings dates", which is far more useful than "earnings soon".
+
+Rules:
+- State the sample size. Eight events is a hint, not a distribution.
+- Historical reaction size is context for **sizing and expectation**, never a prediction of direction.
+- If WRDS isn't connected, skip this step silently — the brief still works without it.
 
 ## Step 4: Apply the holding window
 
