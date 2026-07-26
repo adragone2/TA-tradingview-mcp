@@ -153,7 +153,25 @@ export async function get(path, { params, timeoutMs = DEFAULT_TIMEOUT_MS, requir
       throw new Error(`TA API error HTTP ${res.status} for ${path}: ${JSON.stringify(body).slice(0, 300)}`);
     }
 
-    return { success: true, path, elapsed_ms: Date.now() - started, data: body, ...(raw ? { text } : {}) };
+    // TA stamps freshness from the source file's mtime, not request time, so a
+    // 200 does not mean the data is current. Surfaced on every response.
+    const generatedAt = res.headers.get('X-Data-Generated-At');
+    const ageHours = res.headers.get('X-Data-Age-Hours');
+    const freshness = (generatedAt || ageHours)
+      ? {
+          generated_at: generatedAt || null,
+          age_hours: ageHours !== null && ageHours !== '' ? Number(ageHours) : null,
+        }
+      : null;
+
+    return {
+      success: true,
+      path,
+      elapsed_ms: Date.now() - started,
+      data: body,
+      ...(freshness ? { freshness } : {}),
+      ...(raw ? { text } : {}),
+    };
   } catch (err) {
     if (err.name === 'AbortError') {
       throw new Error(`TA API timed out after ${timeoutMs}ms for ${path}. The VPS may be busy or unreachable.`);

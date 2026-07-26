@@ -64,18 +64,57 @@ const WALLS_SOURCES = [
   { name: 'walls_history', path: '/api/v1/sync/walls_history', scope: 'sector-ETF universe only' },
 ];
 
+/**
+ * Parse the Ticker,TV_JSON form served by /api/walls.
+ *
+ * TV_JSON is the compact payload walls_scanner itself emits, so using it
+ * directly avoids reconstructing the numbers and avoids any chance of this
+ * module's arithmetic drifting from TA's.
+ *
+ * Split on the FIRST comma only — the JSON column is unquoted and full of
+ * commas, so a naive CSV split shreds every row.
+ */
+function parseTvJsonCsv(text) {
+  const lines = text.trim().split('\n');
+  const byTicker = new Map();
+  const bad = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const comma = line.indexOf(',');
+    if (comma === -1) continue;
+    const ticker = line.slice(0, comma).trim().toUpperCase();
+    let json = line.slice(comma + 1).trim();
+    if (json.startsWith('"') && json.endsWith('"')) json = json.slice(1, -1).replace(/""/g, '"');
+    try {
+      const payload = JSON.parse(json);
+      if (ticker) byTicker.set(ticker, { ticker, ready: payload });
+    } catch {
+      bad.push(ticker || `line ${i}`);
+    }
+  }
+  return { byTicker, bad };
+}
+
 export async function loadWalls({ force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
 
   let text = '';
   let source = null;
+  let freshness = null;
   const attempts = [];
 
   for (const src of WALLS_SOURCES) {
     try {
       const res = await ta.get(src.path, { timeoutMs: 120000, raw: true });
       const body = res.text || (typeof res.data === 'string' ? res.data : '');
-      if (body && body.includes('ticker')) { text = body; source = src; break; }
+      if (body && /ticker/i.test(body)) {
+        text = body;
+        source = src;
+        freshness = res.freshness || null;
+        break;
+      }
       attempts.push(`${src.name}: empty or unrecognised payload`);
     } catch (err) {
       attempts.push(`${src.name}: ${err.message.slice(0, 120)}`);
@@ -84,6 +123,27 @@ export async function loadWalls({ force = false } = {}) {
 
   if (!text) {
     throw new Error(`Could not load walls from TA. Tried:\n  - ${attempts.join('\n  - ')}`);
+  }
+
+  // /api/walls serves ready-made payloads; walls_history serves raw per-horizon
+  // rows that still need assembling.
+  const header = text.slice(0, text.indexOf('\n')).toLowerCase();
+  if (header.includes('tv_json')) {
+    const { byTicker, bad } = parseTvJsonCsv(text);
+    const staleHours = freshness?.age_hours;
+    const value = {
+      asOf: freshness?.generated_at || null,
+      age_hours: staleHours ?? null,
+      byTicker,
+      tickers: [...byTicker.keys()].sort(),
+      rows: byTicker.size,
+      source: source.name,
+      format: 'tv_json',
+      coverage_scope: source.scope,
+      ...(bad.length ? { unparsed: bad } : {}),
+    };
+    cache = { at: Date.now(), value };
+    return value;
   }
 
   const { lines, idx } = parseCsv(text);
@@ -176,9 +236,46 @@ export async function buildWallsJson({ symbol, walls, vol } = {}) {
     );
   }
 
+  const warnings = [];
+
+  // Freshness comes from the source file's mtime, so a successful fetch says
+  // nothing about currency. TA refreshes walls each weekday after ~19:30 UTC;
+  // past ~30h on a trading day means the upstream scan did not run.
+  if (Number.isFinite(data.age_hours)) {
+    if (data.age_hours > 30) {
+      warnings.push(`Walls are ${Math.round(data.age_hours)}h old (TA refreshes each weekday after ~19:30 UTC). Past ~30h on a trading day means TA's scan did not run — the levels describe old positioning.`);
+    }
+  } else if (data.format === 'tv_json') {
+    warnings.push('TA did not report a freshness header, so the age of these walls is unknown.');
+  }
+
+  // /api/walls already carries the exact payload walls_scanner emits. Use it
+  // verbatim rather than rebuilding — reconstructing risks drifting from TA.
+  if (entry.ready) {
+    const ready = { ...entry.ready };
+    const horizonsPresent = [['Daily', 'd'], ['Weekly', 'w'], ['Monthly', 'm']]
+      .filter(([, p]) => Number(ready[`${p}S`]) > 0)
+      .map(([n]) => n);
+
+    for (const [name, p] of HORIZONS) {
+      if (Number(ready[`${p}S`]) === 0) warnings.push(`No ${name} horizon for ${ticker} — its keys are zero.`);
+    }
+
+    return {
+      success: true,
+      ticker,
+      as_of: data.asOf,
+      age_hours: data.age_hours ?? null,
+      source: data.source,
+      horizons_present: horizonsPresent,
+      payload: ready,
+      json: JSON.stringify(ready),
+      ...(warnings.length ? { warnings } : {}),
+    };
+  }
+
   const v = vol || await volatility();
   const payload = {};
-  const warnings = [];
   const present = [];
 
   for (const [name, prefix] of HORIZONS) {
