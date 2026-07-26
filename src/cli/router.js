@@ -3,6 +3,7 @@
  * Zero dependencies — uses only Node.js built-ins.
  */
 import { parseArgs } from 'node:util';
+import { disconnect } from '../connection.js';
 
 /** @type {Map<string, { description: string, options?: object, handler: Function, subcommands?: Map<string, object> }>} */
 const commands = new Map();
@@ -55,7 +56,7 @@ export async function run(argv) {
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     printHelp();
-    process.exit(0);
+    return finish(0);
   }
 
   const cmdName = args[0];
@@ -64,7 +65,7 @@ export async function run(argv) {
   if (!cmd) {
     console.error(`Unknown command: ${cmdName}`);
     console.error('Run "tv --help" for a list of commands.');
-    process.exit(1);
+    return finish(1);
   }
 
   // Handle subcommands (e.g., tv pine get)
@@ -73,13 +74,13 @@ export async function run(argv) {
     const subName = args[1];
     if (!subName || subName === '--help' || subName === '-h') {
       printCommandHelp(cmdName, cmd);
-      process.exit(0);
+      return finish(0);
     }
     const sub = cmd.subcommands.get(subName);
     if (!sub) {
       console.error(`Unknown subcommand: ${cmdName} ${subName}`);
       printCommandHelp(cmdName, cmd);
-      process.exit(1);
+      return finish(1);
     }
     handler = sub.handler;
     options = sub.options || {};
@@ -101,11 +102,11 @@ export async function run(argv) {
             console.log(`  ${flag.padEnd(20)}${v.description || ''}`);
           }
         }
-        process.exit(0);
+        return finish(0);
       }
       await execute(handler, values, positionals);
     } catch (err) {
-      handleError(err);
+      await handleError(err);
     }
   } else {
     handler = cmd.handler;
@@ -119,32 +120,53 @@ export async function run(argv) {
       });
       if (values.help) {
         printCommandHelp(cmdName, cmd);
-        process.exit(0);
+        return finish(0);
       }
       await execute(handler, values, positionals);
     } catch (err) {
-      handleError(err);
+      await handleError(err);
     }
   }
+}
+
+/** Grace period before force-exiting if a handle is still holding the loop open. */
+const EXIT_GRACE_MS = 2000;
+
+/**
+ * Ends a command: records the exit code and releases resources so the event loop
+ * can drain on its own.
+ *
+ * Deliberately does NOT call process.exit(). On Windows, tearing down the libuv
+ * loop while an outbound HTTPS request is still closing (e.g. `pine check`, which
+ * posts to pine-facade.tradingview.com) aborts the process with
+ *   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c
+ * and an exit code of 0xC0000409 instead of the code we asked for.
+ *
+ * The CDP WebSocket does have to be closed explicitly — it is a live handle that
+ * would otherwise keep the process alive indefinitely.
+ */
+async function finish(code) {
+  process.exitCode = code;
+  await disconnect();
+  // Safety net so an unexpected open handle can never turn into a hang. Unref'd,
+  // so it does not delay an otherwise clean exit.
+  setTimeout(() => process.exit(code), EXIT_GRACE_MS).unref();
 }
 
 async function execute(handler, values, positionals) {
   try {
     const result = await handler(values, positionals);
     console.log(JSON.stringify(result, null, 2));
-    process.exit(0);
+    await finish(0);
   } catch (err) {
-    handleError(err);
+    await handleError(err);
   }
 }
 
-function handleError(err) {
+async function handleError(err) {
   const message = err.message || String(err);
-  // Connection failures get exit code 2
-  if (/CDP|connection|ECONNREFUSED|not running/i.test(message)) {
-    console.error(JSON.stringify({ success: false, error: message }, null, 2));
-    process.exit(2);
-  }
+  // Connection failures get exit code 2, everything else 1.
+  const code = /CDP|connection|ECONNREFUSED|not running/i.test(message) ? 2 : 1;
   console.error(JSON.stringify({ success: false, error: message }, null, 2));
-  process.exit(1);
+  await finish(code);
 }
