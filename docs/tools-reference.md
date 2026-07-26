@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **107 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **108 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -87,11 +87,12 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`draw_remove_one`** — Remove a specific drawing by entity ID
 - **`draw_get_properties`** — Get properties and points of a specific drawing
 
-### walls_* (4)
+### walls_* (5)
 
 - **`walls_coverage`** — List the tickers TA has gamma-wall data for, and the date of the latest snapshot
 - **`walls_get`** — Build the Institutional Matrix JSON for a symbol from TA's latest wall snapshot, without writing it to the chart
 - **`walls_apply`** — Write TA's latest gamma walls into the Institutional Matrix indicator on the current chart, replacing the hand-pasted JSON
+- **`walls_draw`** — Draw TA's gamma walls as native chart lines instead of writing them into the Institutional Matrix indicator
 - **`walls_apply_many`** — Apply walls across several symbols, switching the chart to each in turn and restoring it afterwards
 
 ### ta_* (14)

@@ -35,6 +35,20 @@ export function registerTaWallsTools(server) {
   );
 
   server.tool(
+    'walls_draw',
+    "Draw TA's gamma walls as native chart lines instead of writing them into the Institutional Matrix indicator. Use when the indicator isn't on the layout, when you want walls alongside entry/exit levels in one visual system, or when the levels need to be readable back via draw_list. Prefer walls_apply where the indicator IS present — it also renders a panel and recalculates with the chart, whereas these lines are a static snapshot.",
+    {
+      symbol: z.string().optional().describe("Override the symbol (defaults to the chart's current symbol)"),
+      horizons: z.array(z.enum(['d', 'w', 'm'])).optional()
+        .describe('Expiry horizons to draw: d=daily, w=weekly, m=monthly (default ["d","w"])'),
+      include_gex: z.coerce.boolean().optional().describe('Include GEX walls as well as OI walls (default true)'),
+      include_flip: z.coerce.boolean().optional().describe('Include the gamma flip level (default true)'),
+    },
+    wrap(({ symbol, horizons, include_gex, include_flip }) =>
+      core.drawWalls({ symbol, horizons, include_gex, include_flip })),
+  );
+
+  server.tool(
     'walls_apply_many',
     'Apply walls across several symbols, switching the chart to each in turn and restoring it afterwards. The indicator holds one symbol\'s walls at a time, so this is for pre-loading a sweep rather than showing them all at once.',
     {

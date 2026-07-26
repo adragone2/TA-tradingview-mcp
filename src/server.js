@@ -29,7 +29,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 107 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 108 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -85,7 +85,10 @@ Marking up a trade:
 
 Gamma walls (TA → the Institutional Matrix indicator):
 - walls_coverage → which tickers TA has walls for (~44, equities and ETFs)
-- walls_apply → write TA's walls into the indicator on the current chart
+- walls_apply → write TA walls into the Institutional Matrix indicator (needs
+  the TA-Trading layout; keeps the LAST symbol applied)
+- walls_draw → same data as native chart lines; works on any layout, readable
+  back via draw_list, cleared by group
 - Requires the TA-Trading layout. Check age_hours: past ~30h on a trading day
   TA's scan did not run, and the levels are stale positioning.
 

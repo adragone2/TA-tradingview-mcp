@@ -46,6 +46,30 @@ walls_apply_many   symbols=["SMH","XLK","XLE"]
 
 Use `dry_run: true` to inspect the JSON without writing.
 
+## Two ways to render walls
+
+| | `walls_apply` | `walls_draw` |
+|---|---|---|
+| Renders | Into the Institutional Matrix indicator | Native chart lines |
+| Needs | The TA-Trading layout | Nothing |
+| Also shows | VIX/VVIX, flip, expected move, its own DATA FRESH/STALE verdict | Just the levels |
+| Updates | Recalculates with the chart | Static snapshot |
+| Readable back | No | Yes — `draw_list`, cleared by group |
+
+**Prefer `walls_apply` where the indicator is present** — it renders more than lines can. Reach for `walls_draw` when the indicator isn't on the layout, when you want walls alongside entry/exit levels in one visual system, or when the levels need to be read back.
+
+```
+walls_draw                                  → daily + weekly, OI + GEX + flip
+walls_draw horizons=["d"] include_gex=false → just the daily OI walls
+walls_draw merge_within_pct=1.0             → fewer lines, more aggressive merging
+```
+
+Levels closer than `merge_within_pct` (default 0.5%) merge into one line carrying both labels — a flip at 583 between GEX walls at 582 and 585 is three unreadable overlapping labels otherwise. Raise it when a symbol's levels cluster tightly.
+
+Drawn as `walls-<TICKER>`, so `draw_clear group="walls-SMH"` removes exactly that set.
+
+> **The indicator keeps the last symbol you applied.** After `walls_apply` on AMD, switching the chart to SMH leaves AMD's flip showing in the panel. Re-apply per symbol, or use `walls_draw`, which is always the symbol you drew it for.
+
 ## Step 4: Report freshness honestly
 
 TA stamps every response with `X-Data-Generated-At` and `X-Data-Age-Hours`, taken from the source file's mtime — **a 200 does not mean the data is current**. Responses carry `as_of` and `age_hours`.

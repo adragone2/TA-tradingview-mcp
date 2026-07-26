@@ -428,6 +428,168 @@ export async function applyWallsForSymbols({ symbols, dry_run = false } = {}) {
   };
 }
 
+/**
+ * Draw TA's walls as native chart lines instead of writing them into the
+ * Institutional Matrix indicator.
+ *
+ * walls_apply remains the better default where the indicator is present: it
+ * renders a panel (VIX/VVIX, flip, expected move) and its own freshness verdict,
+ * and it recalculates with the chart. These lines are a static snapshot.
+ *
+ * This exists for the cases the indicator cannot cover:
+ *   - any layout without the indicator, which is most of them
+ *   - showing walls alongside entry/exit levels in one visual system
+ *   - levels that can be read back with draw_list and cleared by group
+ */
+const WALL_STYLE = {
+  CW: { label: 'Call Wall', color: '#089981', gex: false },   // resistance
+  PW: { label: 'Put Wall', color: '#2962FF', gex: false },    // support
+  CGX: { label: 'Call GEX', color: '#089981', gex: true },
+  PGX: { label: 'Put GEX', color: '#2962FF', gex: true },
+};
+const HORIZON_LABEL = { d: 'D', w: 'W', m: 'M' };
+const FLIP_COLOR = '#FF9800';
+
+export async function drawWalls({
+  symbol,
+  horizons = ['d', 'w'],
+  include_gex = true,
+  include_flip = true,
+  merge_within_pct = 0.5,
+  walls,
+  vol,
+} = {}) {
+  const drawing = await import('./drawing.js');
+  const chart = await import('./chart.js');
+
+  const state = await chart.getState();
+  const target = symbol || state.symbol;
+  const built = await buildWallsJson({ symbol: target, walls, vol });
+  const p = built.payload;
+
+  const wanted = (horizons || ['d', 'w']).map((h) => String(h).toLowerCase()).filter((h) => HORIZON_LABEL[h]);
+  if (!wanted.length) throw new Error('horizons must contain one or more of "d", "w", "m".');
+
+  // Collect levels, merging any that land on the same price. TA's horizons
+  // frequently agree (a weekly and monthly call wall at the same strike), and
+  // stacking identical lines is noise rather than information.
+  const byPrice = new Map();
+  for (const h of wanted) {
+    // Strength 0 means that horizon had no data and its keys are zeros.
+    if (Number(p[`${h}S`]) === 0) continue;
+    for (const [key, style] of Object.entries(WALL_STYLE)) {
+      if (style.gex && !include_gex) continue;
+      const price = Number(p[`${h}${key}`]);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const existing = byPrice.get(price);
+      if (existing) {
+        existing.tags.push(`${HORIZON_LABEL[h]} ${style.label}`);
+      } else {
+        byPrice.set(price, {
+          price,
+          tags: [`${HORIZON_LABEL[h]} ${style.label}`],
+          color: style.color,
+          gex: style.gex,
+          horizon: h,
+        });
+      }
+    }
+  }
+
+  if (include_flip && Number(p.flip) > 0) {
+    const flip = Number(p.flip);
+    const existing = byPrice.get(flip);
+    if (existing) existing.tags.unshift('Gamma Flip');
+    else byPrice.set(flip, { price: flip, tags: ['Gamma Flip'], color: FLIP_COLOR, gex: false, flip: true });
+  }
+
+  // Merge levels that sit too close to tell apart on screen. Exact-price
+  // matching is not enough: a gamma flip at 583 between GEX walls at 582 and
+  // 585 renders as three overlapping labels in a 3-point band, which is worse
+  // than one line reading "D Call GEX / Gamma Flip / W Call GEX". Merged
+  // entries keep the flip's colour and weight, since that is the level being
+  // read against.
+  const tolerance = Math.max(Number(merge_within_pct) || 0, 0) / 100;
+  let levels = [...byPrice.values()].sort((a, b) => a.price - b.price);
+
+  if (tolerance > 0 && levels.length > 1) {
+    const merged = [];
+    for (const l of levels) {
+      const prev = merged[merged.length - 1];
+      if (prev && Math.abs(l.price - prev.price) <= prev.price * tolerance) {
+        prev.tags.push(...l.tags);
+        prev.merged = (prev.merged || 1) + 1;
+        if (l.flip) { prev.flip = true; prev.color = FLIP_COLOR; }
+        if (!l.gex) prev.gex = false;
+        if (l.horizon === 'd') prev.horizon = 'd';
+      } else {
+        merged.push({ ...l, tags: [...l.tags] });
+      }
+    }
+    levels = merged;
+  }
+
+  if (!levels.length) {
+    throw new Error(`TA has walls for ${built.ticker} but no usable levels in the requested horizons (${wanted.join(', ')}).`);
+  }
+
+  const group = `walls-${built.ticker}`;
+  // Same price-rank staggering used elsewhere: wall levels cluster tightly and
+  // same-slot labels overlap into an unreadable smear.
+  const SLOTS = [
+    { horzLabelsAlign: 'center', vertLabelsAlign: 'bottom' },
+    { horzLabelsAlign: 'center', vertLabelsAlign: 'top' },
+    { horzLabelsAlign: 'left', vertLabelsAlign: 'bottom' },
+    { horzLabelsAlign: 'left', vertLabelsAlign: 'top' },
+  ];
+  const rank = new Map([...levels].sort((a, b) => a.price - b.price).map((l, i) => [l, i]));
+
+  const drawn = [];
+  const warnings = [...(built.warnings || [])];
+
+  for (const l of levels) {
+    const label = l.tags.join(' / ');
+    try {
+      const r = await drawing.drawShape({
+        shape: 'horizontal_line',
+        point: { price: l.price },
+        text: `${label} ${l.price}`,
+        group,
+        overrides: JSON.stringify({
+          linecolor: l.color,
+          textcolor: l.color,
+          // Flip is the pivot everything else is read against, so it is drawn
+          // heaviest. GEX walls are dashed to separate them from OI walls.
+          linewidth: l.flip ? 3 : (l.horizon === 'd' ? 2 : 1),
+          linestyle: l.flip ? 0 : (l.gex ? 2 : 0),
+          showLabel: true,
+          ...SLOTS[rank.get(l) % SLOTS.length],
+        }),
+      });
+      drawn.push({ price: l.price, label, entity_id: r.entity_id });
+    } catch (err) {
+      warnings.push(`Could not draw ${label} at ${l.price}: ${err.message}`);
+    }
+  }
+
+  return {
+    success: true,
+    ticker: built.ticker,
+    chart_symbol: state.symbol,
+    group,
+    horizons: wanted,
+    drawn: drawn.length,
+    levels: drawn,
+    as_of: built.as_of,
+    age_hours: built.age_hours ?? null,
+    flip: Number(p.flip) || null,
+    implied_move: Number(p.im) || null,
+    ...(warnings.length ? { warnings } : {}),
+    note: 'Static snapshot drawn as chart lines. walls_apply writes the same data into the Institutional Matrix indicator instead, which also renders a panel and recalculates with the chart — prefer it when that indicator is on the layout.',
+    clear_hint: `Remove with draw_clear group="${group}".`,
+  };
+}
+
 export async function listCoverage() {
   const data = await loadWalls();
   return {
