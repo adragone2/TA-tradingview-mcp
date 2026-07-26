@@ -3,7 +3,32 @@
  */
 import { getClient, getTargetInfo, evaluate } from '../connection.js';
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { execFileSync, spawn } from 'child_process';
+
+/**
+ * Locate a Microsoft Store (MSIX) install of TradingView Desktop.
+ *
+ * Store packages live under C:\Program Files\WindowsApps, whose ACL blocks
+ * directory listing for normal processes — so the path cannot be globbed, only
+ * queried. The version is part of the folder name and changes on update, so
+ * this must stay dynamic. The exe itself is execute-permitted, which is what
+ * lets us pass --remote-debugging-port at all.
+ */
+function findWindowsStoreInstall() {
+  try {
+    const out = execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command',
+      "Get-AppxPackage -Name 'TradingView*' | Select-Object -First 1 -ExpandProperty InstallLocation",
+    ], { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+
+    if (!out) return null;
+    const exe = join(out.split('\n')[0].trim(), 'TradingView.exe');
+    return existsSync(exe) ? exe : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function healthCheck() {
   await getClient();
@@ -173,6 +198,7 @@ export function findTradingViewBinary() {
       `${process.env.HOME}/Applications/TradingView.app/Contents/MacOS/TradingView`,
     ],
     win32: [
+      `${process.env.LOCALAPPDATA}\\Programs\\TradingView\\TradingView.exe`,
       `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`,
       `${process.env.PROGRAMFILES}\\TradingView\\TradingView.exe`,
       `${process.env['PROGRAMFILES(X86)']}\\TradingView\\TradingView.exe`,
@@ -189,8 +215,16 @@ export function findTradingViewBinary() {
   const candidates = (pathMap[platform] || pathMap.linux).filter(Boolean);
 
   let tvPath = null;
+  let installType = null;
+
   for (const p of candidates) {
-    if (existsSync(p)) { tvPath = p; break; }
+    if (existsSync(p)) { tvPath = p; installType = 'desktop'; break; }
+  }
+
+  // Store installs are common on Windows 11 and are invisible to path probing.
+  if (!tvPath && platform === 'win32') {
+    const store = findWindowsStoreInstall();
+    if (store) { tvPath = store; installType = 'microsoft_store'; }
   }
 
   if (!tvPath) {
@@ -202,7 +236,7 @@ export function findTradingViewBinary() {
       // to stderr on a miss, which would pollute the CLI's JSON output.
       const found = execFileSync(cmd, args, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] })
         .toString().trim().split('\n')[0].trim();
-      if (found && existsSync(found)) tvPath = found;
+      if (found && existsSync(found)) { tvPath = found; installType = 'on_path'; }
     } catch { /* not on PATH */ }
   }
 
@@ -212,12 +246,12 @@ export function findTradingViewBinary() {
       const first = out.split('\n')[0]?.trim();
       if (first) {
         const candidate = `${first}/Contents/MacOS/TradingView`;
-        if (existsSync(candidate)) tvPath = candidate;
+        if (existsSync(candidate)) { tvPath = candidate; installType = 'spotlight'; }
       }
     } catch { /* spotlight unavailable */ }
   }
 
-  return { path: tvPath, platform, candidates };
+  return { path: tvPath, platform, candidates, install_type: installType };
 }
 
 export async function launch({ port, kill_existing } = {}) {

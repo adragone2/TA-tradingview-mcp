@@ -57,13 +57,33 @@ function checkNode() {
   );
 }
 
-function checkTradingViewInstalled() {
-  const { path, platform, candidates } = findTradingViewBinary();
+/**
+ * The point of locating the binary is to be able to launch it. When TradingView
+ * is already running and answering on CDP, a failed lookup is a limitation
+ * (tv_launch won't work) — not a reason to tell the user to install an app they
+ * are demonstrably running.
+ */
+function checkTradingViewInstalled({ cdpReachable }) {
+  const { path, platform, candidates, install_type } = findTradingViewBinary();
+
+  if (path) {
+    return check("tradingview_installed", true, install_type === "microsoft_store" ? `${path} (Microsoft Store install)` : path);
+  }
+
+  if (cdpReachable) {
+    return {
+      name: "tradingview_installed",
+      ok: true,
+      detail: `binary not located on ${platform}, but TradingView is running and answering on CDP`,
+      advice: "tv_launch cannot start TradingView automatically on this machine — launch it yourself with --remote-debugging-port.",
+    };
+  }
+
   return check(
     "tradingview_installed",
-    !!path,
-    path || `not found on ${platform}`,
-    `TradingView Desktop not found. Searched: ${candidates.join(", ")}. Install from tradingview.com/desktop`,
+    false,
+    `not found on ${platform}`,
+    `TradingView Desktop not found. Searched: ${candidates.join(", ")}${platform === "win32" ? ", and Microsoft Store packages" : ""}. Install from tradingview.com/desktop`,
   );
 }
 
@@ -197,13 +217,16 @@ function checkRules() {
 }
 
 export async function doctor({ port = 9222, skip_server_test = false } = {}) {
-  const checks = [checkNode(), checkTradingViewInstalled(), checkServerEntry()];
+  // CDP is probed first so the install check can tell "not installed" from
+  // "installed somewhere we can't see, but already running".
+  const { result: cdpResult, reachable } = await checkCdp(port);
+
+  const checks = [checkNode(), checkTradingViewInstalled({ cdpReachable: reachable }), checkServerEntry()];
 
   if (!skip_server_test) {
     checks.push(await checkServerLoads());
   }
 
-  const { result: cdpResult, reachable } = await checkCdp(port);
   checks.push(cdpResult);
 
   if (reachable) {

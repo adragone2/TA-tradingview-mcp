@@ -91,6 +91,14 @@ Open `rules.json` and fill in:
 
 TradingView must be running with the debug port enabled.
 
+`tv launch` finds it automatically, including **Microsoft Store installs on Windows** — those live under `C:\Program Files\WindowsApps`, which can't be searched by path and has to be queried as a package:
+
+```bash
+npm run tv -- launch
+```
+
+Or use the platform scripts:
+
 **Mac:**
 ```bash
 ./scripts/launch_tv_debug_mac.sh
@@ -401,6 +409,7 @@ It checks node, the TradingView install, port 9222, whether the MCP server loads
 | MCP server not showing in Claude Code | Run `claude mcp list` to confirm registration. If it's listed, you didn't fully quit Claude — Cmd-Q, not just closing the window. |
 | `mcp_server_loads` fails in `tv doctor` | The server crashes on startup and would fail inside Claude the same way. Fix the error it prints, then re-run. |
 | `tv` command not found | Run `npm link` from the project directory, or use `npm run tv -- <command>` |
+| `tradingview_installed` fails but TradingView is running | Expected if it's installed somewhere unusual. `tv doctor` reports this as OK when CDP is live, and only warns that `tv_launch` can't auto-start it. Launch it yourself with `--remote-debugging-port=9222`. |
 | `morning_brief` — watchlist empty | Add symbols to the `watchlist` array in `rules.json`, or open the watchlist panel in TradingView so it can be read from the chart |
 | `morning_brief` uses generic bias criteria | No `rules.json` yet — run `tv rules init` and fill it in with your own system |
 | Tools return stale data | TradingView still loading — wait a few seconds |

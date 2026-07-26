@@ -306,8 +306,27 @@ export async function drawTradePlan({ label_prefix, time, ...planArgs } = {}) {
   const apiPath = await getChartApi();
   const baseTime = await resolveTime(time);
   const prefix = label_prefix ? `${label_prefix} ` : '';
-  // Cycling alignment keeps labels legible when levels sit close together.
-  const aligns = ['right', 'center', 'left'];
+
+  // Label placement, verified against a live chart.
+  //
+  // Slots are assigned by PRICE RANK, not by the order levels happen to be
+  // built in, so that staggering separates the levels that are actually
+  // adjacent on screen. Every consecutive rank differs on at least one axis,
+  // and alternating vertical alignment makes even-numbered neighbours point
+  // their labels away from each other instead of into the same gap.
+  //
+  // 'right' is excluded — it puts the label under the price scale, clipped.
+  // Wide labels at 'left' clip against the chart edge, so 'center' leads.
+  const LABEL_SLOTS = [
+    { horzLabelsAlign: 'center', vertLabelsAlign: 'bottom' },
+    { horzLabelsAlign: 'center', vertLabelsAlign: 'top' },
+    { horzLabelsAlign: 'left', vertLabelsAlign: 'bottom' },
+    { horzLabelsAlign: 'left', vertLabelsAlign: 'top' },
+  ];
+
+  const priceRank = new Map(
+    [...levels].sort((a, b) => a.price - b.price).map((lvl, rank) => [lvl, rank]),
+  );
 
   const drawn = [];
   const failed = [];
@@ -321,8 +340,7 @@ export async function drawTradePlan({ label_prefix, time, ...planArgs } = {}) {
       showLabel: true,
       textcolor: lvl.color,
       fontsize: 12,
-      horzLabelsAlign: aligns[i % aligns.length],
-      vertLabelsAlign: 'top',
+      ...LABEL_SLOTS[priceRank.get(lvl) % LABEL_SLOTS.length],
     };
     const text = `${prefix}${lvl.label} ${lvl.price}`;
 
