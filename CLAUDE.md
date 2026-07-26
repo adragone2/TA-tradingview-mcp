@@ -63,10 +63,16 @@ Use `study_filter` parameter to target a specific indicator by name substring (e
 - `batch_run` with `symbols: ["ES1!", "NQ1!", "YM1!"]` and `action: "screenshot"` or `"get_ohlcv"`
 
 ### "Draw on the chart"
-- `draw_shape` → horizontal_line, trend_line, rectangle, text (pass point + optional point2)
-- `draw_list` → see what's drawn
+- `draw_trade_plan` → **use this for any entry/stop/target request.** Draws all levels colour-coded and labelled in one call, returns R:R per target, and validates the levels against the direction. Don't hand-build a plan out of several `draw_shape` calls — that is what produced overlapping, unreadable markup.
+- `draw_shape` → single shapes: horizontal_line, trend_line, rectangle, text. `point.price` is required; `point.time` is optional and accepts `"now"`, `"last_bar"`, an ISO date, or a unix timestamp. Pass `group` to tag related shapes.
+- `draw_list` → see what's drawn. Each entry is flagged `created_by_mcp` with its `group`. Pass `include_points: true` to read coordinates in the same call — use this to read a trade the user drew by hand.
+- `draw_list_groups` → see which plans/groups exist
 - `draw_remove_one` → remove by ID
-- `draw_clear` → remove all
+- `draw_clear` → **defaults to `scope: "mcp"`**, removing only drawings this tool created. Pass `group` to remove one plan.
+
+**Never call `draw_clear` with `scope: "all"` without asking the user first.** It deletes their own drawings and cannot be undone.
+
+Colours are applied explicitly by default, so labels are always visible. Only pass `overrides` when the user asks for a specific style — don't set colours to white or leave them unset.
 
 ### "Manage alerts"
 - `alert_create` → set price alert (condition: "crossing", "greater_than", "less_than")
@@ -80,9 +86,18 @@ Use `study_filter` parameter to target a specific indicator by name substring (e
 - `ui_fullscreen` → toggle fullscreen
 - `capture_screenshot` → take a screenshot (regions: "full", "chart", "strategy_tester")
 
-### "TradingView isn't running"
-- `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux
-- `tv_health_check` → verify connection is working
+### "TradingView isn't running" / "nothing works" / setup problems
+1. `tv_doctor` → **start here for any failure.** Runs all checks (node, TradingView install, CDP port, MCP server load, live chart read, rules.json) and returns a `fix` string on every failing check. Report the `fix` verbatim rather than improvising a workaround.
+2. `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux
+3. `tv_health_check` → verify connection only (narrower than `tv_doctor`)
+
+Before the user has restarted Claude, MCP tools aren't loaded — the equivalent CLI is `node src/cli/index.js doctor`, which calls the same core functions.
+
+### "morning_brief has no rules" / "set up my rules"
+- `rules_status` → show which `rules.json` is in use, if any
+- `rules_init` → create `rules.json` from the template (won't overwrite without `force: true`)
+
+`morning_brief` no longer fails without `rules.json` — it falls back to the live TradingView watchlist plus generic bias criteria and sets `using_defaults: true`. When you see that flag, say so in one line and point the user at `rules_init`; don't present generic criteria as if they were the user's own system.
 
 ## Context Management Rules
 
