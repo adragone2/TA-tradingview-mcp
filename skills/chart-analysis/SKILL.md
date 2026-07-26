@@ -36,9 +36,12 @@ After adding, use `indicator_set_inputs` to customize settings (e.g., change EMA
 ## Step 4: Annotate
 
 Use drawing tools to mark up the chart:
+- `draw_trade_plan` for any entry/stop/target markup — one call, colour-coded, with R:R returned. Do not hand-build a plan from several `draw_shape` calls.
 - `draw_shape` with `horizontal_line` for support/resistance
 - `draw_shape` with `trend_line` for trend channels (needs two points)
 - `draw_shape` with `text` for annotations
+
+`point.time` is optional — omit it, or pass `"now"`, `"last_bar"`, or an ISO date. Pass `group` to tag related shapes so they can be cleared together.
 
 ## Step 5: Capture and Analyze
 
@@ -59,4 +62,6 @@ Provide the analysis:
 
 If you added indicators the user didn't ask for, remove them:
 - `chart_manage_indicator` with action "remove" and the entity_id
-- `draw_clear` to remove all drawings if they were temporary
+- `draw_clear` to remove temporary drawings. It defaults to `scope: "mcp"` and removes only what these tools drew, leaving the user's own drawings alone. Pass `group` to clear one plan.
+
+**Never call `draw_clear` with `scope: "all"` without asking first** — it deletes the user's own drawings and cannot be undone.
