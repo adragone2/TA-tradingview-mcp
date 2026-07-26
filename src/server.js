@@ -6,6 +6,7 @@ import { registerTaApiTools } from "./tools/ta_api.js";
 import { registerTaWallsTools } from "./tools/ta_walls.js";
 import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
 import { registerTaDecisionTools } from "./tools/ta_decisions.js";
+import { registerPositionToolTools } from "./tools/position_tool.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -29,7 +30,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 108 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 111 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -82,6 +83,13 @@ Marking up a trade:
   the user drew by hand. Each entry is flagged created_by_mcp.
 - draw_clear → defaults to scope "mcp": removes ONLY what these tools drew.
   NEVER pass scope:"all" without asking — it deletes the user's own drawings.
+- position_draw → TradingView's native Long/Short Position tool: draggable,
+  with sizing TradingView recomputes live. Use for a single-target plan the
+  user will adjust; draw_trade_plan for multiple targets and partials.
+- position_read → read a position tool the user drew BY HAND as plain prices.
+  Levels are stored as tick offsets, so they are unreadable without this.
+- position_size → how much to buy for a given account and risk, from the
+  levels already on the chart.
 
 Gamma walls (TA → the Institutional Matrix indicator):
 - walls_coverage → which tickers TA has walls for (~44, equities and ETFs)
@@ -153,6 +161,7 @@ registerTaApiTools(server);
 registerTaWallsTools(server);
 registerWatchlistSyncTools(server);
 registerTaDecisionTools(server);
+registerPositionToolTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

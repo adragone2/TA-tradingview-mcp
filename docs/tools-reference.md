@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **108 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **111 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -198,6 +198,12 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`ui_mouse_click`** — Click at specific x,y coordinates on the TradingView window
 - **`ui_find_element`** — Find UI elements by text, aria-label, or CSS selector and return their positions
 - **`ui_evaluate`** — Execute JavaScript code in the TradingView page context for advanced automation
+
+### position_* (3)
+
+- **`position_draw`** — Draw TradingView's native Long/Short Position tool — shaded risk and reward boxes with entry, stop and target, and a size TradingView computes from ac
+- **`position_read`** — Read Long/Short Position tools off the chart as plain prices — entry, stop, target, R:R and quantity
+- **`position_size`** — Position size for a trade already drawn on the chart, given an account size and risk percent
 
 ---
 
