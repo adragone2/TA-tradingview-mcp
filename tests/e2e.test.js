@@ -1173,13 +1173,27 @@ val = array.get(a, 5)`;
       const available = await evaluate(wv(`${REPLAY_API}.isReplayAvailable()`));
       if (!available) return; // Skip if replay not available for current symbol
 
-      await evaluate(`${REPLAY_API}.showReplayToolbar()`);
-      await sleep(500);
-      await evaluate(`${REPLAY_API}.selectFirstAvailableDate()`);
-      await sleep(500);
+      // Uses the real start() with a date derived from the chart's own data.
+      //
+      // The previous version called selectFirstAvailableDate() directly, which
+      // can land decades before the symbol had data (2011 on BITSTAMP:BTCUSD).
+      // That leaves the chart with no bars and every pane reading "This symbol
+      // doesn't exist" — a state replay cannot be stopped out of, which is what
+      // made replay_stop fail while this test still reported success.
+      const lastBar = await evaluate(`
+        (function() {
+          try { var b = ${BARS_PATH}; var v = b.valueAt(b.lastIndex()); return v ? v[0] : null; }
+          catch(e) { return null; }
+        })()
+      `);
+      assert.ok(lastBar, 'chart has data before entering replay');
 
-      const started = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
-      assert.ok(started, 'Replay started');
+      const safeDate = new Date((lastBar - 5 * 24 * 3600) * 1000).toISOString().split('T')[0];
+      const { start } = await import('../src/core/replay.js');
+      const result = await start({ date: safeDate });
+
+      assert.equal(result.success, true, `start() succeeded for ${safeDate}`);
+      assert.ok(result.replay_started, 'Replay started');
     });
 
     it('replay_step — advance one bar', async () => {
@@ -1238,10 +1252,15 @@ val = array.get(a, 5)`;
       const started = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
       if (!started) return;
 
-      await evaluate(`${REPLAY_API}.stopReplay()`);
-      await evaluate(`${REPLAY_API}.goToRealtime()`);
-      await evaluate(`${REPLAY_API}.hideReplayToolbar()`);
-      await sleep(500);
+      // Exercises the real stop() rather than re-implementing the sequence, so
+      // this catches regressions in the shipped code path. stop() verifies the
+      // exit itself and throws if replay is still active, which is what makes
+      // a wedged chart visible instead of silently reported as success.
+      const { stop } = await import('../src/core/replay.js');
+      const result = await stop();
+
+      assert.equal(result.success, true, 'stop() reported success');
+      assert.equal(result.replay_started, false, 'stop() confirmed replay ended');
 
       const stoppedNow = await evaluate(wv(`${REPLAY_API}.isReplayStarted()`));
       assert.ok(!stoppedNow, 'Replay stopped');
