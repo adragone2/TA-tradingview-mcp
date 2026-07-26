@@ -3,7 +3,7 @@
  */
 import { getClient, getTargetInfo, evaluate } from '../connection.js';
 import { existsSync } from 'fs';
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 
 export async function healthCheck() {
   await getClient();
@@ -159,9 +159,12 @@ export async function uiState() {
   return { success: true, ...state };
 }
 
-export async function launch({ port, kill_existing } = {}) {
-  const cdpPort = port || 9222;
-  const killFirst = kill_existing !== false;
+/**
+ * Locate the TradingView Desktop binary for the current platform.
+ * Returns { path, platform, candidates } — path is null when not found.
+ * Shared by launch() and the doctor preflight so both agree on where to look.
+ */
+export function findTradingViewBinary() {
   const platform = process.platform;
 
   const pathMap = {
@@ -183,29 +186,45 @@ export async function launch({ port, kill_existing } = {}) {
     ],
   };
 
+  const candidates = (pathMap[platform] || pathMap.linux).filter(Boolean);
+
   let tvPath = null;
-  const candidates = pathMap[platform] || pathMap.linux;
   for (const p of candidates) {
-    if (p && existsSync(p)) { tvPath = p; break; }
+    if (existsSync(p)) { tvPath = p; break; }
   }
 
   if (!tvPath) {
     try {
-      const cmd = platform === 'win32' ? 'where TradingView.exe' : 'which tradingview';
-      tvPath = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0];
-      if (tvPath && !existsSync(tvPath)) tvPath = null;
-    } catch { /* ignore */ }
+      const [cmd, args] = platform === 'win32'
+        ? ['where', ['TradingView.exe']]
+        : ['which', ['tradingview']];
+      // stdio: stderr ignored — `where` on Windows logs "Could not find files"
+      // to stderr on a miss, which would pollute the CLI's JSON output.
+      const found = execFileSync(cmd, args, { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim().split('\n')[0].trim();
+      if (found && existsSync(found)) tvPath = found;
+    } catch { /* not on PATH */ }
   }
 
   if (!tvPath && platform === 'darwin') {
     try {
-      const found = execSync('mdfind "kMDItemFSName == TradingView.app" | head -1', { timeout: 5000 }).toString().trim();
-      if (found) {
-        const candidate = `${found}/Contents/MacOS/TradingView`;
+      const out = execFileSync('mdfind', ['kMDItemFSName == TradingView.app'], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      const first = out.split('\n')[0]?.trim();
+      if (first) {
+        const candidate = `${first}/Contents/MacOS/TradingView`;
         if (existsSync(candidate)) tvPath = candidate;
       }
-    } catch { /* ignore */ }
+    } catch { /* spotlight unavailable */ }
   }
+
+  return { path: tvPath, platform, candidates };
+}
+
+export async function launch({ port, kill_existing } = {}) {
+  const cdpPort = port || 9222;
+  const killFirst = kill_existing !== false;
+
+  const { path: tvPath, platform, candidates } = findTradingViewBinary();
 
   if (!tvPath) {
     throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-port=${cdpPort}`);
@@ -213,8 +232,8 @@ export async function launch({ port, kill_existing } = {}) {
 
   if (killFirst) {
     try {
-      if (platform === 'win32') execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });
-      else execSync('pkill -f TradingView', { timeout: 5000 });
+      if (platform === 'win32') execFileSync('taskkill', ['/F', '/IM', 'TradingView.exe'], { timeout: 5000 });
+      else execFileSync('pkill', ['-f', 'TradingView'], { timeout: 5000 });
       await new Promise(r => setTimeout(r, 1500));
     } catch { /* may not be running */ }
   }
