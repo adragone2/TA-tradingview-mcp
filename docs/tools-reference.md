@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **103 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **107 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -94,7 +94,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`walls_apply`** — Write TA's latest gamma walls into the Institutional Matrix indicator on the current chart, replacing the hand-pasted JSON
 - **`walls_apply_many`** — Apply walls across several symbols, switching the chart to each in turn and restoring it afterwards
 
-### ta_* (10)
+### ta_* (14)
 
 - **`ta_health`** — Check whether the Tactical Alpha API is reachable and whether an API key is configured
 - **`ta_status`** — Show which TA base URL is in use and whether a key is configured
@@ -106,6 +106,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`ta_investing_brief`** — TA's own morning brief
 - **`ta_digest`** — TA's AI digest feed.
 - **`ta_get`** — GET any Tactical Alpha API endpoint
+- **`ta_actionable`** — Everything Tactical Alpha currently flags for action — exits ordered by urgency, entries by score
+- **`ta_entry`** — TA's entry decision for a symbol: action, conviction, suggested size, and the levels behind it (put wall, BB lower, PIF support, distance to stop).
+- **`ta_exit`** — TA's exit decision for a held position: urgency, action, how much to exit, and the levels behind it (stop, call wall, BB upper, PIF resistance)
+- **`ta_draw_decision`** — Draw TA's entry and/or exit levels for a symbol on the current chart, colour-coded (stops red, resistance green, support blue) and grouped so they cle
 
 ### morning_* (1)
 

@@ -5,6 +5,7 @@ import { registerDoctorTools } from "./tools/doctor.js";
 import { registerTaApiTools } from "./tools/ta_api.js";
 import { registerTaWallsTools } from "./tools/ta_walls.js";
 import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
+import { registerTaDecisionTools } from "./tools/ta_decisions.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -28,7 +29,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 103 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 107 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -88,7 +89,15 @@ Gamma walls (TA → the Institutional Matrix indicator):
 - Requires the TA-Trading layout. Check age_hours: past ~30h on a trading day
   TA's scan did not run, and the levels are stale positioning.
 
-Investing context from TA (things the chart cannot tell you):
+Trading decisions from TA — walls, gamma, entry, exit are the TRADING layer:
+- ta_actionable → what TA flags right now: exits by urgency, entries by score.
+  Start a trading session here. CRITICAL exits are positions past their stop.
+- ta_entry / ta_exit → one symbol's decision, with the levels behind it
+- ta_draw_decision → draw those levels on the chart, grouped and colour-coded
+- walls_apply → gamma walls into the Institutional Matrix indicator
+These are TA's decisions. Report them as TA's output, not as your own call.
+
+Investing context from TA (portfolio-level, NOT trade selection):
 - ta_trading_context → for given tickers: do I already hold this, does it report
   soon, what regime are we in. Call BEFORE acting on a chart setup.
 - ta_portfolio, ta_earnings, ta_regime, ta_alerts, ta_get (any endpoint)
@@ -140,6 +149,7 @@ registerDoctorTools(server);
 registerTaApiTools(server);
 registerTaWallsTools(server);
 registerWatchlistSyncTools(server);
+registerTaDecisionTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

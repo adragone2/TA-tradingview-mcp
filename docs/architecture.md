@@ -5,7 +5,7 @@ How the pieces connect, and which machine each one runs on.
 ```
                       ┌──────────────────────────────┐
    your session ─────►│  TradingView MCP (this repo) │
-                      │  103 tools, runs locally     │
+                      │  107 tools, runs locally     │
                       └──────┬───────────────┬───────┘
                              │               │
                     CDP :9222│               │HTTPS + X-API-Key
