@@ -86,7 +86,7 @@ export function apiStatus() {
  * `requireAuth: false` is used for /health, which is reachable unauthenticated
  * and is therefore the right probe for "is TA up" versus "is my key wrong".
  */
-export async function get(path, { params, timeoutMs = DEFAULT_TIMEOUT_MS, requireAuth = true } = {}) {
+export async function get(path, { params, timeoutMs = DEFAULT_TIMEOUT_MS, requireAuth = true, raw = false } = {}) {
   const { baseUrl, apiKey } = config();
 
   if (requireAuth && !apiKey) {
@@ -117,12 +117,32 @@ export async function get(path, { params, timeoutMs = DEFAULT_TIMEOUT_MS, requir
 
     const text = await res.text();
     let body;
-    try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text.slice(0, 2000) }; }
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      // Some endpoints return CSV (the dataset sync routes serve whole files).
+      // Callers that need the file pass raw:true; without it the preview is
+      // capped so a 16 MB dataset cannot be dumped into a tool response by
+      // accident.
+      body = raw ? null : { raw: text.slice(0, 2000), truncated: text.length > 2000, total_length: text.length };
+    }
 
     if (!res.ok) {
       // Distinguish the failure modes that need different fixes.
-      if (res.status === 401 || res.status === 403) {
-        throw new Error(`TA API rejected the key (HTTP ${res.status}) for ${path}. Check TA_API_KEY, and that this key is still valid for your user.`);
+      // 403 is not always an auth problem: the dataset sync route returns it
+      // for datasets that exist but are not SHARED. Blaming the key there sends
+      // you to check a credential that is working fine.
+      const detail = body?.detail || body?.message || '';
+      if (res.status === 403) {
+        throw new Error(
+          `TA API refused ${path} (HTTP 403)${detail ? `: ${detail}` : ''}. ` +
+          (/not SHARED/i.test(detail)
+            ? 'This dataset is user-scoped, and /api/v1/sync only serves SHARED datasets — the key is not the problem.'
+            : 'Check TA_API_KEY and that it is still valid for your user.'),
+        );
+      }
+      if (res.status === 401) {
+        throw new Error(`TA API rejected the key (HTTP 401) for ${path}${detail ? `: ${detail}` : ''}. Check TA_API_KEY.`);
       }
       if (res.status === 404) {
         throw new Error(`No such TA endpoint: ${path} (HTTP 404). Use ta_list_endpoints to see what this deployment exposes.`);
@@ -133,7 +153,7 @@ export async function get(path, { params, timeoutMs = DEFAULT_TIMEOUT_MS, requir
       throw new Error(`TA API error HTTP ${res.status} for ${path}: ${JSON.stringify(body).slice(0, 300)}`);
     }
 
-    return { success: true, path, elapsed_ms: Date.now() - started, data: body };
+    return { success: true, path, elapsed_ms: Date.now() - started, data: body, ...(raw ? { text } : {}) };
   } catch (err) {
     if (err.name === 'AbortError') {
       throw new Error(`TA API timed out after ${timeoutMs}ms for ${path}. The VPS may be busy or unreachable.`);
