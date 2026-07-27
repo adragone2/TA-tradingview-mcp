@@ -59,29 +59,150 @@ function buildGraphicsJS(collectionName, mapKey, filter) {
   `;
 }
 
-export async function getOhlcv({ count, summary } = {}) {
-  const limit = Math.min(count || 100, MAX_OHLCV_BARS);
-  let data;
-  try {
-    data = await evaluate(`
-      (function() {
-        var bars = ${BARS_PATH};
-        if (!bars || typeof bars.lastIndex !== 'function') return null;
-        var result = [];
-        var end = bars.lastIndex();
-        var start = Math.max(bars.firstIndex(), end - ${limit} + 1);
-        for (var i = start; i <= end; i++) {
-          var v = bars.valueAt(i);
-          if (v) result.push({time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5] || 0});
-        }
-        return {bars: result, total_bars: bars.size(), source: 'direct_bars'};
-      })()
-    `);
-  } catch { data = null; }
+/**
+ * How long to let the chart finish loading before giving up on a read.
+ * Measured on the live chart: a symbol change settles in ~580ms and a
+ * timeframe change in ~470ms, so this is generous, not tight.
+ */
+const SERIES_SETTLE_TIMEOUT_MS = 8000;
+const SERIES_POLL_MS = 50;
 
-  if (!data || !data.bars || data.bars.length === 0) {
-    throw new Error('Could not extract OHLCV data. The chart may still be loading.');
+/**
+ * Decide whether a series read may be trusted.
+ *
+ * Kept pure and exported so the stale states captured from the live chart can
+ * be tested directly — see tests/data_series.test.js. The reason this function
+ * exists at all: during a symbol or timeframe change the chart keeps serving
+ * the PREVIOUS series' prices while every identity signal has already flipped
+ * to the new one. Sampling the live chart every 25ms across AAPL -> CSCO:
+ *
+ *     t=61ms   chart.symbol()="BATS:CSCO"  symbolInfo()=null   bars=AAPL
+ *     t=193ms  chart.symbol()="BATS:CSCO"  symbolInfo()=CSCO   bars=AAPL
+ *     t=581ms  chart.symbol()="BATS:CSCO"  symbolInfo()=CSCO   bars=CSCO
+ *
+ * bars.size() stayed 300 throughout and the last bar's timestamp is identical
+ * for every US equity on 1D, so neither the bar count, nor the timestamps, nor
+ * the symbol tells you which series you are holding. Only the series' own
+ * loading flags do, and they clear in step with the data arriving.
+ */
+export function assessSeriesRead(payload) {
+  if (!payload) {
+    throw new Error('Could not read the chart series — no response from the page. Is TradingView still open on a chart?');
   }
+  if (payload.error) {
+    throw new Error(`Could not read the chart series: ${payload.error}`);
+  }
+  if (!payload.settled) {
+    const state = [
+      `symbol=${payload.symbol ?? 'unknown'}`,
+      `resolution=${payload.resolution ?? 'unknown'}`,
+      `isLoading=${payload.isLoading}`,
+      `seriesLoaded=${payload.seriesLoaded}`,
+      `status=${payload.status}`,
+    ].join(', ');
+    throw new Error(
+      `The chart series was still loading after ${payload.waited_ms ?? '?'}ms (${state}). `
+      + 'Refusing to return bars: while a symbol or timeframe change is in flight the chart still holds the '
+      + "PREVIOUS series' prices even though the symbol, the bar count and the bar timestamps all already read "
+      + 'as the new one. Wait for the chart to finish loading and re-run.',
+    );
+  }
+  if (!payload.bars || payload.bars.length === 0) {
+    throw new Error(
+      `The chart series for ${payload.symbol || 'the current symbol'} reported settled but held no bars. `
+      + 'The symbol may be invalid or have no data at this resolution.',
+    );
+  }
+  return payload;
+}
+
+/**
+ * Page-side read: poll until the series is settled, then copy the bars and the
+ * series identity in ONE synchronous tick.
+ *
+ * The single tick is the whole point. JavaScript in the page is single
+ * threaded, so no network callback can swap the series between reading
+ * symbolInfo() and finishing the copy loop — the identity returned is
+ * necessarily the identity of the bars returned. Splitting these across two
+ * evaluate() round-trips, as every caller used to do, is exactly how a
+ * CSCO-labelled analysis of AAPL's bars gets produced.
+ */
+function buildSettledReadJS(limit, timeoutMs) {
+  return `
+    (function() {
+      return new Promise(function(resolve) {
+        var t0 = Date.now();
+        var deadline = t0 + ${timeoutMs};
+        function series() {
+          return window.TradingViewApi._activeChartWidgetWV.value();
+        }
+        function read() {
+          var chart = series();
+          var s = chart._chartWidget.model().mainSeries();
+          var out = { waited_ms: Date.now() - t0 };
+          try { out.isLoading = s.isLoading(); } catch (e) { out.isLoading = null; }
+          try { out.status = s.status(); } catch (e) { out.status = null; }
+          try {
+            var sl = s.seriesLoaded;
+            if (typeof sl === 'function') sl = sl.call(s);
+            out.seriesLoaded = (sl && typeof sl.value === 'function') ? sl.value() : sl;
+          } catch (e) { out.seriesLoaded = null; }
+          try { var si = s.symbolInfo(); out.symbol = si ? (si.full_name || si.name || null) : null; } catch (e) { out.symbol = null; }
+          try { out.resolution = chart.resolution(); } catch (e) { out.resolution = null; }
+
+          // isLoading is the last flag to clear and it clears exactly when the
+          // bars arrive. seriesLoaded on its own goes true while the series is
+          // still filling (observed at 300 of an eventual 303 bars).
+          out.settled = out.isLoading === false && out.seriesLoaded === true && !!out.symbol;
+          if (!out.settled) return out;
+
+          var bars = s.bars();
+          if (!bars || typeof bars.lastIndex !== 'function') { out.settled = false; out.error = 'mainSeries().bars() is not a bar list'; return out; }
+          var result = [];
+          var end = bars.lastIndex();
+          var start = Math.max(bars.firstIndex(), end - ${limit} + 1);
+          for (var i = start; i <= end; i++) {
+            var v = bars.valueAt(i);
+            if (v) result.push({time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5] || 0});
+          }
+          out.bars = result;
+          out.total_bars = bars.size();
+          out.source = 'direct_bars';
+          return out;
+        }
+        function attempt() {
+          var out;
+          try { out = read(); } catch (e) { out = { settled: false, error: e.message, waited_ms: Date.now() - t0 }; }
+          if (out.settled && out.bars && out.bars.length > 0) return resolve(out);
+          if (Date.now() >= deadline) return resolve(out);
+          setTimeout(attempt, ${SERIES_POLL_MS});
+        }
+        attempt();
+      });
+    })()
+  `;
+}
+
+/**
+ * Bars for the chart as it stands, with the series they came from.
+ *
+ * Always reports `symbol` and `resolution` alongside the bars. A bar array with
+ * no identity attached cannot be checked by anything downstream, which is how a
+ * wrong series used to pass silently all the way into a printed analysis.
+ */
+export async function getOhlcv({ count, summary, settle_timeout_ms } = {}) {
+  const limit = Math.min(count || 100, MAX_OHLCV_BARS);
+  const timeout = settle_timeout_ms ?? SERIES_SETTLE_TIMEOUT_MS;
+
+  let payload;
+  try {
+    payload = await evaluateAsync(buildSettledReadJS(limit, timeout));
+  } catch (err) {
+    payload = { error: err.message };
+  }
+
+  const data = assessSeriesRead(payload);
+  const identity = { symbol: data.symbol, resolution: data.resolution };
 
   if (summary) {
     const bars = data.bars;
@@ -91,7 +212,7 @@ export async function getOhlcv({ count, summary } = {}) {
     const first = bars[0];
     const last = bars[bars.length - 1];
     return {
-      success: true, bar_count: bars.length,
+      success: true, ...identity, bar_count: bars.length,
       period: { from: first.time, to: last.time },
       open: first.open, close: last.close,
       high: Math.max(...highs), low: Math.min(...lows),
@@ -103,7 +224,7 @@ export async function getOhlcv({ count, summary } = {}) {
     };
   }
 
-  return { success: true, bar_count: data.bars.length, total_available: data.total_bars, source: data.source, bars: data.bars };
+  return { success: true, ...identity, bar_count: data.bars.length, total_available: data.total_bars, source: data.source, bars: data.bars };
 }
 
 export async function getIndicator({ entity_id }) {
