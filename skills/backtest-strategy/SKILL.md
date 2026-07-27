@@ -131,6 +131,29 @@ For a properly out-of-sample check across many names and years, the WRDS layer (
 - Never present a backtest as a prediction. It is a measurement of the past under stated assumptions.
 - Nothing here is trade advice. It is arithmetic on the user's own rules and drawings.
 
+## Turnover — run this BEFORE the backtest, not after
+
+```
+turnover_cost holding_days=<avg hold> round_trip_bps=<your cost>
+```
+
+Cost sensitivity scales with the **inverse of holding period**, and the arithmetic eliminates most swing systems before any signal work begins:
+
+| Hold | Round trips/yr | Drag at 20bps |
+|---|---|---|
+| 3 days | 84 | **16.8%** |
+| **5 days** | **50.4** | **10.08%** |
+| 20 days | 12.6 | 2.5% |
+| 60 days | 4.2 | 0.8% |
+
+**Very few of the documented effects in this literature are large enough to absorb 10% a year.** If a strategy's holding period implies a drag its edge cannot cover, that is the finding — report it and stop, rather than backtesting a system that cannot exist.
+
+**And check the exit rule.** Exiting the moment the entry condition is negated is the *maximum-turnover* choice available. De Groot, Huij & Zhou showed that waiting until a name crosses to the **opposite half of the ranking** more than halved turnover and costs **while increasing net returns** — 30–50bps per week after costs in large caps. `turnover_cost` computes the saving; measured on a 20/50 band it took 50.4 trades a year down to 20.2, saving 6.05% annually.
+
+This is close to free and almost no discretionary system does it.
+
+`turnover_cost` also measures **signal-to-fill slippage** from the real bars — the systematically adverse close-to-next-open gap. It is separate from spread and commission and must be added to them.
+
 ## Costs — a backtest without them flatters itself
 
 `resolveTrade` fills at the exact stop or target price. There is no spread, slippage, commission or borrow in that number, and those are not free.

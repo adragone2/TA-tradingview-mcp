@@ -85,12 +85,32 @@ Before presenting hits, ask whether the criteria are actually selective:
 - **Everything passed?** In a bull market, "above the 200 SMA" matches most large caps. If a scan hits on every symbol, the specification is probably missing the condition that made the setup selective — usually the one that was not expressible.
 - **Nothing passed?** Check for an `unknown` being misread, a wrong timeframe, or a criterion with a typo'd operand — `strategy_list` reports validation errors.
 
+## Design the EXIT before testing — it decides whether the rule can exist
+
+```
+turnover_cost holding_days=<expected hold> entry_rank_pct=20 exit_rank_pct=50
+```
+
+Most rules written here exit when the entry condition is negated. **That is the maximum-turnover choice available**, and turnover is the single most reliable predictor of whether a strategy survives contact with reality.
+
+De Groot, Huij & Zhou showed that adding **hysteresis** — waiting until a name crosses to the *opposite half* of the ranking rather than selling the instant it stops qualifying — more than halved turnover and trading costs **while increasing net returns**. Measured on a 20/50 band here: 50.4 trades a year down to 20.2, saving 6.05% annually.
+
+So when writing criteria, write **two** thresholds:
+
+- an **entry** threshold, tight
+- an **exit** threshold, deliberately looser
+
+A rule with a single threshold used for both is the naive high-turnover form, and `turnover_cost` says so in those words.
+
+Also check the drag before writing anything: a 5-day hold at 20bps consumes **10.08% annually** before any edge exists. If the intended holding period cannot support the cost, that is the answer — no criteria are worth writing.
+
 ## Then test it
 
 A strategy that has never been measured is a hypothesis. Once the criteria are written:
 
 1. Draw the trades it would have taken and run `backtest_drawn`, or code it in Pine and run `backtest_strategy`.
 2. **Always report buy-and-hold** — see [backtest-strategy](../backtest-strategy/SKILL.md).
+3. **Pass the trial count** so the result gets a deflated Sharpe. Every variant you tried counts.
 
 ## A scan is a multiple-testing procedure — report it as one
 

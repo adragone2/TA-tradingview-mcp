@@ -1,5 +1,8 @@
 # What the evidence says, and what to build next
 
+> **Read [swing-evidence-review.md](swing-evidence-review.md) first.** That is the repository owner's own evidence review and is authoritative where it and this document differ. This one is complementary: it records my measurements and the papers I read, including several the review does not cover.
+
+
 Research conducted 2026-07-27. Sources are linked inline; every claim here is traceable to one.
 
 This document exists because the project reached a point where the next improvement is not another tool. It is knowing which of the tools we already have are measuring something real.

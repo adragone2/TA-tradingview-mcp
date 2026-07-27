@@ -10,6 +10,18 @@ Two questions this answers, both from the chart's own price data rather than fro
 1. **What is the structure doing?** — swing highs and lows, labelled HH/HL/LH/LL, the trend they imply, and every break of structure (BOS) and change of character (CHoCH).
 2. **Which levels matter, and why?** — support and resistance, each carrying the evidence that earned it a place.
 
+## A break of structure is a continuation bet — say so at swing horizon
+
+```
+horizon_prior setup=breakout holding_days=<intended hold>
+```
+
+BOS, breakouts and trend-continuation reads are all **continuation** bets. Below **~21 trading days** the documented effect in equities is **reversal**; continuation has its evidence above **~63 days**. Momentum's skip-month exists because the sign changes in between.
+
+So a BOS traded for a swing is **running against the effect documented at that horizon**. Take it if the structure justifies it — the effect is a prior, not a veto — but do not present it as a neutral-prior setup, and do not let "the trend is up" carry more weight than it earns at ten days.
+
+Levels themselves are horizon-neutral. It is the **direction you trade them** that picks a side: buying a break of resistance is continuation, buying a hold of support is closer to reversal.
+
 ## The rule that makes this worth having
 
 **Never state a level without its evidence.** Once a line is drawn on a chart, a level backed by four tests and a volume shelf looks exactly like one you guessed. The tools return a `reason` for every level; quote it.

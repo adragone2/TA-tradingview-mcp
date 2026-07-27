@@ -1,5 +1,8 @@
 # The literature, paper by paper
 
+> **Read [swing-evidence-review.md](swing-evidence-review.md) first.** That is the repository owner's own evidence review and is authoritative where it and this document differ. This one is complementary: it records my measurements and the papers I read, including several the review does not cover.
+
+
 25 papers, read 2026-07-27 from a reading list supplied by the user. Every entry states what was tested and what came back, including where it contradicts something this repo already does.
 
 **The one-line summary:** the evidence splits cleanly. *Rule-mining on price* — moving-average crossovers, candlesticks, filter rules — fails every rigorous test. *Cross-sectional signals* — momentum, 52-week high, MA distance, volume shocks, ML on charts — work robustly and are all portfolio results.

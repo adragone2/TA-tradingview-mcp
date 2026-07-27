@@ -63,6 +63,8 @@ The consequence is uncomfortable and applies to most of what this toolchain dete
 
 This does not forbid continuation trades — several well-evidenced effects are continuation-flavoured. It means **the prior on a bull flag held ten days is materially lower than the same logic held six months**, and a report that treats the two as equivalent is wrong. Say which side you are on.
 
+Full reasoning and the evidence tiers: [docs/swing-evidence-review.md](../../docs/swing-evidence-review.md).
+
 `horizon_prior` also returns Nagel's conditioning: the payoff to mean reversion is **concentrated in high-volatility states**, because it is compensation for supplying liquidity — a business with a capital requirement, not a free anomaly. A reversal setup in a calm tape is the muted case.
 
 ## Step 2 — Is this market worth reading at all?

@@ -39,6 +39,27 @@ One row per plan:
 
 Leave `Outcome` empty. Never guess or backfill a result.
 
+### Record WHICH BARRIER was hit, not just win or lose
+
+Add these columns. They are the difference between a diary and a dataset:
+
+| Field | Source |
+|-------|--------|
+| Barrier hit | `target` / `stop` / `time` — which came **first** |
+| Bars held | bars from entry to resolution |
+| Exit price | the actual fill |
+| Ambiguous | `true` if one bar's range contained both stop and target |
+
+A plan that emits an entry, a stop and a target **is a triple-barrier problem**: the outcome is decided by which of the three is touched first. `tripleBarrier` in `labeling.js` resolves exactly this, and `backtest_evaluate` reports the ambiguous share.
+
+The review puts it bluntly:
+
+> Systems that emit entry/stop/target levels but never record which barrier was hit are **discarding their own training data on every scan.**
+
+A win/lose column cannot distinguish a target reached in three days from one reached in nineteen, or a stop from a time-expiry. Those are different outcomes with different implications, and without the distinction there is no dataset, no calibration, and no possibility of the persistence testing that separates a strategy from a lucky rule.
+
+**Flag ambiguous resolutions rather than silently scoring them.** When a single bar contained both barriers, OHLC cannot say which came first — this repo resolves those as losses and counts them, and the journal should carry the same flag.
+
 ## Step 3: Write the spreadsheet
 
 Use `financial-analysis:xlsx-author` (or the `xlsx` skill) to write or append.

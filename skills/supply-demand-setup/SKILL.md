@@ -14,6 +14,21 @@ A zone is **where price departed from**, not where it reversed. That is the enti
 
 Use both. They are complementary, not competing.
 
+## One thing in this skill's favour, for once
+
+```
+horizon_prior setup=pullback_entry holding_days=<intended hold>
+```
+
+Buying a return to demand is a **reversal** bet — fading a move back into an area price left. Below **~21 trading days**, reversal is the effect that actually has evidence (Jegadeesh 1990, Lehmann 1990), while continuation does not get its support until **~63 days**.
+
+That makes zone entries one of the **few setups in this toolchain running WITH the documented effect at swing horizon**, rather than against it. Almost everything else here — flags, triangles, breakouts, VCP — is a continuation bet placed where continuation is weakest.
+
+Two qualifications keep this from being a licence:
+
+- **The payoff is conditional.** Nagel showed short-horizon reversal is compensation for *supplying liquidity*, and it concentrates in high-volatility states — reversal portfolios earn essentially nothing unconditionally. `horizon_prior` returns the volatility percentile. A zone entry in a calm tape is the muted case.
+- **It is still a cross-sectional result.** See `edge_breadth`.
+
 ## What you can honestly claim
 
 The standard explanation is institutional: a large buyer could not fill their whole order, unfilled bids rest in the zone, and they lift price again on the return.
