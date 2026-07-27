@@ -138,6 +138,11 @@ Rules that decide whether any of this is reportable:
 - **Candles carry Nison's context and confirmation rules in a `nison` block.** A hammer needs no confirmation; a hanging man does, and until the next bar closes beneath it the status is `awaiting_confirmation` — a hypothesis, not a signal. Check `context_ok` too: the same shape without its required prior trend is not the pattern.
 - Zones: read `total_found` before the list. Dozens exist; the returned ones are not rare.
 - **Structural patterns: read `noise_check` FIRST.** The noise floor is now 0.78 patterns per 200-bar random walk, down from 19.3, so a double top is worth reading. But `rectangle` still appears in 30% of random walks and the wedges in 8-18% — treat those four with suspicion, especially in a choppy regime.
+- **Before naming a wedge or triangle, run two checks.** Both are cheap and both have killed a pattern here.
+  1. **Sensitivity sweep** — re-run `patterns_detect` at lookback 3/4/5/6/8. A pattern present at only one or two settings is a fit, not a shape. On CSCO five settings gave four different answers, including two *confirmed* patterns pointing opposite ways.
+  2. **Pivot-width check** — the detector's `converging: true` describes its own fitted boundaries, not the price. Take the pivot highs and lows in the window and measure the width at the first pair and the last pair. On CSCO the detector reported 17.18 → 9.02 (converging); the pivots gave 13.87 → 14.08 (**diverging**). No wedge existed.
+
+  If either fails, **report "no reliable pattern"** and describe the raw structure — lower highs and lower lows, with dates and prices — rather than naming something. And never treat two tools agreeing as corroboration until you know they got there by different routes: the same CSCO run produced an exact target match (84.69) between two detectors that reached it by unrelated arithmetic.
 
 ## Step 7 — Projection, if there is a move to project
 
