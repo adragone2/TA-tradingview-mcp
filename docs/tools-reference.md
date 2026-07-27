@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **114 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **118 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -213,6 +213,13 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`levels_find`** — Support and resistance levels computed from price history, each carrying the evidence that earned it: how many SEPARATE times price tested it, how man
 - **`levels_draw`** — Draw computed key levels on the chart — horizontal lines for tight levels, shaded rectangles for zones — green for support, red for resistance, thickn
+
+### backtest_* (4)
+
+- **`backtest_strategy`** — Evaluate the Pine strategy on the chart: win rate, payoff, expectancy, profit factor and streaks, computed from its trades — AND compared against buy-
+- **`backtest_drawn`** — Backtest the trades the user DREW on the chart
+- **`backtest_benchmark`** — Buy-and-hold return and max drawdown for the bars on the chart
+- **`backtest_evaluate`** — Win rate, payoff, expectancy, profit factor and streaks for a list of trades you supply — the way to score trades taken manually in Bar Replay, or imp
 
 ---
 

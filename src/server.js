@@ -8,6 +8,7 @@ import { registerWatchlistSyncTools } from "./tools/watchlist_sync.js";
 import { registerTaDecisionTools } from "./tools/ta_decisions.js";
 import { registerPositionToolTools } from "./tools/position_tool.js";
 import { registerStructureTools } from "./tools/structure.js";
+import { registerBacktestTools } from "./tools/backtest.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -31,7 +32,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 114 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 118 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -101,6 +102,19 @@ Marking up a trade:
   Levels are stored as tick offsets, so they are unreadable without this.
 - position_size → how much to buy for a given account and risk, from the
   levels already on the chart.
+
+Backtesting — three methods, one rule:
+- backtest_strategy → the Pine strategy on the chart: win rate, payoff,
+  expectancy, profit factor, streaks, AND buy-and-hold over the same bars
+- backtest_drawn → trades the user DREW, each walked forward through later
+  bars to see whether stop or target came first
+- backtest_evaluate → score a list of trades you supply (Bar Replay, imports)
+- backtest_benchmark → buy-and-hold on its own
+ALWAYS report the benchmark. Net profit cannot distinguish a good strategy
+from a rising market, and a strategy can earn its keep purely by avoiding a
+drawdown while returning less. Report return AND drawdown, never one number.
+Expectancy is the headline, not win rate: a 30% win rate can be excellent and
+an 80% one can bleed.
 
 Gamma walls (TA → the Institutional Matrix indicator):
 - walls_coverage → which tickers TA has walls for (~44, equities and ETFs)
@@ -174,6 +188,7 @@ registerWatchlistSyncTools(server);
 registerTaDecisionTools(server);
 registerPositionToolTools(server);
 registerStructureTools(server);
+registerBacktestTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

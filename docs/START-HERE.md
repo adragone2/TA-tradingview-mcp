@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 111 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 118 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -41,6 +41,7 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "Do I already own this?" / "does it report soon?" | `ta_trading_context` |
 | "What's the market regime?" | `ta_regime` — also carries position sizing |
 | "Write a Pine indicator" | [pine-develop](../skills/pine-develop/SKILL.md) skill |
+| "Does this strategy work?" / "backtest this" | [backtest-strategy](../skills/backtest-strategy/SKILL.md) skill — always report the benchmark |
 | "Did this setup ever work?" | WRDS `wrds_backtest_signal` |
 | "Write this up" / "preview the earnings" / "screen for ideas" | An FSI plugin skill — see [plugins.md](plugins.md) first |
 | "Clean up the chart" | `draw_clear` — removes only what these tools drew |
@@ -63,17 +64,33 @@ These exist because each one has already gone wrong here.
 
 **Nothing here is trade advice.** It renders the user's own criteria and TA's own output. R:R and position size are arithmetic on numbers they supplied. Present it as context.
 
+## Three categories — keep them straight
+
+They are enriched separately, and conflating them is how this repository would rot.
+
+| | **Tools** | **Strategies** | **Workflows** |
+|---|---|---|---|
+| What it is | One capability, one call | A set of rules — objective and testable | An ordered procedure using several tools |
+| Where it lives | `src/tools/`, `src/core/` | `rules.json`, Pine strategy scripts | `skills/*/SKILL.md` |
+| Example | `levels_find`, `backtest_drawn` | "EMA20 reclaim with RSI < 60, stop under the swing low" | [backtest-strategy](../skills/backtest-strategy/SKILL.md) |
+| Answers | *What can I do?* | *What am I testing?* | *In what order, and what do I check?* |
+
+A tool must not encode a strategy — `levels_find` computes levels, it does not decide whether to buy them. A strategy must not live in a skill's prose, or it cannot be backtested. A workflow is where judgement, sequencing and the honesty checks belong.
+
+When adding something, ask which category it is. A capability that needs a sequence of calls and a judgement call is a **workflow**, not a tool.
+
 ## Where things live
 
 ```
 docs/          this repository's documentation — start here, then the files below
-skills/        step-by-step procedures, invoked by name
-rules.json     the user's own bias criteria, risk rules and watchlist
+skills/        WORKFLOWS — step-by-step procedures, invoked by name
+src/tools/     TOOLS — one MCP tool per capability
+rules.json     STRATEGIES — the user's own bias criteria, risk rules and watchlist
 wrds-mcp/      separate MCP server for historical research
 ```
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
-- [tools-reference.md](tools-reference.md) — all 111 tools by group
+- [tools-reference.md](tools-reference.md) — all 118 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data

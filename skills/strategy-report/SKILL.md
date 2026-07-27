@@ -7,6 +7,8 @@ description: Generate a comprehensive strategy performance report — metrics, t
 
 You are generating a detailed performance report for a Pine Script strategy on TradingView.
 
+> **Run `backtest_strategy` first.** It computes win rate, payoff, expectancy and streaks from the trades, and — critically — compares the result against **buy-and-hold over the same bars**. This skill formats and interprets; it does not compute, and a report without the benchmark is misleading no matter how well formatted. See [backtest-strategy](../backtest-strategy/SKILL.md) for the method and its caveats.
+
 ## Step 1: Gather Data
 
 Collect all available performance data:
@@ -25,6 +27,8 @@ Collect all available performance data:
 
 ### Key Metrics
 Report these if available:
+- **Buy-and-hold return over the same bars** — report this FIRST. Every figure below is meaningless without it.
+- **Expectancy** — what an average trade was worth. The headline number.
 - **Net Profit** and **% return**
 - **Total Trades** and **Win Rate**
 - **Profit Factor** (target > 1.5)
