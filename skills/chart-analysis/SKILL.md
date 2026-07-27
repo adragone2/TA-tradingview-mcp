@@ -176,17 +176,31 @@ Lead with the answer, not the tool run.
 4. **Is there a trade?** — and "no" is a complete answer. If yes: entry, stop, target, and the R:R from `draw_trade_plan`.
 5. **What would change the read** — the price that invalidates it.
 
-## Optional — mark it up
+## Step 10 — Mark it up. Not optional.
 
-Only if the user wants it on the chart:
+**Always draw the relevant findings.** Don't report in prose and offer to draw — the chart is where the user acts, and a level in a message has to be re-found by hand.
 
 ```
 levels_draw / zones_draw            → grouped, clearable
+draw_shape                          → pattern boundaries, trigger/invalidation lines
 draw_trade_plan                     → entry/stop/targets in ONE call, returns R:R
-capture_screenshot                  → after annotating
+capture_screenshot                  → ALWAYS, to verify
 ```
 
-Then `draw_clear group="..."` to remove. **Never `scope:"all"` without asking** — it deletes the user's own drawings.
+What earns a place on the chart:
+
+- The **trigger** and the **invalidation** — the two prices that decide the outcome
+- The nearest tested support and resistance
+- The pattern that **survived** its checks, and the structural context it came from
+- A target **labelled with its base rate** — "measured move 398.16, flags meet target ~41%". Unlabelled, a target reads as a forecast.
+
+What must not go on the chart: any pattern that failed the sensitivity sweep or the pivot-width check. On AAPL the bull flag was drawn and the "confirmed" broadening formation was not.
+
+Rules:
+
+- Always pass a named `group` so `draw_clear group="..."` removes it cleanly. **Never `scope:"all"` without asking** — it deletes the user's own drawings.
+- **Guard symbol and resolution before drawing.** A script that draws on the wrong chart is worse than one that draws nothing. This has happened: eight levels were drawn on `BATS:INFO` after a mis-parsed command changed the symbol mid-run.
+- **Verify with a screenshot.** `success: true` only means the call returned — a line outside the visible price range draws nothing the user can see.
 
 ## If a trade is proposed
 
