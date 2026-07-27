@@ -516,7 +516,13 @@ export async function newScript({ type }) {
     library: '//@version=6\n// @description TODO: add library description here\nlibrary("MyLibrary")\n',
   };
 
-  const template = templates[type] || templates.indicator;
+  // This overwrites whatever is in the editor, so a typo must not silently
+  // fall back to the indicator template — `pine new stratgy` used to discard
+  // the open script and hand back an indicator.
+  const template = templates[type];
+  if (!template) {
+    throw new Error(`Unknown script type "${type}". Use one of: ${Object.keys(templates).join(', ')}.`);
+  }
 
   // Simply set the source to a new template — this is the most reliable approach
   const escaped = JSON.stringify(template);

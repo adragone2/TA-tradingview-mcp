@@ -92,11 +92,17 @@ register('draw', {
     }],
     ['get', {
       description: 'Get properties of a drawing',
-      handler: (opts, positionals) => core.getProperties({ entity_id: positionals[0] }),
+      handler: (opts, positionals) => {
+        if (!positionals[0]) throw new Error('Entity ID required. Usage: tv draw get eFu1Ot (see "tv draw list")');
+        return core.getProperties({ entity_id: positionals[0] });
+      },
     }],
     ['remove', {
       description: 'Remove a drawing by entity ID',
-      handler: (opts, positionals) => core.removeOne({ entity_id: positionals[0] }),
+      handler: (opts, positionals) => {
+        if (!positionals[0]) throw new Error('Entity ID required. Usage: tv draw remove eFu1Ot (see "tv draw list")');
+        return core.removeOne({ entity_id: positionals[0] });
+      },
     }],
     ['clear', {
       description: 'Remove drawings created by this tool (--scope all wipes everything)',

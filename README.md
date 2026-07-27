@@ -395,7 +395,10 @@ tv session save --brief "..."      # save a brief
 
 tv status                          # check connection
 tv quote                           # current price
-tv symbol BTCUSD                   # change symbol
+tv symbol                          # show the current symbol
+tv symbol set BTCUSD               # change symbol
+tv symbol info                     # symbol metadata
+tv timeframe set 60                # change timeframe
 tv ohlcv --summary                 # price summary
 tv screenshot -r chart             # capture chart
 tv pine compile                    # compile Pine Script

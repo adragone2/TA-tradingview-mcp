@@ -56,7 +56,20 @@ async function pineEditorVisible() {
   `);
 }
 
+const PANELS = ['pine-editor', 'strategy-tester', 'watchlist', 'alerts', 'trading'];
+const PANEL_ACTIONS = ['open', 'close', 'toggle'];
+
 export async function openPanel({ panel, action }) {
+  // Both used to be trusted as given. An unknown panel crashed on an undefined
+  // selector, and — worse — an action that was not exactly "open" or "toggle"
+  // was treated as "close", so `ui panel pine-editor opne` shut the editor.
+  if (!PANELS.includes(panel)) {
+    throw new Error(`Unknown panel "${panel}". Use one of: ${PANELS.join(', ')}.`);
+  }
+  if (!PANEL_ACTIONS.includes(action)) {
+    throw new Error(`Unknown panel action "${action}". Use one of: ${PANEL_ACTIONS.join(', ')}.`);
+  }
+
   // The Pine Editor moved out of the bottom widget bar in TradingView 3.3.
   // bottomWidgetBar.showWidget/activateScriptEditorTab still exist but no
   // longer open it, so drive the toolbar button and verify the result.
@@ -322,7 +335,14 @@ export async function hover({ by, value }) {
   return { success: true, hovered: { by, value, tag: coords.tag, x: coords.x, y: coords.y } };
 }
 
+const SCROLL_DIRECTIONS = ['up', 'down', 'left', 'right'];
+
 export async function scroll({ direction, amount }) {
+  // An unrecognised direction produced a zero-delta wheel event and reported
+  // success — a scroll that never happened, echoed back as if it had.
+  if (!SCROLL_DIRECTIONS.includes(direction)) {
+    throw new Error(`Unknown scroll direction "${direction}". Use one of: ${SCROLL_DIRECTIONS.join(', ')}.`);
+  }
   const c = await getClient();
   const px = amount || 300;
   const center = await evaluate(`
