@@ -18,6 +18,29 @@ Two things follow from this, and both are easy to get wrong:
 - **Report return AND drawdown, never one number.** A strategy that matched the benchmark's return with half its drawdown is materially better, and net profit hides that entirely. Frequently that *is* the edge — the strategy's value was sitting out a crash, not picking better entries.
 - **Beating the benchmark on return while tripling the drawdown is not a win.** Say which happened. `compareToBenchmark` deliberately refuses to collapse this into a single verdict.
 
+## The second rule: always report the trial count
+
+A benchmark stops net profit from flattering a rising market. **Nothing was stopping the result from flattering the search** until now.
+
+A Sharpe ratio is a random variable. Search 200 strategies with **no edge at all** and the best of them scores:
+
+```
+annualised Sharpe    2.19
+probabilistic Sharpe 0.985      ← looks like a discovery
+deflated Sharpe      0.267      ← is not one
+```
+
+That is measured, in `tests/validation.test.js`, on pure random returns.
+
+`evaluateTrades` now returns a `significance` block. **Read `verdict` first.**
+
+- If you passed `trial_sharpes` (the Sharpe of *every* variant you tested, including the losers) it reports a **deflated Sharpe**. Below **0.95** is not a discovery.
+- If you did not, `verdict` says `NOT CORRECTED FOR SEARCH` in those words. Do not quote `probabilistic_sharpe` as if it were the answer — that is the number the best of 200 no-edge strategies scores 0.98 on.
+
+**Count honestly.** Every parameter you tried and discarded is a trial, including the ones you tried before writing the scan. The tool can only correct for the trials you tell it about, and it says so.
+
+Also check `min_track_record_trades`: how many trades you need before a Sharpe this size is distinguishable from the benchmark at all. Fewer than that and there is no result yet, whatever the equity curve looks like.
+
 ## Expectancy is the headline, not win rate
 
 **Win rate on its own is nearly meaningless.** A 30% win rate can be excellent and an 80% win rate can bleed money — win rate says nothing about the size of wins relative to losses.
@@ -94,7 +117,9 @@ State these when the result looks good — they are the reasons a good backtest 
 
 - **No slippage, commission or spread** unless the Pine strategy modelled them.
 - **Survivorship and selection.** Backtesting one symbol you already know went up is not evidence.
-- **Overfitting.** Parameters tuned until the result looked good describe the past, not the future. If the user tuned then re-ran, say the result is now in-sample.
+- **Overfitting.** Parameters tuned until the result looked good describe the past, not the future. If the user tuned then re-ran, say the result is now in-sample — and pass the trial count so `deflated_sharpe` can price it.
+- **Costs applied after selection are the wrong costs.** Bajgrowicz & Scaillet (7,846 rules, DJIA 1897–2011) showed that *"trading rules that survive the inclusion of transaction costs are often not among those that perform best before costs"* — costs must be endogenous to the selection, not subtracted afterwards. Our tooling ranks first and costs after, so **the winner you are looking at may not be the winner that survives costs.** State this when a scan chose the strategy.
+- **Selecting the rule ex ante is the part that fails.** In that same study, even with a more powerful selection method (False Discovery Rate), *"an investor would never have been able to select ex ante the future best-performing rules"*, and out-of-sample **5–35bps of cost offset any performance**.
 - **The ambiguous-bar assumption** above.
 - One symbol, one timeframe, one period.
 

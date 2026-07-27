@@ -92,6 +92,18 @@ A strategy that has never been measured is a hypothesis. Once the criteria are w
 1. Draw the trades it would have taken and run `backtest_drawn`, or code it in Pine and run `backtest_strategy`.
 2. **Always report buy-and-hold** — see [backtest-strategy](../backtest-strategy/SKILL.md).
 
+## A scan is a multiple-testing procedure — report it as one
+
+`strategy_scan` returns a `selection_bias` block. **Read it before reporting hits.**
+
+Checking 100 symbols against a 4-criterion rule is **400 individual tests**, and the names that come back are the extremes of that search. This is exactly the procedure White's Reality Check was written to invalidate: applied to technical trading rules, it turned a best rule earning ~32%/year into a **statistically insignificant** result once the size of the search was counted.
+
+The block reports the test count, the hit rate, and how many hits the same rule shape would produce on **coin flips**. It cannot compute a p-value — the criteria are not independent and their real pass rates are unknown — so treat the coin-flip figure as a floor for intuition, not a significance test.
+
+**What to say:** a hit means *the rule matched*, which you get for free by looking at enough symbols. It is not evidence the rule works. `what_would_be_evidence` in the output says where that comes from.
+
+**One ordering problem we have not fixed.** Bajgrowicz & Scaillet (7,846 rules, DJIA 1897–2011) showed transaction costs must be **endogenous to selection**: *"trading rules that survive the inclusion of transaction costs are often not among those that perform best before costs."* This scan ranks first and `trade_cost` is applied afterwards — the wrong order. When a scan picked the strategy, say that the winner may not be the winner that survives costs.
+
 ## Caveats to state
 
 - **Sessions are grouped by UTC date.** Sound for US equities. **Not** sound for futures or FX whose session crosses midnight UTC, where `prev_day_*` means previous UTC date rather than previous trading session. The tools return `session_basis` saying so.

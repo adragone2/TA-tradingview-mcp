@@ -8,6 +8,7 @@ import * as kernel from '../core/kernel.js';
 import * as lmw from '../core/lmw_patterns.js';
 import * as validation from '../core/validation.js';
 import * as breadth from '../core/breadth.js';
+import * as stops from '../core/stops.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -120,6 +121,30 @@ export function registerEvidenceTools(server) {
       };
     }),
   );
+  server.tool(
+    'stopping_premium',
+    'Does a stop-loss ADD expected return on this chart, or just cost you? Kaminski & Lo (2014) prove the stopping premium is ALWAYS NEGATIVE under a random walk — a stop then only forces you out of higher-yielding assets, and in their words "stop-loss rules never stop losses". It turns positive under momentum, directly proportional to return persistence. This measures autocorrelation at several lags with a significance band and reports which case the chart is in: persistent, no measurable persistence, mean-reverting (the worst case for a stop), or mixed. IMPORTANT: this is about expected return, NOT risk of ruin — a negative premium is a price, and bounding a loss is usually worth paying it. Use it to say WHICH reason a stop is being used for. Optionally backtests a specific stop threshold against buy-and-hold on the same bars.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 400)'),
+      lags: z.string().optional().describe('Comma-separated lags to test (default "1,5,10,20"). Match the lag to how long the stop will be live'),
+      backtest_threshold_pct: z.coerce.number().optional().describe('Also backtest a stop at this drawdown percent from entry'),
+      cooldown_bars: z.coerce.number().optional().describe('Bars to stay out after a stop, for the backtest (default 5)'),
+    },
+    wrap(async ({ count = 400, lags = null, backtest_threshold_pct = null, cooldown_bars = 5 }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const lagList = lags
+        ? lags.split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0)
+        : undefined;
+      return {
+        success: true, symbol, timeframe,
+        ...stops.stoppingPremium(bars, lagList ? { lags: lagList } : {}),
+        ...(backtest_threshold_pct
+          ? { backtest: stops.backtestStop(bars, { threshold_pct: backtest_threshold_pct, cooldown_bars }) }
+          : {}),
+      };
+    }),
+  );
+
   server.tool(
     'edge_breadth',
     'What a published cross-sectional edge is actually worth on YOUR number of positions. The Fundamental Law of Active Management (Grinold 1989): IR = IC * sqrt(breadth). An information ratio of 1.0 earned across 500 independent bets implies a skill coefficient of 0.045 — and applied to ONE position it returns an expected IR of 0.045, four percent of the headline. Every well-evidenced effect in this toolchain was measured across many instruments (momentum on 58 futures, the 52-week high on 1000+ stocks, PEAD on decile portfolios), so this division is the difference between quoting a study and misquoting it. Also carries the firm-level finding that PEAD largely dissolves on individual names.',

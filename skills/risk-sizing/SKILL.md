@@ -31,6 +31,16 @@ Returns expectancy in R, the break-even win rate, the edge (the gap between them
 
 If expectancy is negative, stop. Report it and say plainly that no position size fixes a negative edge — sizing only changes how fast it loses.
 
+**If the "edge" is borrowed from a published study, divide it first.**
+
+```
+edge_breadth edge=time_series_momentum your_positions=1
+```
+
+Every well-evidenced effect in this toolchain was measured across many instruments — momentum on 58 futures, the 52-week high on 1000+ ranked stocks, PEAD on decile portfolios. `IR = IC × √BR`. Momentum's published Sharpe of **1.28 retains 13% of its information ratio on one position**, and would take ~136 years to distinguish from luck.
+
+Quoting a study's Sharpe at a single-name trade is the most common way to over-size. Run the division before it reaches a position size.
+
 Where a backtest already exists, `backtest_evaluate` gives the same arithmetic measured from real trades. Use that; this tool is for the forward question, before there are trades.
 
 ## How much to risk
@@ -62,6 +72,32 @@ position_size_atr      → from volatility
 Pass `manual_stop` to compare against a stop chosen from structure. The comparison is the useful part: **a stop closer than 1x ATR is inside the instrument's ordinary bar range and will be hit by noise rather than by being wrong.** That is a reason to widen the stop and take fewer shares, not to skip the check.
 
 The best stop is usually both — beyond a level that actually matters, plus a fraction of ATR of room beyond it.
+
+## What the stop costs — say which reason you are using it for
+
+```
+stopping_premium          → is there enough persistence for a stop to pay?
+```
+
+Kaminski & Lo (2014) prove something most trading material never mentions: **under a random walk the stopping premium is *always negative*.** A stop then only "force[s] the portfolio out of higher-yielding assets on occasion, thereby lowering the overall expected return without adding any benefits. In such cases, stop-loss rules never stop losses."
+
+It turns **positive under momentum**, and is *directly proportional to the magnitude of return persistence*.
+
+So a stop is a **bet on persistence**, not free insurance — and persistence is measurable. `stopping_premium` reports autocorrelation at several lags with a significance band and translates it:
+
+| `persistence_verdict` | What it means for the stop |
+|---|---|
+| `persistent` | The stop can add expected return, not just cap losses |
+| `no measurable persistence` | Indistinguishable from a random walk — the stop is a **drag** |
+| `mean-reverting` | **Worst case.** Losses tend to recover, so the stop exits at the worst moment |
+| `mixed across horizons` | Match the lag to how long the stop will be live |
+
+**Two things to keep straight.**
+
+- This measures the effect on **expected return, not ruin.** A negative stopping premium is a *price*, and bounding a loss is usually worth paying it. Never read this as "trade without a stop" — read it as "know what the stop costs, and say which reason you are using it for."
+- Their premium was positive **over longer sampling frequencies**; they found stops *"of no value at short-term sampling frequencies."* A tight intraday stop is the case with the least support.
+
+Live example: AAPL 1D showed no significant autocorrelation at any lag, and an 8% stop backtested at **−0.32 points against buy-and-hold**. That stop was solvency management, not edge — which is fine, said out loud.
 
 ## Why the large loss is the thing to avoid
 

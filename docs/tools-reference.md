@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **163 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **164 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -360,6 +360,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### deflated_* (1)
 
 - **`deflated_sharpe`** — Correct a Sharpe ratio for how hard you looked for it
+
+### stopping_* (1)
+
+- **`stopping_premium`** — Does a stop-loss ADD expected return on this chart, or just cost you? Kaminski & Lo (2014) prove the stopping premium is ALWAYS NEGATIVE under a rando
 
 ### edge_* (1)
 

@@ -107,6 +107,20 @@ Moskowitz, Ooi & Pedersen found 12-month time-series momentum positive and signi
 - The evidence is from **diversified futures**. The signal transfers to a single equity; the Sharpe does not. Say so.
 - `persistence_baseline` comes back with it, at ~99% accuracy. That is the floor every forecast clears for free — quote it if you ever quote an accuracy.
 
+`momentum_read` also returns two signals with their own literature:
+
+- **`fifty_two_week_high`** — the ratio `price / 12-month high`, which is the same number as "X% off its high". George & Hwang (2004) found ranking on it returned roughly **twice** Jegadeesh-Titman momentum, and unlike JT **the profits do not reverse long-run**. **The direction is counter-intuitive: nearness to the high predicts CONTINUATION.** The instinct that a stock at its high is "extended and owed a pullback" is the opposite of the measured result. Do not report "only 1% off its high" as a neutral fact.
+- **`fifty_two_week_high` deliberately has no percentile.** A percentile needs a cross-section; one chart has none.
+- **`movingAverageDistance`** — short MA / long MA. Avramov et al. (2021) report ~**9% annualized alphas**, beyond momentum and 52-week highs, and **surviving institutional costs**. Note the tension: Zakamulin showed the famous MA *timing* results were look-ahead bias. The MAD **level** is the signal; the crossover **rule** is not.
+
+**Before quoting any of these numbers at the chart, divide them:**
+
+```
+edge_breadth edge=time_series_momentum your_positions=1
+```
+
+Every one of these effects is a **cross-sectional portfolio result**. `IR = IC × √BR` — momentum's 1.28 Sharpe retains **13%** of its information ratio on a single position.
+
 ## Step 4.5 — Compared to what?
 
 ```
@@ -224,11 +238,16 @@ Rules:
 
 ```
 position_size_atr / position_size   → size it
+stopping_premium                    → what the stop costs on THIS chart
 trade_cost preset=ibkr_pro_fixed    → what the round trip costs, in R
 costs_vs_edge                       → does the edge survive its costs
 ```
 
 An R:R under 1.5 should be said out loud. So should an edge that costs eat.
+
+**And so should the stop.** Kaminski & Lo proved the stopping premium is **always negative under a random walk** — the stop lowers expected return without adding benefit. It turns positive under momentum, proportional to persistence. `stopping_premium` measures which case this chart is in.
+
+That does not mean trade without a stop. It means **say which reason you are using it for**: edge, or solvency. On a `no measurable persistence` reading it is solvency, and calling it anything else is wrong.
 
 ## Never
 

@@ -165,6 +165,19 @@ Confirmed structural patterns now carry Bulkowski's measurements in a `measured`
 
 Also useful alongside: **`candle_read`** classifies any candle as momentum, reaction or indecision — it always answers, where `patterns_detect` answers only for named patterns.
 
+## Candlesticks failed two independent academic tests — say so
+
+Bulkowski's candlestick reliability figures answer *"how often is this shape followed by a move?"* Two peer-reviewed studies asked the harder question — *"does trading this shape beat a proper null?"* — and both answered no. `patterns_detect` attaches them as `candlestick_academic_evidence` whenever it reports a candle.
+
+- **Marshall, Young & Rose (2006), *Journal of Banking & Finance*** — DJIA stocks, using a bootstrap that generates random **open, high, low AND close**. That is the correct null for a pattern defined by relationships among all four prices, and an advance on methods that could only randomise closes. Result: candlestick strategies **do not have value**.
+- **Marshall, Young & Cahan (2008), *Review of Quantitative Finance and Accounting*** — the largest 100 Tokyo Stock Exchange stocks, **1975–2004**, in the market that invented the technique. **No value in the whole 30-year period, in any of three 10-year sub-periods, or in bull or bear markets.**
+
+**How to hold both.** They are not in contradiction — they measure different things, and the second question is the one a trader is actually asking. So:
+
+> Report a candlestick as a **description of what the bar did** — momentum, reaction or indecision — never as a signal. If you quote a reliability percentage, quote the academic result in the same breath.
+
+This is the most directly tested claim in this skill, it was tested twice on two continents, and it came back negative both times.
+
 ## Nison's context and confirmation rules
 
 `measured` says how often a pattern works. The `nison` block on each candlestick says whether it is a pattern **at all** — the prior question, and one detection alone cannot answer.
