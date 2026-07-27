@@ -726,29 +726,33 @@ describe('classifyCandle — reasons must match the subtype', () => {
   });
 });
 
-describe('STRUCTURAL_STATS — Bulkowski measurements', () => {
+describe('STRUCTURAL_STATS — Bulkowski measurements from thepatternsite.com', () => {
   it('covers every structural pattern the detector can produce', () => {
     for (const p of STRUCTURAL_PATTERNS) {
       assert.ok(STRUCTURAL_STATS[p], `no measured statistics for ${p}`);
     }
   });
 
-  it('has every value in a plausible range', () => {
-    // A shifted parse turns a percentage into a rank or a trend word. Anything
-    // outside 0-100 means the extraction slipped a row.
+  it('has every percentage in range and every rank well formed', () => {
+    // A bad transcription shows up as a percentage outside 0-100 or a rank
+    // that does not parse. Both would be wrong without looking wrong.
     for (const [pat, dirs] of Object.entries(STRUCTURAL_STATS)) {
-      for (const [dir, markets] of Object.entries(dirs)) {
-        for (const [mkt, s] of Object.entries(markets)) {
-          for (const [k, v] of Object.entries(s)) {
-            if (k === 'rank') {
-              if (v !== null) assert.match(v, /^\d+\/\d+$/, `${pat}.${dir}.${mkt}.rank = ${v}`);
-              continue;
-            }
-            const vals = Array.isArray(v) ? v : [v];
-            for (const n of vals) {
-              assert.ok(Number.isFinite(n) && n >= 0 && n <= 100,
-                `${pat}.${dir}.${mkt}.${k} = ${n} is not a percentage`);
-            }
+      for (const [dir, s] of Object.entries(dirs)) {
+        for (const [k, v] of Object.entries(s)) {
+          if (k === 'sample' || k === 'variants') continue;
+          if (k === 'rank') {
+            if (v !== null) assert.match(v, /^\d+\/\d+$/, `${pat}.${dir}.rank = ${v}`);
+            continue;
+          }
+          if (k === 'rank_range') {
+            assert.match(v, /^\d+-\d+\/\d+$/, `${pat}.${dir}.rank_range = ${v}`);
+            continue;
+          }
+          const vals = Array.isArray(v) ? v : [v];
+          for (const n of vals) {
+            if (n === null) continue;
+            assert.ok(Number.isFinite(n) && n >= 0 && n <= 100,
+              `${pat}.${dir}.${k} = ${n} is not a percentage`);
           }
         }
       }
@@ -757,54 +761,66 @@ describe('STRUCTURAL_STATS — Bulkowski measurements', () => {
 
   it('keeps ranges ordered low-to-high', () => {
     for (const dirs of Object.values(STRUCTURAL_STATS)) {
-      for (const markets of Object.values(dirs)) {
-        for (const s of Object.values(markets)) {
-          for (const [k, v] of Object.entries(s)) {
-            if (Array.isArray(v)) assert.ok(v[0] <= v[1], `${k} range is inverted: ${v}`);
-          }
+      for (const s of Object.values(dirs)) {
+        for (const [k, v] of Object.entries(s)) {
+          if (Array.isArray(v)) assert.ok(v[0] <= v[1], `${k} range is inverted: ${v}`);
         }
       }
     }
   });
 
-  it('reproduces the figures Bulkowski is known for', () => {
-    // Head-and-shoulders tops is his top-ranked pattern in a bull market with a
-    // 4% failure rate. If the parse slipped, these are the first to break.
+  it('carries the CURRENT site figures, not the superseded 2nd-edition ones', () => {
+    // The old PDF extraction said head-and-shoulders top was rank 1/21 with a
+    // 4% failure rate, and that was quoted here as fact. His site says
+    // otherwise, on a far larger sample.
     const hs = statsFor('head_and_shoulders');
-    assert.equal(hs.rank, '1/21');
-    assert.equal(hs.break_even_failure_pct, 4);
-    assert.equal(hs.breakout_direction, 'downward');
+    assert.equal(hs.rank, '9/36');
+    assert.equal(hs.break_even_failure_pct, 19);
+    assert.notEqual(hs.rank, '1/21');
+
+    // Rising wedge breaking down is his worst-ranked pattern, not a mild one.
+    const rw = statsFor('rising_wedge', { direction: 'downward' });
+    assert.equal(rw.rank, '36/36');
+    assert.equal(rw.break_even_failure_pct, 51);
   });
 
   it('separates breakout directions rather than assuming the conventional one', () => {
     const up = statsFor('rising_wedge', { direction: 'upward' });
     const down = statsFor('rising_wedge', { direction: 'downward' });
-    assert.notEqual(up.break_even_failure_pct, down.break_even_failure_pct);
-    // The measured finding worth surfacing: the "bearish" break of a rising
-    // wedge fails far more often than the break the folklore ignores.
-    assert.ok(down.break_even_failure_pct > up.break_even_failure_pct,
-      'the downward break of a rising wedge fails more often than the upward one');
+    assert.ok(down.break_even_failure_pct > up.break_even_failure_pct);
     assert.match(down.both_directions, /Do not assume the conventional direction/);
   });
 
-  it('separates bull and bear markets', () => {
-    const bull = statsFor('inverse_head_and_shoulders', { market: 'bull' });
-    const bear = statsFor('inverse_head_and_shoulders', { market: 'bear' });
-    assert.equal(bull.market_assumed, 'bull');
-    assert.equal(bear.market_assumed, 'bear');
-    assert.notEqual(bull.average_move_pct, bear.average_move_pct);
-    assert.match(bull.market_note, /Pass market:"bear"/);
+  it('states plainly that these are BULL MARKET figures only', () => {
+    const s = statsFor('head_and_shoulders');
+    assert.match(s.market_note, /BULL MARKET figures only/);
+    assert.match(s.market_note, /does not publish a bear-market split/);
+  });
+
+  it('states that the figures are perfect trades gross of costs', () => {
+    const s = statsFor('ascending_triangle');
+    assert.match(s.cost_note, /without commissions or fees/);
+    assert.match(s.cost_note, /upper bound/);
+    assert.match(s.cost_note, /trade_cost/);
   });
 
   it('reports a range for patterns whose variants it cannot distinguish', () => {
     const dt = statsFor('double_top');
     assert.ok(Array.isArray(dt.break_even_failure_pct_range));
-    assert.match(dt.range_note, /never measured/i);
+    assert.match(dt.range_note, /never published/);
     assert.match(dt.summary, /\d+-\d+%/);
   });
 
-  it('attributes the numbers rather than presenting them as its own', () => {
-    assert.match(statsFor('head_and_shoulders').source, /Bulkowski/);
+  it('includes the high tight flag, which the detector does not yet find', () => {
+    // Recorded so the statistics are ready when detection is built.
+    const htf = statsFor('high_tight_flag');
+    assert.equal(htf.meeting_target_pct, 82);
+    assert.ok(!STRUCTURAL_PATTERNS.includes('high_tight_flag'),
+      'if this now detects, move it into STRUCTURAL_PATTERNS and drop this assertion');
+  });
+
+  it('attributes the numbers to the site rather than presenting them as its own', () => {
+    assert.match(statsFor('head_and_shoulders').source, /thepatternsite\.com/);
     assert.match(statsFor('head_and_shoulders').source, /not measurements made here/);
   });
 
@@ -835,15 +851,14 @@ describe('detectPatterns — statistics are attached only where they apply', () 
     }
   });
 
-  it('accepts a market regime and passes it through', () => {
+  it('attaches the bull-market caveat to every confirmed detection', () => {
     t = 1_700_000_000;
     const bars = Array.from({ length: 120 }, (_, i) => {
       const p = 100 + Math.sin(i / 6) * 12;
       return b(p, p + 1.5, p - 1.5, p);
     });
-    const bear = detectPatterns(bars, { lookback: 4, market: 'bear' });
-    for (const p of bear.structural) {
-      if (p.measured) assert.equal(p.measured.market_assumed, 'bear');
+    for (const p of detectPatterns(bars, { lookback: 4 }).structural) {
+      if (p.measured) assert.match(p.measured.market_note, /BULL MARKET/);
     }
   });
 });
