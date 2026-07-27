@@ -7,6 +7,7 @@ import * as vcp from '../core/vcp.js';
 import * as kernel from '../core/kernel.js';
 import * as lmw from '../core/lmw_patterns.js';
 import * as validation from '../core/validation.js';
+import * as breadth from '../core/breadth.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -36,6 +37,7 @@ export function registerEvidenceTools(server) {
         ...(lookback
           ? momentum.timeSeriesMomentum(bars, { lookback })
           : momentum.momentumProfile(bars)),
+        fifty_two_week_high: momentum.fiftyTwoWeekHigh(bars),
         persistence_baseline: momentum.persistenceBaseline(bars),
       };
     }),
@@ -116,6 +118,23 @@ export function registerEvidenceTools(server) {
         ...validation.deflatedSharpe(returns, { trial_sharpes, trials, sharpe_variance }),
         track_record: validation.minTrackRecordLength(returns),
       };
+    }),
+  );
+  server.tool(
+    'edge_breadth',
+    'What a published cross-sectional edge is actually worth on YOUR number of positions. The Fundamental Law of Active Management (Grinold 1989): IR = IC * sqrt(breadth). An information ratio of 1.0 earned across 500 independent bets implies a skill coefficient of 0.045 — and applied to ONE position it returns an expected IR of 0.045, four percent of the headline. Every well-evidenced effect in this toolchain was measured across many instruments (momentum on 58 futures, the 52-week high on 1000+ stocks, PEAD on decile portfolios), so this division is the difference between quoting a study and misquoting it. Also carries the firm-level finding that PEAD largely dissolves on individual names.',
+    {
+      edge: z.enum(['time_series_momentum', 'fifty_two_week_high', 'post_earnings_drift']).optional().describe('A recorded published edge to translate'),
+      published_ir: z.coerce.number().optional().describe('Published information ratio or Sharpe, for an edge not in the table'),
+      study_breadth: z.coerce.number().optional().describe('How many INDEPENDENT bets the study made — usually its cross-section size'),
+      your_positions: z.coerce.number().optional().describe('How many independent positions you would hold (default 1)'),
+    },
+    wrap(({ edge = null, published_ir = null, study_breadth = null, your_positions = 1 }) => {
+      if (edge) return { success: true, ...breadth.singleNameExpectation(edge, { your_positions }), all_edges: breadth.PUBLISHED_EDGES };
+      if (published_ir == null || study_breadth == null) {
+        throw new Error('Supply either `edge`, or both `published_ir` and `study_breadth`.');
+      }
+      return { success: true, ...breadth.translateEdge({ published_ir, study_breadth, your_positions }) };
     }),
   );
 }

@@ -77,6 +77,8 @@ Each of these exists because it has already gone wrong here.
 
 **A forecast without a persistence baseline flatters itself too.** "Tomorrow equals today" scores ~99% accuracy on daily bars. Published LSTM stock predictors reporting 97% were reproducing exactly that. `momentum_read` returns the baseline beside every reading.
 
+**Every well-evidenced edge here is a PORTFOLIO result. One chart is not a portfolio.** Momentum's Sharpe 1.28 came from 58 futures; the 52-week high effect from 1000+ ranked stocks; PEAD from decile portfolios — and PEAD *dissolves* at the firm level (16% of good-news quarters drift negative). `IR = IC × √BR`: momentum applied to **one** position retains **13%** of its published information ratio and would take ~136 years to prove. Run `edge_breadth` before quoting any study's Sharpe at a single symbol.
+
 **Tools, strategies and workflows are different things.** Tools are capabilities (`src/tools/`), strategies are testable rules (`rules.json`, Pine), workflows are procedures (`skills/`). A tool must not encode a strategy; a strategy must not live in a skill's prose. See [docs/START-HERE.md](docs/START-HERE.md).
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.

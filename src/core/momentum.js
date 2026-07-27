@@ -150,6 +150,77 @@ export function momentumProfile(bars, { horizons = HORIZONS, vol_window = 60 } =
 }
 
 /**
+ * Nearness to the 52-week high, after George & Hwang (2004), Journal of
+ * Finance — the ranking variable this toolchain has been computing all along
+ * without knowing what it was.
+ *
+ * Their measure is simply:
+ *
+ *     P(t) / max(price over the trailing 12 months)
+ *
+ * which is `1 - off_high_pct/100`. Every chart read in this repo already
+ * reports "X% off its high". That number is the George-Hwang signal.
+ *
+ * ── Why it matters, and why it is counter-intuitive ──
+ *
+ * Ranking all CRSP stocks by this ratio and buying the top 30% while selling
+ * the bottom 30% produced returns roughly TWICE those of Jegadeesh-Titman
+ * momentum after controlling for size and bid-ask bounce. Excluding January,
+ * 1.23% per month against JT's 1.07%. And unlike JT momentum, **the profits do
+ * not reverse in the long run.**
+ *
+ * The instinct that a stock near its high is "extended" and needs a pullback
+ * is the opposite of what the data says. Their explanation is anchoring:
+ * traders treat the 52-week high as a reference point and are reluctant to bid
+ * through it even when news warrants it, so the information prevails gradually
+ * — which is a continuation.
+ *
+ * ── The part that must be said every time ──
+ *
+ * This is a CROSS-SECTIONAL result. It describes a portfolio long the top 30%
+ * and short the bottom 30% of a thousand-plus names. It is not a statement
+ * about one stock, and src/core/breadth.js exists to do that division.
+ */
+export function fiftyTwoWeekHigh(bars, { lookback = 252 } = {}) {
+  if (!Array.isArray(bars) || bars.length < 30) {
+    return { available: false, note: `Need at least 30 bars, have ${bars?.length ?? 0}.` };
+  }
+  const window = bars.slice(-Math.min(lookback, bars.length));
+  const covers = window.length;
+  const high = Math.max(...window.map((b) => b.high));
+  const low = Math.min(...window.map((b) => b.low));
+  const price = bars[bars.length - 1].close;
+  const ratio = price / high;
+
+  // George & Hwang cut at the top and bottom 30% of the cross-section. Without
+  // a cross-section we cannot assign a percentile, so this reports the raw
+  // ratio and refuses to invent a rank.
+  return {
+    available: true,
+    ratio: round(ratio, 4),
+    pct_of_52w_high: round(ratio * 100, 2),
+    off_high_pct: round((1 - ratio) * 100, 2),
+    high: round(high, 4),
+    low: round(low, 4),
+    price: round(price, 4),
+    bars_covered: covers,
+    ...(covers < lookback
+      ? { warning: `Only ${covers} bars available for a ${lookback}-bar window, so this is a ${covers}-bar high, not a 52-week high. Load more history.` }
+      : {}),
+    at_new_high: price >= high * 0.999,
+    evidence: 'George & Hwang (2004): ranking stocks by this ratio and buying the top 30% while selling the bottom 30% '
+      + 'returned roughly TWICE Jegadeesh-Titman momentum after size and bid-ask controls (1.23% vs 1.07% per month '
+      + 'ex-January), and the profits do NOT reverse long-run.',
+    counter_intuition: 'Nearness to the 52-week high PREDICTS CONTINUATION. The instinct that a stock at its high is '
+      + 'extended and owed a pullback is the opposite of the measured result. The proposed mechanism is anchoring: '
+      + 'traders will not bid through the reference point even when the news justifies it.',
+    breadth_caveat: 'CROSS-SECTIONAL result — a portfolio of 1000+ names ranked against each other. This function reports '
+      + 'the raw ratio and deliberately does NOT assign a percentile, because one chart has no cross-section. '
+      + 'Use breadth.singleNameExpectation("fifty_two_week_high") for what the edge is worth at your position count.',
+  };
+}
+
+/**
  * The naive persistence baseline: predict that tomorrow equals today.
  *
  * Exists to be the thing every other forecast is measured against. Radfar

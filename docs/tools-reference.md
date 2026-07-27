@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **162 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **163 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -360,6 +360,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### deflated_* (1)
 
 - **`deflated_sharpe`** — Correct a Sharpe ratio for how hard you looked for it
+
+### edge_* (1)
+
+- **`edge_breadth`** — What a published cross-sectional edge is actually worth on YOUR number of positions
 
 ---
 

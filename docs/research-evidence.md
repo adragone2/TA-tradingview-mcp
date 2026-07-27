@@ -186,6 +186,89 @@ Items 1–3 added no capability; they made existing output honest, and that was 
 
 But the sharpest result is not any single module — it is that **our own geometric detector is dramatically more selective than the academic definitions it was going to be corrected by.** The plan assumed the literature would raise our standard. Measured, it lowered it. The value taken from LMW is the *pivot method* — smooth to locate, read the real price — not the pattern rules.
 
+---
+
+## Part 4 — Swing strategies, and the problem they all share
+
+Second research pass, 2026-07-27, focused on named swing-trading strategies with published evidence.
+
+### 4.1 The finding that reframes everything above
+
+**Every effect in this document with respectable evidence was measured across many instruments. None of them is evidence about the one chart in front of you.**
+
+- Time-series momentum: **58 futures**, Sharpe 1.28
+- 52-week high: top vs bottom 30% of **all CRSP stocks**
+- Post-earnings drift: **decile portfolios** of hundreds of firms
+- Lo/Mamaysky/Wang patterns: conditional distributions over **350 stocks**
+
+I had been writing this as prose — "the signal transfers, the Sharpe does not." [Grinold's Fundamental Law of Active Management](https://www.sciencedirect.com/science/article/pii/S0927539817300543) states it as arithmetic:
+
+```
+IR = IC × √BR
+```
+
+Information ratio = information coefficient (actual skill) × square root of breadth (number of **independent** bets). Rearranged, it gives the number nobody wants to see. `src/core/breadth.js` now computes it:
+
+| Positions | Expected IR | % of published | Years to prove it isn't luck |
+|---|---|---|---|
+| 1 | 0.168 | 13% | ~136 |
+| 5 | 0.376 | 29% | ~28 |
+| 10 | 0.532 | 42% | ~14 |
+| 20 | 0.752 | 59% | ~7 |
+| 58 | 1.280 | 100% | ~3 |
+
+*Momentum's published Sharpe of 1.28, translated to smaller books.*
+
+And a hypothetical IR of 1.0 mined across 500 stocks implies a skill coefficient of **0.045**. On one position that is an expected IR of 0.045 — **4.5% of the headline, and 1,921 years before it is distinguishable from luck.**
+
+This is not an argument against single-name trading. It is an argument against quoting a cross-sectional study at a single chart without doing the division.
+
+### 4.2 The 52-week high — we were already computing it
+
+[George & Hwang (2004), *Journal of Finance*](https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2004.00695.x). The ranking variable is:
+
+```
+P(t) / max(price over trailing 12 months)
+```
+
+That is **`1 − off_high_pct/100`**. Every chart read in this repo already reports "X% off its high" — that number *is* the George-Hwang signal, and I have been quoting it as neutral context.
+
+Their result: buying the top 30% and selling the bottom 30% returned roughly **twice** Jegadeesh-Titman momentum after controlling for size and bid-ask bounce (**1.23% vs 1.07%** per month ex-January). Crucially, **the profits do not reverse in the long run**, where JT momentum's do.
+
+**The direction is counter-intuitive.** Nearness to the 52-week high predicts *continuation*. The instinct that a stock at its high is "extended" and owed a pullback is the opposite of the measured result. Their proposed mechanism is anchoring: traders treat the 52-week high as a reference point and will not bid through it even when news justifies it, so the information prevails gradually.
+
+Implemented as `fiftyTwoWeekHigh` in `momentum.js`. It reports the raw ratio and **deliberately refuses to assign a percentile** — a percentile needs a cross-section, and one chart has none.
+
+### 4.3 PEAD largely dissolves at the firm level
+
+Post-earnings-announcement drift is one of the most durable anomalies in finance, and it matters here because we check earnings on every symbol. But [Katz, McCubbins & McMullin (2018)](https://jkatz.caltech.edu/documents/28622/peads.pdf) disaggregated it and found the monotonic drift pattern **does not persist at the firm level**:
+
+| Decile | Mean drift | SD | Quarters going the WRONG way |
+|---|---|---|---|
+| Good news | +3.3% | 3.8% | **16.1% drifted negative** |
+| Bad news | −1.9% | 4.5% | **28.0% drifted positive** |
+
+They also found the pattern non-monotonic across SUE percentiles — the *most* negative-surprise portfolio had the *least* negative drift.
+
+So "PEAD says buy after a positive surprise" is a portfolio claim. A single stock after a good print is a draw from a wide distribution, not a prediction. With AAPL reporting in 3 days, that is the honest framing.
+
+### 4.4 Evidence quality, ranked
+
+| Strategy | Evidence | Verdict |
+|---|---|---|
+| Time-series momentum | 58 instruments, 25+ yrs, peer-reviewed | **Strong** — implemented |
+| 52-week high proximity | *Journal of Finance*, all CRSP, no long-run reversal | **Strong** — implemented |
+| PEAD | Durable in aggregate; **dissolves at firm level** | Portfolio-only |
+| Short-term reversal | Jegadeesh/Lehmann; ~2%/month 1934–87 | Real, but **transaction costs erode it**; needs large caps |
+| VCP (Minervini) | Mechanical; no independent audit of the track record | Shape testable — implemented |
+| Stage analysis (Weinstein) | Mechanical; **no peer-reviewed validation found** | Testable, unvalidated |
+| Donchian / Turtle | Book claims (29–57% CAGR) and vendor blogs only | **Weak** — no trial correction, not adopted |
+| Connors RSI(2) | Vendor backtests; 34% max drawdown, no stops, fails in downtrends | **Weak** — not adopted |
+
+The bottom two are instructive: both circulate widely with impressive headline returns and neither has anything resembling a deflated Sharpe or an out-of-sample test behind it. They are exactly what `deflated_sharpe` was built to be sceptical of.
+
+---
+
 ## What I could not verify
 
 - The Nature paper *"Stock market trend prediction via chart analysis: practical method or myth?"* sits behind an auth redirect; I have its title and framing only.
