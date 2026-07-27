@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   sma, ema, rsi, atr, groupSessions, resolveOperand,
   validateStrategy, evaluateCriteria, buildContext,
+  etTimeHHMM, sessionVwap, openingRange, relativeVolume,
 } from '../src/core/strategy.js';
 
 const bar = (t, o, h, l, c, v = 100) => ({ time: t, open: o, high: h, low: l, close: c, volume: v });
@@ -301,5 +302,171 @@ describe('pct_change_today', () => {
     assert.equal(ctx.values.pct_change_today, null);
     const r = evaluateCriteria({ criteria: [{ left: 'pct_change_today', op: '>', right: 3 }] }, ctx);
     assert.equal(r.verdict, 'unknown');
+  });
+});
+
+/* --------------------------- intraday values --------------------------- */
+
+const MIN = 60;
+/** One session of intraday bars starting at a given unix time. */
+const intradaySession = (startUtc, n, { price = 100, vol = 1000, stepMin = 5 } = {}) =>
+  Array.from({ length: n }, (_, i) => ({
+    time: startUtc + i * stepMin * MIN,
+    open: price + i, high: price + i + 1, low: price + i - 1, close: price + i,
+    volume: vol,
+  }));
+
+describe('etTimeHHMM — DST is not optional', () => {
+  it('converts a winter session open to 09:30 ET', () => {
+    // 2026-02-02 14:30 UTC is 09:30 EST.
+    assert.equal(etTimeHHMM(Date.UTC(2026, 1, 2, 14, 30) / 1000), 930);
+  });
+
+  it('converts a summer session open to 09:30 ET, an hour offset later', () => {
+    // 2026-07-01 13:30 UTC is 09:30 EDT — a DIFFERENT UTC time, same ET time.
+    // A hardcoded offset gets exactly one of these two right.
+    assert.equal(etTimeHHMM(Date.UTC(2026, 6, 1, 13, 30) / 1000), 930);
+  });
+
+  it('is monotonic through the day, so >= and <= order correctly', () => {
+    const t = (h, m) => etTimeHHMM(Date.UTC(2026, 6, 1, h + 4, m) / 1000);
+    assert.ok(t(9, 30) < t(10, 0));
+    assert.ok(t(10, 0) < t(15, 30));
+  });
+
+  it('returns null on nonsense rather than a wrong time', () => {
+    assert.equal(etTimeHHMM(NaN), null);
+    assert.equal(etTimeHHMM(null), null);
+  });
+});
+
+describe('sessionVwap', () => {
+  it('equals the typical price when every bar is identical', () => {
+    const bars = Array.from({ length: 6 }, (_, i) => ({ time: i * 300, open: 10, high: 12, low: 8, close: 10, volume: 100 }));
+    assert.ok(Math.abs(sessionVwap(bars) - 10) < 1e-9);   // (12+8+10)/3 = 10
+  });
+
+  it('weights by volume, not by bar count', () => {
+    const bars = [
+      { time: 0, open: 10, high: 10, low: 10, close: 10, volume: 1 },
+      { time: 300, open: 20, high: 20, low: 20, close: 20, volume: 99 },
+    ];
+    const v = sessionVwap(bars);
+    assert.ok(v > 19, `volume-weighted VWAP should sit near 20, got ${v}`);
+  });
+
+  it('returns null for a single bar — a daily bar has no intraday VWAP', () => {
+    assert.equal(sessionVwap([{ time: 0, open: 10, high: 12, low: 8, close: 10, volume: 100 }]), null);
+  });
+
+  it('returns null when there is no volume to weight by', () => {
+    const bars = Array.from({ length: 4 }, (_, i) => ({ time: i * 300, open: 10, high: 12, low: 8, close: 10, volume: 0 }));
+    assert.equal(sessionVwap(bars), null);
+  });
+});
+
+describe('openingRange', () => {
+  const start = Date.UTC(2026, 6, 1, 13, 30) / 1000;
+
+  it('takes the high and low of the first N minutes only', () => {
+    const bars = [
+      { time: start, open: 100, high: 105, low: 99, close: 104, volume: 10 },
+      { time: start + 60, open: 104, high: 108, low: 103, close: 107, volume: 10 },
+      { time: start + 600, open: 107, high: 200, low: 50, close: 120, volume: 10 },
+    ];
+    const or = openingRange(bars, 5);
+    assert.equal(or.high, 108);
+    assert.equal(or.low, 99);
+    assert.equal(or.bars, 2);
+    assert.equal(or.complete, true);
+  });
+
+  it('reports incomplete while the window is still running', () => {
+    const bars = [{ time: start, open: 100, high: 105, low: 99, close: 104, volume: 10 }];
+    assert.equal(openingRange(bars, 5).complete, false);
+  });
+
+  it('returns null for a bad window', () => {
+    assert.equal(openingRange([], 5), null);
+    assert.equal(openingRange([{ time: start, open: 1, high: 1, low: 1, close: 1, volume: 1 }], 0), null);
+  });
+});
+
+describe('relativeVolume — matched to the same point in the session', () => {
+  const day = (d, vol) => intradaySession(Date.UTC(2026, 6, d, 13, 30) / 1000, 6, { vol });
+
+  it('reports 100% when today matches the prior average', () => {
+    const sessions = groupSessions([...day(1, 1000), ...day(2, 1000), ...day(3, 1000)]);
+    assert.ok(Math.abs(relativeVolume(sessions) - 100) < 1e-6);
+  });
+
+  it('reports 200% when today is running at double', () => {
+    const sessions = groupSessions([...day(1, 1000), ...day(2, 1000), ...day(3, 2000)]);
+    assert.ok(Math.abs(relativeVolume(sessions) - 200) < 1e-6);
+  });
+
+  it('does NOT report a half-finished session as low volume', () => {
+    // The naive version compares a partial session against prior FULL sessions
+    // and calls every morning quiet. Time-matching is the point of this.
+    const partial = intradaySession(Date.UTC(2026, 6, 3, 13, 30) / 1000, 3, { vol: 1000 });
+    const sessions = groupSessions([...day(1, 1000), ...day(2, 1000), ...partial]);
+    const rv = relativeVolume(sessions);
+    assert.ok(Math.abs(rv - 100) < 1e-6, `expected about 100 percent, got ${rv}`);
+  });
+
+  it('returns null without prior sessions to compare against', () => {
+    assert.equal(relativeVolume(groupSessions(day(1, 1000))), null);
+  });
+});
+
+describe('intraday operands in context', () => {
+  const intradayBars = [
+    ...intradaySession(Date.UTC(2026, 6, 1, 13, 30) / 1000, 6),
+    ...intradaySession(Date.UTC(2026, 6, 2, 13, 30) / 1000, 6),
+  ];
+
+  it('detects an intraday chart and populates the values', () => {
+    const ctx = buildContext(intradayBars);
+    assert.equal(ctx.intraday, true);
+    assert.ok(Number.isFinite(ctx.values.vwap));
+    assert.equal(ctx.values.time_et, 955);           // 13:30 UTC + 25min = 09:55 EDT
+    assert.equal(ctx.values.minutes_since_open, 25);
+    assert.ok(Number.isFinite(ctx.values.rvol));
+  });
+
+  it('marks a daily chart as not intraday and nulls those values', () => {
+    const ctx = buildContext(seq([10, 11, 12]));
+    assert.equal(ctx.intraday, false);
+    for (const k of ['vwap', 'time_et', 'minutes_since_open', 'rvol']) {
+      assert.equal(ctx.values[k], null, `${k} should be null on a daily chart`);
+    }
+  });
+
+  it('makes an intraday criterion UNKNOWN on a daily chart, and says why', () => {
+    const ctx = buildContext(seq([10, 11, 12]));
+    const r = evaluateCriteria({ criteria: [{ id: 'above_vwap', left: 'price', op: '>', right: 'vwap' }] }, ctx);
+    assert.equal(r.verdict, 'unknown');
+    assert.match(r.criteria[0].reason, /intraday/i);
+  });
+
+  it('evaluates a time window correctly', () => {
+    const ctx = buildContext(intradayBars);
+    const after = evaluateCriteria({ criteria: [{ left: 'time_et', op: '>=', right: 935 }] }, ctx);
+    assert.equal(after.verdict, 'pass');
+    const before = evaluateCriteria({ criteria: [{ left: 'time_et', op: '<', right: 935 }] }, ctx);
+    assert.equal(before.verdict, 'fail');
+  });
+
+  it('resolves the opening range as a function operand', () => {
+    const ctx = buildContext(intradayBars);
+    const r = resolveOperand('opening_range_high(10)', ctx);
+    assert.equal(r.ok, true);
+    assert.ok(Number.isFinite(r.value));
+  });
+
+  it('refuses the opening range on a daily chart with a reason', () => {
+    const r = resolveOperand('opening_range_high(5)', buildContext(seq([10, 11, 12])));
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /intraday/i);
   });
 });

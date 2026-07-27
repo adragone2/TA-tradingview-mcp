@@ -103,9 +103,109 @@ export function groupSessions(bars) {
   })).sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
+/* --------------------------- intraday values ------------------------- */
+
+/**
+ * Wall-clock time in US market time, as HHMM (935, 1200, 1530).
+ *
+ * Every intraday setup is specified in ET, and the bars carry UTC. The offset
+ * is NOT constant — measured on this chart, the same session sat 52,200s from
+ * midnight in February and 48,600s in May, which is the DST shift. So the
+ * conversion goes through the IANA zone rather than a hardcoded offset, and
+ * returns null if the runtime has no timezone data, which makes any criterion
+ * using it UNKNOWN instead of silently an hour out.
+ *
+ * HHMM is monotonic within a day, so >= and <= order correctly. It is NOT
+ * minutes — do not do arithmetic on it; use minutes_since_open for that.
+ */
+export function etTimeHHMM(unixSeconds) {
+  if (!Number.isFinite(unixSeconds)) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date(unixSeconds * 1000));
+    const h = Number(parts.find((p) => p.type === 'hour')?.value);
+    const m = Number(parts.find((p) => p.type === 'minute')?.value);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return (h % 24) * 100 + m;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Session-anchored VWAP: cumulative (typical price x volume) / cumulative
+ * volume, reset every session.
+ *
+ * Returns null on a chart whose bars ARE sessions — a daily chart has one bar
+ * per session, so "VWAP so far today" is just that bar's typical price, which
+ * looks like a number and means nothing. Null makes the criterion UNKNOWN,
+ * which is the honest answer.
+ */
+export function sessionVwap(sessionBars) {
+  if (!Array.isArray(sessionBars) || sessionBars.length < 2) return null;
+  let pv = 0, vol = 0;
+  for (const b of sessionBars) {
+    const v = Number(b.volume);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    pv += ((b.high + b.low + b.close) / 3) * v;
+    vol += v;
+  }
+  return vol > 0 ? pv / vol : null;
+}
+
+/** High/low of the first `minutes` of a session. */
+export function openingRange(sessionBars, minutes) {
+  if (!Array.isArray(sessionBars) || !sessionBars.length || !(minutes > 0)) return null;
+  const open = sessionBars[0].time;
+  const window = sessionBars.filter((b) => b.time < open + minutes * 60);
+  if (!window.length) return null;
+  // The opening range is not established until the window has actually elapsed.
+  const complete = sessionBars[sessionBars.length - 1].time >= open + minutes * 60;
+  return {
+    high: Math.max(...window.map((b) => b.high)),
+    low: Math.min(...window.map((b) => b.low)),
+    bars: window.length,
+    complete,
+  };
+}
+
+/**
+ * Relative volume: this session's volume so far against the average volume
+ * that prior sessions had accumulated BY THE SAME POINT in their session.
+ *
+ * The time-matched comparison is the whole point. Comparing a half-finished
+ * session against prior full sessions would report every morning as low
+ * volume, which is the naive version of this and is simply wrong.
+ */
+export function relativeVolume(sessions, lookback = 20) {
+  if (!Array.isArray(sessions) || sessions.length < 2) return null;
+  const today = sessions[sessions.length - 1];
+  if (!today.bars.length) return null;
+
+  const elapsed = today.bars[today.bars.length - 1].time - today.bars[0].time;
+  const soFar = today.bars.reduce((s, b) => s + (Number(b.volume) || 0), 0);
+  if (!(soFar > 0)) return null;
+
+  const priors = sessions.slice(Math.max(0, sessions.length - 1 - lookback), sessions.length - 1);
+  if (!priors.length) return null;
+
+  const matched = [];
+  for (const s of priors) {
+    if (!s.bars.length) continue;
+    const open = s.bars[0].time;
+    const v = s.bars.filter((b) => b.time - open <= elapsed).reduce((sum, b) => sum + (Number(b.volume) || 0), 0);
+    if (v > 0) matched.push(v);
+  }
+  if (!matched.length) return null;
+
+  const avg = matched.reduce((a, b) => a + b, 0) / matched.length;
+  return avg > 0 ? (soFar / avg) * 100 : null;
+}
+
 /* ------------------------------ operands ---------------------------- */
 
-const FUNC = /^(sma|ema|rsi|atr)\((\d+)\)$/i;
+const FUNC = /^(sma|ema|rsi|atr|opening_range_high|opening_range_low)\((\d+)\)$/i;
 // A trailing "<operator> <number>", e.g. "ema(8) * 0.98". Anchored on a numeric
 // tail, so "sma(200)" — which ends in a paren — is never mistaken for one.
 const ARITH = /^(.+?)\s*([*/+-])\s*(-?\d+(?:\.\d+)?)$/;
@@ -116,6 +216,9 @@ export const OPERANDS = [
   'prev_day_open', 'prev_day_high', 'prev_day_low', 'prev_day_close',
   'high_of_day', 'low_of_day', 'session_volume', 'pct_change_today',
   'sma(N)', 'ema(N)', 'rsi(N)', 'atr(N)',
+  // Intraday only — each is null (and so UNKNOWN) on a chart whose bars are sessions.
+  'vwap', 'time_et', 'minutes_since_open', 'rvol',
+  'opening_range_high(MINUTES)', 'opening_range_low(MINUTES)',
   '<any of the above> <* / + -> <number>, e.g. "ema(8) * 0.98"',
 ];
 
@@ -159,6 +262,19 @@ export function resolveOperand(token, ctx) {
     const name = fn[1].toLowerCase(), len = Number(fn[2]);
     if (len < 1) return { value: null, ok: false, reason: `${name} needs a positive length` };
     const closes = ctx.closes || [];
+
+    if (name === 'opening_range_high' || name === 'opening_range_low') {
+      if (!ctx.intraday) {
+        return { value: null, ok: false, reason: 'opening range needs intraday bars — this chart has one bar per session' };
+      }
+      const or = openingRange(ctx.today_bars || [], len);
+      if (!or) return { value: null, ok: false, reason: `no bars within the first ${len} minutes of the session` };
+      if (!or.complete) {
+        return { value: null, ok: false, reason: `the first ${len} minutes of the session have not elapsed yet — the opening range is not set` };
+      }
+      return { value: name === 'opening_range_high' ? or.high : or.low, ok: true };
+    }
+
     let v = null;
     if (name === 'sma') v = sma(closes, len);
     else if (name === 'ema') v = ema(closes, len);
@@ -173,7 +289,15 @@ export function resolveOperand(token, ctx) {
   const key = raw.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(ctx.values || {}, key)) {
     const v = ctx.values[key];
-    if (v == null || !Number.isFinite(v)) return { value: null, ok: false, reason: `${key} is not available on this chart` };
+    if (v == null || !Number.isFinite(v)) {
+      // Say WHY, so "unknown" is diagnosable rather than mysterious.
+      if (INTRADAY_ONLY.has(key) && !ctx.intraday) {
+        return { value: null, ok: false, reason: `${key} needs intraday bars — this chart has one bar per session` };
+      }
+      if (key === 'rvol') return { value: null, ok: false, reason: 'rvol needs prior sessions with volume to compare against' };
+      if (key === 'vwap') return { value: null, ok: false, reason: 'vwap needs intraday bars carrying volume' };
+      return { value: null, ok: false, reason: `${key} is not available on this chart` };
+    }
     return { value: v, ok: true };
   }
 
@@ -275,17 +399,34 @@ export function evaluateCriteria(spec, ctx) {
 /* --------------------------- chart-facing --------------------------- */
 
 /** Build the value context for a symbol from its bars. */
-export function buildContext(bars) {
+export const INTRADAY_ONLY = new Set(['vwap', 'time_et', 'minutes_since_open', 'rvol']);
+
+export function buildContext(bars, { rvol_lookback = 20 } = {}) {
   const closes = bars.map((b) => b.close);
   const sessions = groupSessions(bars);
   const today = sessions[sessions.length - 1] || null;
   const prev = sessions.length > 1 ? sessions[sessions.length - 2] : null;
   const last = bars[bars.length - 1];
 
+  // "Intraday" means the chart has more than one bar inside a session. On a
+  // daily chart every session is a single bar, and VWAP, time-of-day and RVOL
+  // are all undefined rather than merely awkward.
+  const maxBarsInSession = sessions.reduce((m, s) => Math.max(m, s.bars.length), 0);
+  const intraday = maxBarsInSession > 1;
+  const todayBars = today?.bars || [];
+
   return {
     bars, closes,
     sessions: sessions.length,
+    intraday,
+    today_bars: todayBars,
     values: {
+      vwap: intraday ? sessionVwap(todayBars) : null,
+      time_et: intraday ? etTimeHHMM(last?.time) : null,
+      minutes_since_open: intraday && todayBars.length
+        ? Math.round((last.time - todayBars[0].time) / 60)
+        : null,
+      rvol: intraday ? relativeVolume(sessions, rvol_lookback) : null,
       price: last?.close ?? null,
       open: last?.open ?? null,
       high: last?.high ?? null,
@@ -323,8 +464,10 @@ export async function checkStrategy({ strategy, count = 400 } = {}) {
     direction: strategy.direction || null,
     bars_analyzed: bars.length,
     sessions_available: ctx.sessions,
+    intraday: ctx.intraday,
     ...result,
     values: Object.fromEntries(Object.entries(ctx.values).map(([k, v]) => [k, round(v)])),
+    ...(ctx.intraday ? {} : { intraday_note: 'This chart has one bar per session, so vwap, time_et, minutes_since_open, rvol and opening_range_* are unavailable — any criterion using them is UNKNOWN, not failed. Switch to an intraday timeframe to evaluate them.' }),
     session_basis: 'Sessions are grouped by UTC date. Sound for US equities; NOT sound for futures or FX whose session crosses midnight UTC — there "previous day" means previous UTC date.',
     note: 'Criteria are evaluated from the bars, not from indicators on the chart, so the result does not depend on which studies happen to be loaded.',
   };
