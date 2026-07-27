@@ -26,6 +26,7 @@
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
 | [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
 | [docs/research-evidence.md](docs/research-evidence.md) | What the academic evidence supports, what didn't replicate, and what to build next |
+| [docs/literature.md](docs/literature.md) | 25 papers, paper by paper — including the ones that contradict our own modules |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
 | `skills/` | Step-by-step procedures, invoked by name |
 
@@ -86,6 +87,10 @@ Each of these exists because it has already gone wrong here.
 **A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.
 
 **Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
+
+**A stop-loss is a bet on persistence, not free insurance.** Kaminski & Lo prove the stopping premium is ALWAYS NEGATIVE under a random walk — a stop in a no-persistence market lowers expected return without benefit. It turns positive under momentum, proportional to persistence. Run `stopping_premium` before claiming a stop helps; it may still be right as a solvency constraint, but say which reason applies.
+
+**Candlesticks failed two independent academic tests.** Marshall/Young/Rose (2006, DJIA, random-OHLC bootstrap) and Marshall/Young/Cahan (2008, Tokyo 1975-2004) both found no value — in any sub-period, bull or bear. Report a candle as a description of what the bar did, never as a signal.
 
 **Not trade advice.** These tools render the user's own criteria and TA's own output. R:R and position size are arithmetic on numbers they supplied.
 

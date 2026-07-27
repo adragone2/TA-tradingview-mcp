@@ -221,6 +221,64 @@ export function fiftyTwoWeekHigh(bars, { lookback = 252 } = {}) {
 }
 
 /**
+ * Moving Average Distance, after Avramov, Kaplanski & Subrahmanyam (2021),
+ * Review of Financial Economics 39(2), 127-145.
+ *
+ * MAD is the ratio of a short-run moving average to a long-run one:
+ *
+ *     MAD = SMA(short) / SMA(long)
+ *
+ * Their result is unusually strong for a technical signal. Annualized
+ * value-weighted alphas from the hedge portfolios are around **9%**, the
+ * predictability goes **beyond momentum, 52-week highs, profitability and
+ * other prominent anomalies**, and — rare in this literature — the payoffs
+ * **survive reasonable trading costs faced by institutions**. The effect is
+ * stronger on the long side than the short.
+ *
+ * This is the same quantity a moving-average ribbon displays, expressed as a
+ * number rather than a colour. Han, Zhou & Zhu (2016) build a related "trend
+ * factor" by combining short, intermediate and long MA signals, and report
+ * more than DOUBLE the Sharpe of short-term reversal, momentum and long-term
+ * reversal used separately.
+ *
+ * The usual caveat applies and is not decoration: this is a CROSS-SECTIONAL
+ * hedge portfolio. See breadth.js.
+ */
+export function movingAverageDistance(bars, { short_window = 21, long_window = 200 } = {}) {
+  if (!Array.isArray(bars) || bars.length < long_window) {
+    return {
+      available: false,
+      note: `MAD needs ${long_window} bars for the long average; only ${bars?.length ?? 0} loaded. `
+        + 'This is missing data, not a neutral reading.',
+    };
+  }
+  const closes = bars.map((b) => b.close);
+  const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const shortMa = avg(closes.slice(-short_window));
+  const longMa = avg(closes.slice(-long_window));
+  if (!(longMa > 0)) return { available: false, note: 'Long moving average is not positive.' };
+
+  const mad = shortMa / longMa;
+  return {
+    available: true,
+    mad: round(mad, 4),
+    mad_pct: round((mad - 1) * 100, 2),
+    short_ma: round(shortMa, 4),
+    long_ma: round(longMa, 4),
+    short_window,
+    long_window,
+    direction: mad > 1 ? 'short above long' : mad < 1 ? 'short below long' : 'flat',
+    evidence: 'Avramov, Kaplanski & Subrahmanyam (2021): annualized value-weighted alphas around 9% from MAD hedge '
+      + 'portfolios, with predictability BEYOND momentum, 52-week highs and profitability, and payoffs that survive '
+      + 'reasonable institutional trading costs. Stronger on the long side than the short.',
+    related: 'Han, Zhou & Zhu (2016) combine short, intermediate and long MA signals into a trend factor reporting more '
+      + 'than double the Sharpe of short-term reversal, momentum and long-term reversal taken separately.',
+    breadth_caveat: 'CROSS-SECTIONAL hedge-portfolio result. The 9% alpha belongs to a ranked long-short book, not to '
+      + 'one stock. Use edge_breadth before quoting it at a single chart.',
+  };
+}
+
+/**
  * The naive persistence baseline: predict that tomorrow equals today.
  *
  * Exists to be the thing every other forecast is measured against. Radfar

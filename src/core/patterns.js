@@ -43,7 +43,59 @@ const pct = (a, b) => (b === 0 ? Infinity : Math.abs(a - b) / Math.abs(b) * 100)
  * reliably marks a turn that then goes nowhere much.
  *
  * Source: thepatternsite.com (Bulkowski), accessed July 2026.
+ *
+ * ── The academic verdict, which is worse ──
+ *
+ * Bulkowski's figures describe how often a shape is FOLLOWED by a move. That
+ * is not the same question as whether trading the shape makes money against a
+ * proper null, and two peer-reviewed studies have asked the second question
+ * and answered no. See CANDLE_ACADEMIC_EVIDENCE below. Both are reported
+ * alongside every candlestick detection, because a 60% reliability figure
+ * quoted without them reads as an edge that two independent tests could not
+ * find.
  */
+
+/**
+ * What happens when candlesticks are tested against a proper null.
+ *
+ * Marshall, Young & Rose (2006), Journal of Banking & Finance 30, 2303-2323,
+ * tested candlestick strategies on DJIA stocks using a bootstrap that
+ * generates random OPEN, HIGH, LOW and CLOSE series — the right null for a
+ * pattern defined by the relationship between those four prices, and an
+ * advance on earlier methods that could only randomise closes. They found
+ * candlestick trading strategies do not have value for DJIA stocks.
+ *
+ * Marshall, Young & Cahan (2008), Review of Quantitative Finance and
+ * Accounting 31, 191-207, repeated it in the market that invented the
+ * technique: the largest 100 stocks on the Tokyo Stock Exchange, 1975-2004.
+ * No evidence candlestick strategies add value **in the entire 30-year period,
+ * in any of three 10-year sub-periods, or in bull or bear markets.**
+ *
+ * This is the most direct academic test of anything in this file, it was run
+ * twice on two continents, and it came back negative both times. Candlestick
+ * detections here should be treated as descriptions of what a bar did, not as
+ * signals.
+ */
+export const CANDLE_ACADEMIC_EVIDENCE = {
+  us: {
+    source: 'Marshall, Young & Rose (2006), Journal of Banking & Finance 30, 2303-2323',
+    market: 'DJIA stocks',
+    method: 'Bootstrap generating random open, high, low AND close prices — the correct null for OHLC-defined patterns',
+    result: 'Candlestick trading strategies do not have value for DJIA stocks.',
+  },
+  japan: {
+    source: 'Marshall, Young & Cahan (2008), Review of Quantitative Finance and Accounting 31, 191-207',
+    market: 'Largest 100 stocks on the Tokyo Stock Exchange, 1975-2004',
+    result: 'No evidence candlestick strategies add value in the whole 30-year period, in any 10-year sub-period, '
+      + 'or in bull or bear markets.',
+    why_it_matters: 'Run in the market where the technique originated, over 30 years, split every way that might have '
+      + 'rescued it.',
+  },
+  how_to_read_our_stats: 'Bulkowski measures how often a shape is FOLLOWED by a move. These studies test whether trading '
+    + 'the shape beats a random-OHLC null. Those are different questions, and the second one answers no. Report a '
+    + 'candlestick as a description of what the bar did — momentum, reaction or indecision — not as a signal.',
+};
+
 export const CANDLE_STATS = {
   hammer:            { acts_as: 'bullish reversal',     reliability_pct: 60, rank: 65 },
   hanging_man:       { acts_as: 'bullish continuation', reliability_pct: 59, rank: 87 },
@@ -1446,6 +1498,7 @@ export function detectPatterns(bars, {
   return {
     candlestick: cs,
     structural: st,
+    ...(cs.length ? { candlestick_academic_evidence: CANDLE_ACADEMIC_EVIDENCE } : {}),
     noise_baseline: NOISE_BASELINE,
     ...(noise_check.length ? { noise_check } : {}),
     swings_detected: swings.length,
