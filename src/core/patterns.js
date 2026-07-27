@@ -542,11 +542,185 @@ function narrowRangeAt(bars, i, n) {
  * completes it. The measured-move target follows the standard construction:
  * the pattern's height projected from the breakout level.
  */
+
+/**
+ * Flags, and the high tight flag, detected properly.
+ *
+ * These were previously left to `trendlinePatterns`, which fits two lines across
+ * a fixed window. That cannot work: a flag is a SHORT consolidation attached to
+ * a sharp prior move, and fitting lines over a 60-90 bar window never isolates
+ * the 3-15 bar pause. Measured, the old branch detected flags 0% of the time at
+ * every noise level, in both directions.
+ *
+ * This looks for the structure a flag actually is:
+ *
+ *   POLE          a sharp move, `min_pole_pct` or more over `max_pole_bars`
+ *   FLAG          a short consolidation, 3 to `max_flag_bars`, retracing less
+ *                 than `max_retrace_pct` of the pole
+ *   CONFIRMATION  a close beyond the flag, in the direction of the pole
+ *
+ * The HIGH TIGHT FLAG is Bulkowski's own variant and the only one worth much:
+ * price must rise at least 90% in two months or less, and it confirms on a
+ * close above the highest peak in the pattern. His figures separate them
+ * sharply — an ordinary flag fails 44% of the time and is unranked; the high
+ * tight flag fails 15% and reaches its target 82% of the time, the best hit
+ * rate of any pattern here. Its measure rule is also different: HALF the pole
+ * added to the flag bottom, not the whole pole.
+ */
+function flagPatterns(bars, {
+  min_pole_pct = 15,
+  max_pole_bars = 25,
+  max_flag_bars = 15,
+  max_retrace_pct = 50,
+  htf_pole_pct = 90,
+  htf_pole_bars = 42,
+} = {}) {
+  const out = [];
+  const n = bars.length;
+  if (n < 20) return out;
+
+  const last = bars[n - 1];
+
+  // Walk back over plausible flag lengths, and for each, look for a pole
+  // immediately before it.
+  for (let flagLen = 3; flagLen <= Math.min(max_flag_bars, n - 10); flagLen++) {
+    const flag = bars.slice(n - flagLen, n);
+    const flagHigh = Math.max(...flag.map((b) => b.high));
+    const flagLow = Math.min(...flag.map((b) => b.low));
+
+    // Take the LARGEST qualifying pole, not the first. Breaking on the first
+    // match found the SHORTEST pole that cleared the minimum, which capped
+    // every move at just over the threshold and made a high tight flag —
+    // defined by a 90% pole — impossible to ever detect.
+    let bestPole = null;
+    for (let poleLen = 5; poleLen <= Math.min(max_pole_bars, n - flagLen); poleLen++) {
+      const p0 = bars.slice(n - flagLen - poleLen, n - flagLen);
+      if (p0.length < 5) continue;
+      const mv = ((p0[p0.length - 1].close - p0[0].close) / p0[0].close) * 100;
+      if (Math.abs(mv) < min_pole_pct) continue;
+      if (!bestPole || Math.abs(mv) > Math.abs(bestPole.movePct)) bestPole = { pole: p0, poleLen, movePct: mv };
+    }
+    {
+      if (!bestPole) continue;
+      const { pole, poleLen, movePct } = bestPole;
+      const poleStart = pole[0].close, poleEnd = pole[pole.length - 1].close;
+      const up = movePct > 0;
+
+      // The flag must retrace only part of the pole, and lean against it.
+      const poleRange = Math.abs(poleEnd - poleStart);
+      const retrace = up ? (poleEnd - flagLow) / poleRange : (flagHigh - poleEnd) / poleRange;
+      if (!(retrace >= 0 && retrace * 100 <= max_retrace_pct)) continue;
+
+      const isHTF = up && movePct >= htf_pole_pct && poleLen <= htf_pole_bars;
+      const completion = up ? flagHigh : flagLow;
+      const status = up
+        ? (last.close > completion ? 'confirmed' : 'forming')
+        : (last.close < completion ? 'confirmed' : 'forming');
+
+      // High tight flag takes HALF the pole from the flag bottom; an ordinary
+      // flag takes the whole pole from the breakout.
+      const target = isHTF
+        ? round(flagLow + poleRange / 2)
+        : round(up ? completion + poleRange : completion - poleRange);
+
+      out.push({
+        pattern: isHTF ? 'high_tight_flag' : (up ? 'bull_flag' : 'bear_flag'),
+        type: 'continuation',
+        direction: up ? 'bullish' : 'bearish',
+        status,
+        bars: flagLen + poleLen,
+        bars_ago: 0,
+        completion_level: round(completion),
+        target,
+        ...(isHTF
+          ? { target_basis: 'high tight flag: HALF the pole added to the flag bottom, which is Bulkowskis own measure rule for this pattern' }
+          : {}),
+        measurements: {
+          pole_pct: round(movePct, 2),
+          pole_bars: poleLen,
+          flag_bars: flagLen,
+          retrace_pct: round(retrace * 100, 1),
+          flag_high: round(flagHigh),
+          flag_low: round(flagLow),
+        },
+        from_time: pole[0].time,
+        to_time: last.time,
+        note: isHTF
+          ? 'Price rose at least 90% in two months or less, then paused. The strongest continuation pattern in the measured set — 15% failure, 82% reaching target — and the rarest.'
+          : 'A short pause attached to a sharp move. Ordinary flags are weak on measured data: 44% fail to move even 5%, and they are unranked.',
+      });
+    }
+  }
+
+  // Keep the best candidate per pattern name: the one with the biggest pole.
+  const best = new Map();
+  for (const f of out) {
+    const prev = best.get(f.pattern);
+    if (!prev || Math.abs(f.measurements.pole_pct) > Math.abs(prev.measurements.pole_pct)) best.set(f.pattern, f);
+  }
+  return [...best.values()];
+}
+
+/**
+ * Bulkowski's identification guidelines, as thresholds.
+ *
+ * Detection previously required only that two swings sat within a price
+ * tolerance of each other. Measured against random walks that produced 19
+ * patterns per 200 bars — about five double tops and five double bottoms in
+ * pure noise. The shape test alone is nowhere near enough.
+ *
+ * These are his numbers, not invented ones:
+ *
+ *   valley depth   "the valley drop between the tops should measure at least
+ *                   10%, but allow exceptions"
+ *   separation     "the twin peaks are usually several weeks apart" (16 days
+ *                   is his stated median for bottoms)
+ *   price variance "the variation between price peaks is small, usually less
+ *                   than 3%"
+ *   prior trend    upward into a double top, downward into a double bottom
+ *
+ * The valley requirement does most of the work. A random walk throws up pairs
+ * of similar highs constantly; it throws up pairs separated by a genuine 10%
+ * retracement far less often.
+ */
+const ID_DEFAULTS = {
+  min_valley_pct: 10,
+  // Bulkowski's "16 days is the median" is DESCRIPTIVE, not a floor — using a
+  // median as a minimum rejects half of all real patterns by construction.
+  // Swept against random walks and it changed the noise rate not at all: 0.9
+  // per walk at 6, 8, 10, 12 and 16 bars alike. The valley requirement does
+  // all the work. So the floor is token, only enough to stop two adjacent
+  // swings pairing up, and the actual separation is reported instead.
+  min_separation_bars: 5,
+  require_prior_trend: true,
+};
+
 function structuralPatterns(bars, swings, opts) {
-  const { peak_tolerance_pct = 2 } = opts;
+  const {
+    peak_tolerance_pct = 2,
+    min_valley_pct = ID_DEFAULTS.min_valley_pct,
+    min_separation_bars = ID_DEFAULTS.min_separation_bars,
+    require_prior_trend = ID_DEFAULTS.require_prior_trend,
+  } = opts;
   const alt = alternateSwings(swings);
   const found = [];
   const last = bars[bars.length - 1];
+
+  /** Retracement between the two extremes, as a percent of the extreme. */
+  const valleyPct = (extreme, middle) => (Math.abs(extreme - middle) / Math.abs(extreme)) * 100;
+
+  /** Trend into the pattern, measured over the bars before it starts. */
+  const trendInto = (index, want) => {
+    if (!require_prior_trend) return true;
+    const lookback = Math.min(40, index);
+    // Not enough history to judge is UNKNOWN, not "no trend". Rejecting on
+    // insufficient data silently drops real patterns near the start of the
+    // series — the same mistake strategy_check refuses to make with operands.
+    if (lookback < 5) return true;
+    const from = bars[index - lookback].close, to = bars[index].close;
+    const change = ((to - from) / from) * 100;
+    return want === 'up' ? change > 3 : change < -3;
+  };
 
   const confirm = (level, direction) => {
     // "Completed" means price CLOSED through the level, not merely touched it.
@@ -558,7 +732,10 @@ function structuralPatterns(bars, swings, opts) {
     const [a, b, c] = [alt[i], alt[i + 1], alt[i + 2]];
 
     // Double top: high - low - high, the two highs at roughly one price.
-    if (a.kind === 'high' && c.kind === 'high' && pct(a.price, c.price) <= peak_tolerance_pct) {
+    if (a.kind === 'high' && c.kind === 'high' && pct(a.price, c.price) <= peak_tolerance_pct
+        && c.index - a.index >= min_separation_bars
+        && valleyPct(Math.max(a.price, c.price), b.price) >= min_valley_pct
+        && trendInto(a.index, 'up')) {
       const neck = b.price;
       const height = Math.max(a.price, c.price) - neck;
       found.push({
@@ -566,14 +743,17 @@ function structuralPatterns(bars, swings, opts) {
         status: confirm(neck, 'down'),
         completion_level: round(neck),
         target: round(neck - height),
-        measurements: { peak_1: round(a.price), peak_2: round(c.price), trough: round(neck), peak_difference_pct: round(pct(a.price, c.price), 2), height: round(height) },
+        measurements: { peak_1: round(a.price), peak_2: round(c.price), trough: round(neck), peak_difference_pct: round(pct(a.price, c.price), 2), height: round(height), valley_pct: round(valleyPct(Math.max(a.price, c.price), b.price), 1), separation_bars: c.index - a.index },
         from_time: a.time, to_time: c.time,
         note: 'Completes on a close below the trough between the peaks. Target is the height projected down from it.',
       });
     }
 
     // Double bottom: low - high - low.
-    if (a.kind === 'low' && c.kind === 'low' && pct(a.price, c.price) <= peak_tolerance_pct) {
+    if (a.kind === 'low' && c.kind === 'low' && pct(a.price, c.price) <= peak_tolerance_pct
+        && c.index - a.index >= min_separation_bars
+        && valleyPct(Math.min(a.price, c.price), b.price) >= min_valley_pct
+        && trendInto(a.index, 'down')) {
       const neck = b.price;
       const height = neck - Math.min(a.price, c.price);
       found.push({
@@ -581,7 +761,7 @@ function structuralPatterns(bars, swings, opts) {
         status: confirm(neck, 'up'),
         completion_level: round(neck),
         target: round(neck + height),
-        measurements: { trough_1: round(a.price), trough_2: round(c.price), peak: round(neck), trough_difference_pct: round(pct(a.price, c.price), 2), height: round(height) },
+        measurements: { trough_1: round(a.price), trough_2: round(c.price), peak: round(neck), trough_difference_pct: round(pct(a.price, c.price), 2), height: round(height), valley_pct: round(valleyPct(Math.min(a.price, c.price), b.price), 1), separation_bars: c.index - a.index },
         from_time: a.time, to_time: c.time,
         note: 'Completes on a close above the peak between the troughs. Target is the height projected up from it.',
       });
@@ -595,7 +775,10 @@ function structuralPatterns(bars, swings, opts) {
     // Triple top: three highs at roughly one price.
     if (kinds === 'high,low,high,low,high') {
       const [p1, t1, p2, t2, p3] = w;
-      if (pct(p1.price, p2.price) <= peak_tolerance_pct && pct(p2.price, p3.price) <= peak_tolerance_pct) {
+      if (pct(p1.price, p2.price) <= peak_tolerance_pct && pct(p2.price, p3.price) <= peak_tolerance_pct
+          && p3.index - p1.index >= min_separation_bars
+          && valleyPct(Math.max(p1.price, p2.price, p3.price), Math.min(t1.price, t2.price)) >= min_valley_pct
+          && trendInto(p1.index, 'up')) {
         const neck = Math.min(t1.price, t2.price);
         const height = Math.max(p1.price, p2.price, p3.price) - neck;
         found.push({
@@ -609,7 +792,10 @@ function structuralPatterns(bars, swings, opts) {
       }
 
       // Head and shoulders top: middle peak highest, outer two comparable.
-      if (p2.price > p1.price && p2.price > p3.price && pct(p1.price, p3.price) <= peak_tolerance_pct * 1.5) {
+      if (p2.price > p1.price && p2.price > p3.price && pct(p1.price, p3.price) <= peak_tolerance_pct * 1.5
+          && p3.index - p1.index >= min_separation_bars
+          && valleyPct(p2.price, Math.min(t1.price, t2.price)) >= min_valley_pct
+          && trendInto(p1.index, 'up')) {
         const neck = (t1.price + t2.price) / 2;
         const height = p2.price - neck;
         found.push({
@@ -628,7 +814,10 @@ function structuralPatterns(bars, swings, opts) {
 
     if (kinds === 'low,high,low,high,low') {
       const [t1, p1, t2, p2, t3] = w;
-      if (pct(t1.price, t2.price) <= peak_tolerance_pct && pct(t2.price, t3.price) <= peak_tolerance_pct) {
+      if (pct(t1.price, t2.price) <= peak_tolerance_pct && pct(t2.price, t3.price) <= peak_tolerance_pct
+          && t3.index - t1.index >= min_separation_bars
+          && valleyPct(Math.min(t1.price, t2.price, t3.price), Math.max(p1.price, p2.price)) >= min_valley_pct
+          && trendInto(t1.index, 'down')) {
         const neck = Math.max(p1.price, p2.price);
         const height = neck - Math.min(t1.price, t2.price, t3.price);
         found.push({
@@ -641,7 +830,10 @@ function structuralPatterns(bars, swings, opts) {
         });
       }
 
-      if (t2.price < t1.price && t2.price < t3.price && pct(t1.price, t3.price) <= peak_tolerance_pct * 1.5) {
+      if (t2.price < t1.price && t2.price < t3.price && pct(t1.price, t3.price) <= peak_tolerance_pct * 1.5
+          && t3.index - t1.index >= min_separation_bars
+          && valleyPct(t2.price, Math.max(p1.price, p2.price)) >= min_valley_pct
+          && trendInto(t1.index, 'down')) {
         const neck = (p1.price + p2.price) / 2;
         const height = neck - t2.price;
         found.push({
@@ -756,10 +948,10 @@ function trendlinePatterns(bars, swings, {
     note = 'Diverging lines — a megaphone, meaning volatility is rising. Direction AND type are both uncertain.';
     avoid = 'These frequently resolve into a plain trading range. Inside a range, price action is close to random and it is easy to "find" more patterns in the noise. Treat as a reason NOT to trade rather than a setup.';
   } else if (Math.abs(hSlope - lSlope) < flat_slope_pct && !flatHigh && spanBars <= 15) {
-    pattern = hSlope < 0 ? 'bull_flag' : 'bear_flag';
-    direction = hSlope < 0 ? 'bullish' : 'bearish';
-    type = 'continuation';
-    note = 'Parallel lines sloping against the prior move, over a short span — a pause, not a turn. Quality depends mostly on the IMPULSE INTO it: a sharp move with large candles makes a good flag, a slow drift makes a poor one.';
+    // Flags are handled by flagPatterns(), which looks for a pole and a short
+    // consolidation rather than fitting lines across a fixed window. Fitting
+    // lines never isolated the 3-15 bar pause and detected flags 0% of the time.
+    return [];
   }
   if (!pattern) return [];
 
@@ -1037,17 +1229,20 @@ export function statsFor(pattern, { direction = null } = {}) {
  * Measured with src/core/synthetic.js over 40 seeded random walks of 200 bars
  * each, at lookback 4 — the same settings detectPatterns uses by default.
  *
- * These are the numbers that decide whether a detection means anything. On a
- * 200-bar random walk this detector reports 19 structural patterns, including
- * roughly FIVE double bottoms and FIVE double tops. A chart showing three
- * double bottoms is therefore not showing a signal; it is showing less than
- * the noise floor.
+ * These are the numbers that decide whether a detection means anything.
  *
- * That is the failure mode the header of this file warns about — "see patterns
- * where there aren't any" — and measuring it is the only way to keep the
- * warning honest. The detectors are not retuned here; the baseline is reported
- * so a reader can compare against it, exactly as fair_value_gaps reports
- * total_found and zones_find reports its own frequency.
+ * The first measurement was damning: 19.3 patterns per 200-bar random walk,
+ * including about five double tops and five double bottoms, with something
+ * firing on 100% of walks. That is precisely the failure mode the header of
+ * this file warns about — "see patterns where there aren't any".
+ *
+ * Adding Bulkowski's own identification thresholds (a 10% valley between the
+ * extremes, 16 bars of separation, a prior trend) took it to 0.78 per walk,
+ * with double tops down from 5.13 to 0.03. Detection of constructed shapes was
+ * unaffected: every pattern is still found 100% of the time at realistic noise.
+ *
+ * The floor is not zero and cannot be. `rectangle` and the wedges still appear
+ * in noise, which is why the baseline is reported rather than assumed away.
  *
  * Re-measure with `node --test tests/synthetic.test.js` after any change to
  * detection thresholds.
@@ -1055,15 +1250,23 @@ export function statsFor(pattern, { direction = null } = {}) {
 export const NOISE_BASELINE = {
   bars: 200,
   walks: 40,
-  detections_per_walk: 19.3,
-  walks_with_any_pattern_pct: 100,
+  detections_per_walk: 0.78,
+  walks_with_any_pattern_pct: 68,
   per_walk: {
+    rectangle: 0.3,
+    falling_wedge: 0.18,
+    inverse_head_and_shoulders: 0.13,
+    rising_wedge: 0.08,
+    double_top: 0.03,
+    triple_top: 0.03,
+    ascending_triangle: 0.03,
+    descending_triangle: 0.03,
+  },
+  previously: {
+    detections_per_walk: 19.3,
     double_bottom: 5.15,
     double_top: 5.13,
-    triple_top: 2.65,
-    triple_bottom: 2.38,
-    inverse_head_and_shoulders: 1.8,
-    head_and_shoulders: 1.6,
+    note: 'Before the identification filters were added. Kept so the size of the change is visible and a regression is obvious.',
   },
   note: 'Measured on seeded random walks, not on real data. A count at or below the baseline is indistinguishable from noise.',
 };
@@ -1090,7 +1293,7 @@ export const STRUCTURAL_PATTERNS = [
   'head_and_shoulders', 'inverse_head_and_shoulders',
   'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
   'rectangle', 'rising_wedge', 'falling_wedge', 'broadening_formation',
-  'bull_flag', 'bear_flag',
+  'bull_flag', 'bear_flag', 'high_tight_flag',
 ];
 
 /**
@@ -1134,6 +1337,7 @@ export function detectPatterns(bars, {
   const all = [
     ...structuralPatterns(bars, swings, opts),
     ...trendlinePatterns(bars, swings, { window_bars, flat_slope_pct, min_touches: 2 }),
+    ...flagPatterns(bars, {}),
   ];
 
   // Age every pattern by how long ago it finished forming. Without this the

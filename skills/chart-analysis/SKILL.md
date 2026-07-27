@@ -122,7 +122,7 @@ Rules that decide whether any of this is reportable:
 - Divergence: prefer `divergence_survey`. One indicator out of four is weak, and in a strong trend divergence is normal rather than a warning.
 - **Candles carry Nison's context and confirmation rules in a `nison` block.** A hammer needs no confirmation; a hanging man does, and until the next bar closes beneath it the status is `awaiting_confirmation` — a hypothesis, not a signal. Check `context_ok` too: the same shape without its required prior trend is not the pattern.
 - Zones: read `total_found` before the list. Dozens exist; the returned ones are not rare.
-- **Structural patterns: read `noise_check` FIRST.** This detector reports ~19 patterns per 200 bars of pure random walk, including about five double bottoms. A count at or below that floor is not a weak finding, it is no finding. Say so and move on.
+- **Structural patterns: read `noise_check` FIRST.** The noise floor is now 0.78 patterns per 200-bar random walk, down from 19.3, so a double top is worth reading. But `rectangle` still appears in 30% of random walks and the wedges in 8-18% — treat those four with suspicion, especially in a choppy regime.
 
 ## Step 7 — Projection, if there is a move to project
 

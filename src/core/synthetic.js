@@ -88,16 +88,16 @@ export const GENERATORS = {
     legs([120, 100, 112, 100, 130], per),
 
   triple_top: ({ per = 9 } = {}) =>
-    legs([80, 100, 90, 100, 90, 100, 70], per),
+    legs([70, 100, 84, 100, 84, 100, 65], per),
 
   triple_bottom: ({ per = 9 } = {}) =>
-    legs([120, 100, 110, 100, 110, 100, 130], per),
+    legs([135, 100, 119, 100, 119, 100, 140], per),
 
   head_and_shoulders: ({ per = 9 } = {}) =>
-    legs([70, 95, 85, 110, 85, 95, 65], per),
+    legs([65, 95, 80, 115, 80, 95, 60], per),
 
   inverse_head_and_shoulders: ({ per = 9 } = {}) =>
-    legs([130, 105, 115, 90, 115, 105, 135], per),
+    legs([140, 105, 124, 85, 124, 105, 145], per),
 
   ascending_triangle: ({ per = 7 } = {}) =>
     legs([70, 100, 82, 100, 88, 100, 94, 100, 115], per),
@@ -120,11 +120,16 @@ export const GENERATORS = {
   broadening_formation: ({ per = 7 } = {}) =>
     legs([100, 106, 94, 112, 88, 118, 82, 124], per),
 
+  // A flag is a pole plus a SHORT pause, and the pause is the present — the
+  // pattern is read while it is still forming, not after it resolves.
   bull_flag: ({ per = 6 } = {}) =>
-    [...legs([70, 120], per * 3), ...legs([120, 112], per), ...legs([112, 150], per * 2)],
+    [...legs([60, 70], per * 2), ...legs([70, 100], per * 2), ...legs([100, 93], per)],
 
   bear_flag: ({ per = 6 } = {}) =>
-    [...legs([150, 100], per * 3), ...legs([100, 108], per), ...legs([108, 70], per * 2)],
+    [...legs([140, 130], per * 2), ...legs([130, 100], per * 2), ...legs([100, 107], per)],
+
+  high_tight_flag: ({ per = 6 } = {}) =>
+    [...legs([48, 50], per * 2), ...legs([50, 100], per * 3), ...legs([100, 92], per)],
 };
 
 /**

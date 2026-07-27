@@ -177,22 +177,27 @@ For the engulfing pattern he requires a clearly definable trend, even a short-te
 
 > Source: Nison, *Japanese Candlestick Charting Techniques*, 2nd ed., ch. 4.
 
-## The noise floor — read this before reporting any structural pattern
+## The noise floor — measured, and now much lower
 
 Measured with `src/core/synthetic.js` over 40 seeded random walks of 200 bars:
 
-**This detector reports 19 structural patterns per 200 bars of PURE NOISE**, including ~5 double bottoms and ~5 double tops, with head-and-shoulders in 88% of walks. 100% of random walks produce at least one pattern.
+| | Before | After |
+|---|---|---|
+| detections per walk | **19.3** | **0.78** |
+| walks with any pattern | 100% | 68% |
+| double tops per walk | 5.13 | 0.03 |
 
-So a chart showing three double bottoms is not showing a signal. It is showing **less than the noise floor**.
+The first measurement was damning — five double tops and five double bottoms in pure noise, something firing on every single walk. Applying Bulkowski's own identification thresholds fixed it: **a 10% valley between the two extremes**, plus a required prior trend. Detection of real shapes was unaffected; every pattern is still found 100% of the time at realistic noise.
 
-`patterns_detect` now returns `noise_check` alongside the detections. **Quote it.** A verdict of "at or below the noise floor" means exactly that — report it as no finding, not as a weak one.
+`patterns_detect` returns `noise_check`. **Still quote it.** The floor is lower, not zero:
 
-This does not mean the detectors are useless. It means a structural pattern is only worth reporting when:
+- `rectangle` appears in **30%** of random walks
+- `falling_wedge` in 18%, `inverse_head_and_shoulders` in 13%
 
-- the count is **clearly** above the floor (`noise_check` says so), **and**
-- `market_regime` is not choppy — a random walk is what chop *is*, and
-- the pattern is **confirmed**, not forming, and
-- something independent agrees (a tested level, a zone, divergence).
+Those four are the ones to treat with suspicion. A double top is now worth reading; a rectangle in a choppy market is still mostly noise.
 
-**Flags are never detected at all** — 0% across every noise level. That is a broken detector, recorded in `tests/synthetic.test.js` with an assertion that goes red when it is fixed. Do not report the absence of a flag as meaningful.
+Each double top and bottom reports `valley_pct` and `separation_bars`. A valley barely over 10% is a marginal pattern — say so.
 
+**`symmetrical_triangle` detects only 38% of the time** on clean constructed shapes. It is genuinely ambiguous by nature and the detector is conservative about it. Absence of one means little.
+
+Flags now detect (they never did before), and **`high_tight_flag` is detected** — Bulkowski's strongest continuation pattern at 15% failure and 82% reaching target. It needs a 90% rise in two months or less, and its target is HALF the pole added to the flag bottom, not the whole pole.

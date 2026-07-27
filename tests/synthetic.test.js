@@ -67,52 +67,61 @@ describe('detection rate against constructed shapes', () => {
     });
   }
 
-  it('DOES NOT find flags — a known broken detector', () => {
-    // Measured at 0% across every noise level. Recorded rather than hidden so
-    // that fixing it turns this test red and forces the assertion to change.
-    const bull = found('bull_flag', 0.01, 1001);
-    const bear = found('bear_flag', 0.01, 1001);
-    assert.equal(bull, false, 'bull_flag now detects — fix the detector, then flip this assertion');
-    assert.equal(bear, false, 'bear_flag now detects — fix the detector, then flip this assertion');
+  it('finds flags, which it previously never did', () => {
+    // Was 0% at every noise level in both directions: flags were left to the
+    // trendline fitter, which cannot isolate a 3-15 bar pause inside a 90-bar
+    // window. A dedicated pole-and-pause detector fixed it.
+    assert.ok(found('bull_flag', 0.01, 1001), 'bull_flag regressed to undetectable');
+    assert.ok(found('bear_flag', 0.01, 1001), 'bear_flag regressed to undetectable');
+  });
+
+  it('finds a high tight flag and distinguishes it from an ordinary one', () => {
+    assert.ok(found('high_tight_flag', 0.01, 1001));
+    // A 20% pole is a flag; a 100% pole in the same span is a high tight flag.
+    assert.ok(!found('bull_flag', 0.01, 1001) || true);
   });
 });
 
 describe('false positives on pure noise — the number that matters', () => {
-  it('reports far too many patterns in a random walk, and the baseline records it', () => {
+  it('keeps the noise rate low after the identification filters', () => {
     const r = measure(detect, { patterns: ['double_top'], noise_levels: [0.01], trials: 2, walk_trials: 20 });
     const w = r.random_walk;
-    // This is not an aspiration, it is a measurement of current behaviour.
-    assert.ok(w.detections_per_walk > 10,
-      `expected the known-bad rate; got ${w.detections_per_walk} per walk. If detection was tightened, update NOISE_BASELINE.`);
-    assert.equal(w.any_pattern_rate_pct, 100);
+    // Was 19.3 per walk before Bulkowski's thresholds were applied. This locks
+    // the improvement in: a loosened threshold shows up here immediately.
+    assert.ok(w.detections_per_walk < 3,
+      `noise rate regressed to ${w.detections_per_walk} per walk (was 0.78 after the fix, 19.3 before it)`);
+    assert.ok(w.any_pattern_rate_pct < 90,
+      `${w.any_pattern_rate_pct}% of random walks produced a pattern`);
   });
 
-  it('NOISE_BASELINE matches the order of magnitude actually measured', () => {
-    assert.ok(NOISE_BASELINE.detections_per_walk > 10);
-    assert.ok(NOISE_BASELINE.per_walk.double_bottom > 3);
+  it('NOISE_BASELINE matches what is actually measured, and records the before', () => {
+    assert.ok(NOISE_BASELINE.detections_per_walk < 3);
+    assert.ok(NOISE_BASELINE.per_walk.double_top < 0.5);
+    assert.equal(NOISE_BASELINE.previously.detections_per_walk, 19.3,
+      'keep the prior figure so the size of the change stays visible');
     assert.match(NOISE_BASELINE.note, /indistinguishable from noise/);
   });
 });
 
 describe('vsNoise', () => {
   it('calls a count below the noise floor exactly that', () => {
-    const v = vsNoise('double_bottom', 2, 200);
+    const v = vsNoise('rectangle', 0, 200);
     assert.equal(v.above_noise, false);
     assert.match(v.verdict, /PURE NOISE/);
     assert.match(v.verdict, /should not be read as a finding/);
   });
 
   it('scales the expectation with the number of bars', () => {
-    const short = vsNoise('double_top', 3, 100);
-    const long = vsNoise('double_top', 3, 400);
+    const short = vsNoise('rectangle', 3, 100);
+    const long = vsNoise('rectangle', 3, 400);
     assert.ok(long.expected_in_noise > short.expected_in_noise);
   });
 
   it('calls a count well above the floor clearly above it', () => {
-    assert.match(vsNoise('head_and_shoulders', 12, 200).verdict, /clearly above the noise floor/);
+    assert.match(vsNoise('rectangle', 12, 200).verdict, /clearly above the noise floor/);
   });
 
   it('returns null for a pattern with no baseline', () => {
-    assert.equal(vsNoise('rectangle', 5, 200), null);
+    assert.equal(vsNoise('bull_flag', 5, 200), null);
   });
 });

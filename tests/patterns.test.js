@@ -811,12 +811,11 @@ describe('STRUCTURAL_STATS — Bulkowski measurements from thepatternsite.com', 
     assert.match(dt.summary, /\d+-\d+%/);
   });
 
-  it('includes the high tight flag, which the detector does not yet find', () => {
-    // Recorded so the statistics are ready when detection is built.
+  it('includes the high tight flag, which is now detected', () => {
     const htf = statsFor('high_tight_flag');
     assert.equal(htf.meeting_target_pct, 82);
-    assert.ok(!STRUCTURAL_PATTERNS.includes('high_tight_flag'),
-      'if this now detects, move it into STRUCTURAL_PATTERNS and drop this assertion');
+    assert.ok(STRUCTURAL_PATTERNS.includes('high_tight_flag'),
+      'detection was built for this pattern, so it belongs in the list');
   });
 
   it('attributes the numbers to the site rather than presenting them as its own', () => {
