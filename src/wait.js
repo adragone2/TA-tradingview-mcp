@@ -25,88 +25,72 @@ function symbolMatches(expected, actual) {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+/** "D" and "1D" are the same resolution; so are "W"/"1W" and "M"/"1M". */
+function normalizeResolution(r) {
+  const s = String(r ?? '').trim().toUpperCase();
+  return /^1[DWM]$/.test(s) ? s.slice(1) : s;
+}
+
+function resolutionMatches(expected, actual) {
+  if (!expected) return true;
+  if (!actual) return false;
+  return normalizeResolution(expected) === normalizeResolution(actual);
+}
+
+/**
+ * Wait until the chart's main series has actually finished loading.
+ *
+ * This used to gate on a loading spinner plus the size of
+ * `document.querySelectorAll('[class*="bar"]')` — which counts toolbars,
+ * sidebars and scrollbars, not price bars, and is therefore constant no matter
+ * what the data is doing. Sampling the live chart every 25ms through a symbol
+ * change showed why that mattered:
+ *
+ *     t=61ms   chart.symbol() = the NEW symbol, bars = the OLD symbol's prices
+ *     t=193ms  symbolInfo()   = the NEW symbol, bars = the OLD symbol's prices
+ *     t=581ms  bars finally hold the new symbol
+ *
+ * So the old check cleared in ~400ms on a DOM count unrelated to the data,
+ * while `chart.symbol()` — the thing it compared against — had flipped at 61ms.
+ * Callers were told the chart was ready while it still held the previous
+ * symbol. The series' own `isLoading()` clears exactly when the bars arrive,
+ * which is the only signal here worth reading.
+ */
 export async function waitForChartReady(expectedSymbol = null, expectedTf = null, timeout = DEFAULT_TIMEOUT) {
   const start = Date.now();
-  let lastBarCount = -1;
-  let stableCount = 0;
 
   while (Date.now() - start < timeout) {
     const state = await evaluate(`
       (function() {
-        // Check for loading spinner
-        var spinner = document.querySelector('[class*="loader"]')
-          || document.querySelector('[class*="loading"]')
-          || document.querySelector('[data-name="loading"]');
-        var isLoading = spinner && spinner.offsetParent !== null;
-
-        // Try to get bar count from data window or chart
-        var barCount = -1;
-        try {
-          var bars = document.querySelectorAll('[class*="bar"]');
-          barCount = bars.length;
-        } catch {}
-
-        // Get current symbol from header
-        var symbolEl = document.querySelector('[data-name="legend-source-title"]')
-          || document.querySelector('[class*="title"] [class*="apply-common-tooltip"]');
-        var currentSymbol = symbolEl ? symbolEl.textContent.trim() : '';
-
-        // Prefer the chart API for symbol/resolution — the legend is a rendering
-        // detail and shows the short form, while the API is authoritative.
-        var currentResolution = null;
         try {
           var c = window.TradingViewApi._activeChartWidgetWV.value();
-          currentSymbol = c.symbol() || currentSymbol;
-          currentResolution = c.resolution();
-        } catch (e) { /* fall back to the legend text */ }
-
-        return { isLoading: !!isLoading, barCount: barCount, currentSymbol: currentSymbol, currentResolution: currentResolution };
+          var s = c._chartWidget.model().mainSeries();
+          var out = {};
+          try { out.isLoading = s.isLoading(); } catch (e) { out.isLoading = null; }
+          try {
+            var sl = s.seriesLoaded;
+            if (typeof sl === 'function') sl = sl.call(s);
+            out.seriesLoaded = (sl && typeof sl.value === 'function') ? sl.value() : sl;
+          } catch (e) { out.seriesLoaded = null; }
+          try { var si = s.symbolInfo(); out.currentSymbol = si ? (si.full_name || si.name || null) : null; } catch (e) { out.currentSymbol = null; }
+          try { out.currentResolution = c.resolution(); } catch (e) { out.currentResolution = null; }
+          try { out.barCount = s.bars().size(); } catch (e) { out.barCount = 0; }
+          out.settled = out.isLoading === false && out.seriesLoaded === true && !!out.currentSymbol && out.barCount > 0;
+          return out;
+        } catch (e) { return null; }
       })()
     `);
 
-    if (!state) {
-      await new Promise(r => setTimeout(r, POLL_INTERVAL));
-      continue;
-    }
-
-    // Not ready if still loading
-    if (state.isLoading) {
-      stableCount = 0;
-      await new Promise(r => setTimeout(r, POLL_INTERVAL));
-      continue;
-    }
-
-    // Check symbol match if expected
-    if (state.currentSymbol && !symbolMatches(expectedSymbol, state.currentSymbol)) {
-      stableCount = 0;
-      await new Promise(r => setTimeout(r, POLL_INTERVAL));
-      continue;
-    }
-
-    // Check resolution match if expected. expectedTf was previously accepted
-    // and silently ignored, so setTimeframe only ever waited on bar stability.
-    if (expectedTf && state.currentResolution
-        && String(state.currentResolution) !== String(expectedTf)) {
-      stableCount = 0;
-      await new Promise(r => setTimeout(r, POLL_INTERVAL));
-      continue;
-    }
-
-    // Check bar count stability
-    if (state.barCount === lastBarCount && state.barCount > 0) {
-      stableCount++;
-    } else {
-      stableCount = 0;
-    }
-    lastBarCount = state.barCount;
-
-    if (stableCount >= 2) {
+    if (state && state.settled
+        && symbolMatches(expectedSymbol, state.currentSymbol)
+        && resolutionMatches(expectedTf, state.currentResolution)) {
       return true;
     }
 
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
   }
 
-  // Timeout — return true anyway, caller should verify
+  // Timed out. Callers report this as chart_ready:false; the bar read gates
+  // itself independently, so a false here delays work rather than corrupting it.
   return false;
 }

@@ -22,11 +22,17 @@ export function registerPatternTools(server) {
       include: z.array(z.string()).optional().describe('Only report these pattern names'),
     },
     wrap(async ({ count = 300, ...opts }) => {
-      const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+      const series = await data.getOhlcv({ count, summary: false });
+      const bars = normalizeBars(series);
       if (!bars.length) throw new Error('No price bars came back from the chart.');
       const result = core.detectPatterns(bars, opts);
       return {
         success: true,
+        // Which series this is. Reported because two calls seconds apart once
+        // returned different prices for the same stated symbol, and nothing in
+        // the output could have revealed it.
+        symbol: series.symbol,
+        timeframe: series.resolution,
         last_price: bars[bars.length - 1].close,
         ...result,
         known_patterns: { candlestick: core.CANDLE_PATTERNS, structural: core.STRUCTURAL_PATTERNS },
@@ -50,10 +56,13 @@ export function registerPatternTools(server) {
       context_bars: z.coerce.number().optional().describe('Bars before each candle used to judge what counts as large here (default 10)'),
     },
     wrap(async ({ count = 60, recent, context_bars }) => {
-      const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+      const series = await data.getOhlcv({ count, summary: false });
+      const bars = normalizeBars(series);
       if (!bars.length) throw new Error('No price bars came back from the chart.');
       return {
         success: true,
+        symbol: series.symbol,
+        timeframe: series.resolution,
         last_price: bars[bars.length - 1].close,
         ...core.classifyRecent(bars, { count: recent, context_bars }),
         rules: [
