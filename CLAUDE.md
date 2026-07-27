@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-121 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+122 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,11 +19,12 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 121 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 122 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
+| [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
 | `skills/` | Step-by-step procedures, invoked by name |
 
@@ -41,6 +42,7 @@
 | "What's the regime?" | `ta_regime` — also carries position sizing |
 | "Write a Pine script" | `pine-develop` skill |
 | "What's the trend?" / "key levels?" | `market-structure` skill — `structure_analyze`, `levels_find`. Quote each level's evidence |
+| "Any patterns?" | `patterns_detect` — a *forming* pattern is not a signal |
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
 | "Backtest this" / "does it work?" | `backtest-strategy` skill — **always report buy-and-hold** |
 | "Did this ever work?" | `wrds_backtest_signal` |

@@ -14,3 +14,6 @@ safety-check-log.json
 
 # Watchlist/state backups — local restore points, not for the repo
 backups/
+
+# Reference books — user's own copies, not for the repo (copyrighted)
+books/

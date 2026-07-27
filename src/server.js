@@ -10,6 +10,7 @@ import { registerPositionToolTools } from "./tools/position_tool.js";
 import { registerStructureTools } from "./tools/structure.js";
 import { registerBacktestTools } from "./tools/backtest.js";
 import { registerStrategyTools } from "./tools/strategy.js";
+import { registerPatternTools } from "./tools/patterns.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -33,7 +34,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 121 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 122 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -114,6 +115,14 @@ brief, but not reproducible and not backtestable. A strategy block is. When the
 user states a rule with numbers in it, offer to write it there.
 An unresolvable criterion is UNKNOWN, never a fail. Report unresolved symbols
 as "not checked", not "did not qualify".
+
+Patterns:
+- patterns_detect → candlestick and chart patterns computed from the bars,
+  with the measurements behind each one
+A structural pattern is "forming" until price CLOSES through its completion
+level. Never report a forming pattern as a signal — that is the single most
+common error with patterns. Candlestick reversals need a prior trend; the tool
+says so when there is none.
 
 Backtesting — three methods, one rule:
 - backtest_strategy → the Pine strategy on the chart: win rate, payoff,
@@ -202,6 +211,7 @@ registerPositionToolTools(server);
 registerStructureTools(server);
 registerBacktestTools(server);
 registerStrategyTools(server);
+registerPatternTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
