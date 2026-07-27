@@ -169,3 +169,23 @@ Most of its patterns are already detected. These criteria are **not** implemente
 
 **A conflict to keep rather than resolve.** This deck quotes reliability of 86-88% for head-and-shoulders, 76-78% for symmetrical triangles, 75-80% for right-angle triangles. Bulkowski's *measured* figures say something different in kind: H&S tops fail to move 5% only 4% of the time, but reach the measured-move target just 55% of the time. These are different questions — "resolves in the expected direction" versus "reaches its target" — and the deck does not say which it measured or on what sample. **Prefer Bulkowski's numbers, which state their construction, and do not blend the two.**
 
+### What the EXHIBITS add (pages 10-58, read as images)
+
+The slides that read as just "Example" in the text layer *are* the chart. Read as rendered images, they carry things the prose does not:
+
+**The H&S cap rule, with numbers** (Copper, May 1992). Traditional height objective 105.04. The objective was **not met** — the price move preceding the H&S top began at 104.10, and that was the limiting factor. This is the concrete case for capping a measured move at the origin of the preceding move.
+
+**Double-top arithmetic spelled out** (Euro-fx weekly). Highs 1.599 and 1.599, intervening low 1.526. Height 1.599 − 1.529 = 0.073. Objective 1.526 − 0.073 = 1.453, and it was met. Confirms the objective is subtracted from the **intervening low**, not from the highs.
+
+**High tight flag** (Alcoa 1999) — a pattern this toolchain does **not** detect. The exhibit gives its projection explicitly: the range of prices that created the flag **pole** is added to the price **at the point of breakout from the flag**. Pole $6.00 → $6.00 projection. Note this differs from the generic flag construction.
+
+**Flags have two accepted constructions.** The schematic marks the standard objective and separately "the slightly more aggressive method of obtaining the measuring objective in a bull flag" — measured from the bottom of the flag rather than from the breakout. Report which one is used.
+
+**Gaps, classified on a real chart** (Apollo Group). A *measuring* gap mid-advance and a *runaway* gap later are labelled separately on the same chart; the exhaustion-gap slide shows a breakaway near the low and an exhaustion gap at the top on heavy volume. `patterns_detect` returns `gap_up`/`gap_down` with no classification, and the measuring gap in particular implies a halfway target.
+
+**Key reversal followed by an inside range** (Silver, Dec 2008) — a compound signal, not two separate ones.
+
+**Triangle reversal points are numbered on the chart**: point 1 is a relative price **high** in a bull market, then 2 low, 3 high, 4 low. The "multiple triangles" exhibit shows a smaller triangle nested inside a larger one, which is what "redrawing the boundary lines by relocating points 3-4" means in practice.
+
+> **An internal contradiction, left unresolved.** The wedge text calls wedges *continuation* patterns. Both wedge exhibits in the same deck label them **"(reversal)"** — rising wedge on Anntaylor, falling wedge on Freeport McMoRan. The deck disagrees with itself. Bulkowski's measured data is the tiebreaker this repo already carries: a rising wedge breaking **down** fails 24% of the time in a bull market against 8% for the upward break, which is why `STRUCTURAL_STATS` reports wedges by breakout direction rather than assigning them a single meaning.
+
