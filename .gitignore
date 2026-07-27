@@ -17,3 +17,6 @@ backups/
 
 # Reference books — user's own copies, not for the repo (copyrighted)
 books/
+
+# Exported bar data — regenerable from the chart
+exports/

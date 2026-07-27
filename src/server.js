@@ -22,6 +22,7 @@ import { registerDivergenceTools } from "./tools/divergence.js";
 import { registerCostTools } from "./tools/costs.js";
 import { registerMtfTools } from "./tools/mtf.js";
 import { registerRelativeTools } from "./tools/relative.js";
+import { registerExportTools } from "./tools/export.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -45,7 +46,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 156 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 157 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -362,6 +363,7 @@ registerDivergenceTools(server);
 registerCostTools(server);
 registerMtfTools(server);
 registerRelativeTools(server);
+registerExportTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

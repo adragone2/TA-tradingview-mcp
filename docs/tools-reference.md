@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **156 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **157 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -339,6 +339,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### relative_* (1)
 
 - **`relative_strength`** — Performance against a benchmark — the "compared to what" question no single-symbol tool can answer
+
+### export_* (1)
+
+- **`export_bars_csv`** — Write the chart's bars to a CSV file
 
 ---
 

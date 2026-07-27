@@ -278,3 +278,20 @@ So **every `average_move_pct` figure is a perfect trade, gross of costs**, measu
 
 `hst` `hsb` `aadt` `aedt` `eadt` `eedt` `aadb` `aedb` `eadb` `eedb` `tt` `tb` `at` `dt` `st` `recttops` `rectbots` `risewedge` `fallwedge` `bt` `broadb` `flags` — plus **`htf` (high tight flag)**, the pattern identified as missing from the BBT/price-pattern exhibits and still not detected.
 
+## Patternz — an independent implementation to check against
+
+Bulkowski ships a free Windows program, Patternz, that finds 110+ chart patterns and 105 candlesticks. **The binary was not run and not decompiled** — his published identification guidelines are the legitimate source for detection rules and are already used here.
+
+What is useful is its data format, which is trivially simple and exactly what this toolchain produces:
+
+```
+Date,Open,High,Low,Close,Volume
+2025-02-14,145.84,147.48,145.69,146.56,2388382
+```
+
+`export_bars_csv` writes the chart's bars in that layout. That makes the one form of validation this repo has never had possible: run Patternz over the same bars and compare his detections against `patterns_detect`.
+
+Everything here is checked against its own tests and against a live chart. Nothing has ever been checked against an **independent implementation** of the same patterns — least of all the one written by the person whose statistics the tool quotes. Where the two disagree, at least one is wrong, and until now there was no way to find out which.
+
+Patternz keys bars by date, so it expects DAILY data. The export warns when the chart is intraday, because multiple bars sharing a date would be misread rather than rejected.
+
