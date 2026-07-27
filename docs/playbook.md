@@ -149,3 +149,23 @@ The most mechanically specified setup collected so far. Recorded in full because
 
 > Source: [Trade That Swing](https://tradethatswing.com/how-to-swing-trade-continuation-patterns-in-stocks-and-which-ones-to-trade/), read July 2026.
 
+## Price-pattern criteria (books/Technical-analysis-Price-patterns.pdf)
+
+Read in full. Its opening process ends with "Do not force a conclusion; sometimes no trade is the best trade" — the same rule `market_regime` enforces with a number.
+
+Most of its patterns are already detected. These criteria are **not** implemented and are computable:
+
+| Rule | Why it matters |
+|---|---|
+| **Triangle: breakout must not occur beyond 3/4 of the way to the apex** (measured horizontally from reversal point 1) | A late breakout is unreliable. Nothing currently checks this, so late triangle breaks are reported with full confidence. |
+| **H&S target is capped by the preceding move** — a H&S "cannot be expected to retrace more than the price move that preceded it". If the standard height objective lands beyond where the previous move began, that extreme is the limiting factor | Directly prevents an overstated measured-move target. |
+| **Triangle needs four minor-trend reversals**; violation of the opposite boundary, even intrabar, destroys the pattern | Validity, not just shape. |
+| **Triangle measuring objective counts from reversal point 2**, not the widest part | Different target from the one currently produced. |
+| **Wedge objective is not a measured move**: a falling wedge's minimum objective is to take out the pattern's highest point (reversal 1); a rising wedge's is to take out its lowest | The standard height projection is the wrong construction for wedges. |
+| **Flags**: slope against the trend, body seldom exceeds five sessions, objective duplicates the preceding straight-line move (half-mast). Once the objective is reached, a violent move the other way often follows | Both a target rule and an exit rule. |
+| **Gap classification** — pattern/common, breakaway, runaway (measuring), exhaustion | A **runaway gap typically marks the halfway point of a move**, which yields a target. `patterns_detect` reports `gap_up`/`gap_down` with no classification at all. |
+| **Key reversal**: after three higher highs, a new high with a lower close, on high volume | Not implemented. |
+| **Outside range** bar, **mid-range close** | Not implemented. |
+
+**A conflict to keep rather than resolve.** This deck quotes reliability of 86-88% for head-and-shoulders, 76-78% for symmetrical triangles, 75-80% for right-angle triangles. Bulkowski's *measured* figures say something different in kind: H&S tops fail to move 5% only 4% of the time, but reach the measured-move target just 55% of the time. These are different questions — "resolves in the expected direction" versus "reaches its target" — and the deck does not say which it measured or on what sample. **Prefer Bulkowski's numbers, which state their construction, and do not blend the two.**
+
