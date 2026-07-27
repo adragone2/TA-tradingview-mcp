@@ -122,7 +122,25 @@ The block reports the test count, the hit rate, and how many hits the same rule 
 
 **What to say:** a hit means *the rule matched*, which you get for free by looking at enough symbols. It is not evidence the rule works. `what_would_be_evidence` in the output says where that comes from.
 
-**One ordering problem we have not fixed.** Bajgrowicz & Scaillet (7,846 rules, DJIA 1897–2011) showed transaction costs must be **endogenous to selection**: *"trading rules that survive the inclusion of transaction costs are often not among those that perform best before costs."* This scan ranks first and `trade_cost` is applied afterwards — the wrong order. When a scan picked the strategy, say that the winner may not be the winner that survives costs.
+**The ordering problem, and the tool that fixes it.**
+
+```
+rule_select candidates=[{name, returns, signals}, ...] compare_at_bps=<your cost>
+```
+
+Bajgrowicz & Scaillet (7,846 rules, DJIA 1897–2011): *"trading rules that survive the inclusion of transaction costs are often not among those that perform best before costs. Transaction costs must be treated as endogenous and not exogenous to the selection process."*
+
+Ranking on gross return systematically favours **high-turnover** rules — precisely the rules costs destroy. `rule_select` applies cost **per signal before** computing each rule's statistic, so turnover enters the ranking instead of being deducted from the winner afterwards.
+
+Demonstrated on a constructed set: gross winner `churner_bigedge`, and at 20bps the winner is `patient_smalledge`. Ranking gross and costing after would have picked the wrong rule.
+
+Three modes:
+
+- **`break_even`** (default) — sweeps cost upward until the FDR approach detects nothing. That level is the **ex-ante break-even cost**, and it removes the need to guess a cost in advance.
+- **`select`** — one cost level, reporting FDR+ (100% means the apparent performance is pure data snooping).
+- **`persistence`** — re-selects every window and trades forward, testing whether the **selection procedure** works. Their most damning result was not that rules fail but that *"an investor would never have been able to select ex ante the future best-performing rules."*
+
+**FDR needs scale.** Below ~50 candidates it says `underpowered` and points you at `deflated_sharpe`, which is built for the single-best-rule case. Measured: one genuine edge among 21 candidates is undetectable; the same edge among 201 is detected.
 
 ## Caveats to state
 

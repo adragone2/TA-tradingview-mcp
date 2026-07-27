@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **166 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **167 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -360,6 +360,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### deflated_* (1)
 
 - **`deflated_sharpe`** — Correct a Sharpe ratio for how hard you looked for it
+
+### rule_* (1)
+
+- **`rule_select`** — Select among candidate rules with transaction costs treated as ENDOGENOUS — the fix for the ordering error every scan in this repo made
 
 ### horizon_* (1)
 

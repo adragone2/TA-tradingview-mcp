@@ -10,6 +10,7 @@ import * as validation from '../core/validation.js';
 import * as breadth from '../core/breadth.js';
 import * as stops from '../core/stops.js';
 import * as horizon from '../core/horizon.js';
+import * as selection from '../core/selection.js';
 import * as costs from '../core/costs.js';
 
 const wrap = (fn) => async (args = {}) => {
@@ -123,6 +124,33 @@ export function registerEvidenceTools(server) {
       };
     }),
   );
+  server.tool(
+    'rule_select',
+    'Select among candidate rules with transaction costs treated as ENDOGENOUS — the fix for the ordering error every scan in this repo made. Bajgrowicz & Scaillet: "Trading rules that survive the inclusion of transaction costs are often NOT among those that perform best before costs. Transaction costs must be treated as endogenous and not exogenous to the selection process." Ranking on gross return systematically favours high-turnover rules, which are precisely the rules costs destroy. This applies costs per signal BEFORE computing each rule\'s test statistic, selects by False Discovery Rate (which unlike White\'s Reality Check can select MULTIPLE surviving rules), and sweeps the cost level upward until nothing is detectable — giving an ex-ante BREAK-EVEN COST rather than requiring you to guess one. Also runs their persistence test, which asks whether the SELECTION PROCEDURE works at all: they found "an investor would never have been able to select ex ante the future best-performing rules." Note FDR needs a large candidate set; below ~50 rules it says so and points you to deflated_sharpe.',
+    {
+      candidates: z.array(z.object({
+        name: z.string(),
+        returns: z.array(z.coerce.number()).describe('Per-period returns, aligned in time across all candidates'),
+        signals: z.coerce.number().describe('How many times this rule changed position over those periods — this is what makes cost endogenous'),
+      })).describe('The candidate rules. Include EVERY variant you tried, not just the good ones'),
+      mode: z.enum(['break_even', 'select', 'persistence']).optional().describe('break_even (default) sweeps cost until nothing survives; select runs one cost level; persistence tests the selection procedure'),
+      cost_bps: z.coerce.number().optional().describe('Round-trip cost per signal, for select and persistence modes (default 10)'),
+      gamma: z.coerce.number().optional().describe('p-value threshold for selection (default 0.10)'),
+      max_bps: z.coerce.number().optional().describe('Upper bound for the break-even sweep (default 200)'),
+      compare_at_bps: z.coerce.number().optional().describe('Your ACTUAL round-trip cost. Reports whether the gross winner is still the winner at that level — the practical form of the question'),
+      train: z.coerce.number().optional().describe('Persistence mode: periods to select on (default 60)'),
+      test: z.coerce.number().optional().describe('Persistence mode: periods to trade forward (default 21)'),
+    },
+    wrap(({ candidates, mode = 'break_even', cost_bps = 10, gamma = 0.10, max_bps = 200, train = 60, test = 21, compare_at_bps = null }) => {
+      if (!Array.isArray(candidates) || !candidates.length) {
+        throw new Error('candidates must be a non-empty array of {name, returns, signals}.');
+      }
+      if (mode === 'select') return { success: true, mode, ...selection.fdrSelect(candidates, { cost_bps, gamma }) };
+      if (mode === 'persistence') return { success: true, mode, ...selection.persistenceTest(candidates, { train, test, cost_bps, gamma }) };
+      return { success: true, mode, ...selection.breakEvenCost(candidates, { gamma, max_bps, compare_at_bps }) };
+    }),
+  );
+
   server.tool(
     'horizon_prior',
     'THE structural problem underneath swing trading, and the one this toolchain was silent about. Below ~21 trading days the dominant documented effect in equities is REVERSAL (Jegadeesh 1990, Lehmann 1990); above ~63 days it is CONTINUATION (Jegadeesh & Titman 1993). The standard momentum construction skips the most recent month precisely because the sign changes inside it — and that boundary falls INSIDE the swing window. So breakouts, flags, triangles and VCP all place a continuation bet at the horizon where continuation is WEAKEST, while oversold bounces and pullback entries are aligned with the effect that is actually documented there. Almost every detector in this repo is continuation-flavoured, which is a systematic tilt into the weaker side. Returns a PRIOR ADJUSTMENT, never a forecast. Also reports Nagel-style conditioning: the payoff to mean reversion is concentrated in high-volatility states, because it is compensation for supplying liquidity.',

@@ -167,4 +167,8 @@ Covered in [research-evidence.md](research-evidence.md) §1.1 — kernel-regress
 
 ### The gap I have not closed
 
-Bajgrowicz & Scaillet's methodological point stands against us: **transaction costs must be endogenous to rule selection.** `strategy_scan` selects rules and `trade_cost` applies costs afterwards. That ordering is exactly what they show produces the wrong winners. Fixing it means costing every candidate *before* ranking — noted, not yet built.
+**Closed 2026-07-27.** `src/core/selection.js` and the `rule_select` tool now apply cost per signal **before** computing each rule's test statistic, select by False Discovery Rate, and sweep cost upward to an **ex-ante break-even** rather than requiring a guessed level. It also implements their persistence test, which evaluates the selection *procedure* rather than a rule.
+
+Demonstrated on a constructed candidate set: the gross winner is a 280-signal rule; at 20bps the winner is a 15-signal rule. Ranking gross and costing afterwards picks the wrong one.
+
+One limitation surfaced rather than hidden: **FDR needs a large candidate set.** With 21 candidates, expected false positives (1.05) exceed a single true selection, so FDR+ pins at 100% however real the edge — measured, and the same edge among 201 candidates is detected. The tool says `underpowered` below ~50 and points to `deflated_sharpe`, which is built for that case.
