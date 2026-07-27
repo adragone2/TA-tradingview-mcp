@@ -12,6 +12,7 @@ import { registerBacktestTools } from "./tools/backtest.js";
 import { registerStrategyTools } from "./tools/strategy.js";
 import { registerPatternTools } from "./tools/patterns.js";
 import { registerBreakoutTools } from "./tools/breakout.js";
+import { registerContextTools } from "./tools/context.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -35,7 +36,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 124 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 128 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -124,6 +125,17 @@ A structural pattern is "forming" until price CLOSES through its completion
 level. Never report a forming pattern as a signal — that is the single most
 common error with patterns. Candlestick reversals need a prior trend; the tool
 says so when there is none.
+
+Context — ask these BEFORE hunting for a setup:
+- market_regime → efficiency ratio: is this trending or is it chop? In a
+  choppy market structure breaks are noise and patterns appear that are not
+  there. "No trade" is a real answer and this is how to say it with a number.
+- fib_levels → pullback depth against the last impulse, and the golden zone.
+  A shallow pullback is normal in a steep trend, not a weakness.
+- swing_strength → which swings are STRONG (their move broke structure) vs
+  WEAK (it failed). Stops belong beyond strong swings; weak ones get run.
+- volume_profile → point of control, value area, high/low volume nodes,
+  computed from the bars. An approximation, and it says so.
 
 Breakouts — score them, do not eyeball them:
 - breakout_check → scores a break of a level on five measurements: momentum,
@@ -222,6 +234,7 @@ registerBacktestTools(server);
 registerStrategyTools(server);
 registerPatternTools(server);
 registerBreakoutTools(server);
+registerContextTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **124 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **128 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -238,6 +238,22 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### level_* (1)
 
 - **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier and the le
+
+### market_* (1)
+
+- **`market_regime`** — Is this market trending cleanly or is it chop? Returns an efficiency ratio — net distance travelled divided by the total path walked
+
+### fib_* (1)
+
+- **`fib_levels`** — Fibonacci retracement levels for the most recent impulse, with where price currently sits in them and whether it is in the 38.2-61.8% golden zone
+
+### swing_* (1)
+
+- **`swing_strength`** — Classify each swing high and low as strong, weak or unproven
+
+### volume_* (1)
+
+- **`volume_profile`** — Where volume actually traded, by price: point of control, value area, and high/low volume nodes
 
 ---
 
