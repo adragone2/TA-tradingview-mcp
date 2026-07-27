@@ -58,6 +58,10 @@
 | "What is this candle saying?" | `candle_read` — every candle is momentum, reaction or indecision. `patterns_detect` for named patterns |
 | "Any divergence?" / "RSI divergence" | `divergence_survey` — agreement across indicators is the only thing that makes one worth reading |
 | "Is this an impulse or a pullback?" | `legs_classify` — three measurements per leg, and it flags a stale last leg |
+| "Is it trending?" / "how strong is the move?" | `momentum_read` — 12m/6m/3m/1m at once. The best-replicated effect here; horizons disagreeing IS the answer |
+| "Is this a proper base?" / "VCP?" | `vcp_check` — every clause a number, and a near miss names the clause that failed |
+| "Is that really converging?" | `pivots_kernel` — pivots read from real bar highs/lows, plus the converging/diverging verdict |
+| "Is this backtest real?" | `deflated_sharpe` — the best of 200 no-edge strategies scores 2.19 annualised. Below 0.95 is not a discovery |
 | "Did this ever work?" | `wrds_backtest_signal` |
 | "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
 
@@ -68,6 +72,10 @@ Each of these exists because it has already gone wrong here.
 **Verify — don't trust a success flag.** Eight tools in this codebase were found reporting `success: true` while doing nothing, because their tests asserted things that could not fail. If a tool claims success but the chart didn't change, believe the chart.
 
 **A backtest without a benchmark flatters itself.** Net profit cannot tell a good strategy from a rising market. Always report buy-and-hold over the same bars, and report return *and* drawdown — a strategy often earns its keep by avoiding a drawdown while returning less. Lead with expectancy, not win rate.
+
+**A result without a trial count flatters itself just as badly.** Search 200 strategies with no edge and the best scores an annualised Sharpe of **2.19** with a probabilistic Sharpe of 0.985 — measured, in `tests/validation.test.js`. Deflated for the search it is 0.267. Any scan or backtest that reports a winner must report how many candidates it beat; `deflated_sharpe` does the arithmetic. Below 0.95 is not a discovery. See [docs/research-evidence.md](docs/research-evidence.md).
+
+**A forecast without a persistence baseline flatters itself too.** "Tomorrow equals today" scores ~99% accuracy on daily bars. Published LSTM stock predictors reporting 97% were reproducing exactly that. `momentum_read` returns the baseline beside every reading.
 
 **Tools, strategies and workflows are different things.** Tools are capabilities (`src/tools/`), strategies are testable rules (`rules.json`, Pine), workflows are procedures (`skills/`). A tool must not encode a strategy; a strategy must not live in a skill's prose. See [docs/START-HERE.md](docs/START-HERE.md).
 

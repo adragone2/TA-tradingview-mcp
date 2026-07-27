@@ -95,6 +95,18 @@ anchored_vwap              → anchored to the last major swing
 
 > **The failure mode to watch for:** after a large decline, every swing-derived level sits *above* price and `levels_find` returns nothing below. That is a real finding, not a tool failure — **there is no tested support beneath price.** Say exactly that, then give the nearest reference that does exist: the value-area low from `volume_profile`, a round number, or the prior range low. Never leave "nearest support" blank, and never invent one.
 
+## Step 4.4 — Momentum, the one effect that replicates
+
+```
+momentum_read                      → 12m / 6m / 3m / 1m at once
+```
+
+Moskowitz, Ooi & Pedersen found 12-month time-series momentum positive and significant for **every one of 58 instruments** over 25+ years. That is a different quality of evidence from anything in the pattern literature, where the foundational study did not reproduce out of sample — so when momentum and a chart pattern disagree, **say which one has the evidence behind it.**
+
+- Read `agreement`. All horizons pointing the same way is the signal. **Mixed is the answer, not a problem to resolve** — positive over 12 months and negative over 1 is a pullback; the reverse is either a turn or a bounce.
+- The evidence is from **diversified futures**. The signal transfers to a single equity; the Sharpe does not. Say so.
+- `persistence_baseline` comes back with it, at ~99% accuracy. That is the floor every forecast clears for free — quote it if you ever quote an accuracy.
+
 ## Step 4.5 — Compared to what?
 
 ```
@@ -143,6 +155,12 @@ Rules that decide whether any of this is reportable:
   2. **Pivot-width check** — the detector's `converging: true` describes its own fitted boundaries, not the price. Take the pivot highs and lows in the window and measure the width at the first pair and the last pair. On CSCO the detector reported 17.18 → 9.02 (converging); the pivots gave 13.87 → 14.08 (**diverging**). No wedge existed.
 
   If either fails, **report "no reliable pattern"** and describe the raw structure — lower highs and lower lows, with dates and prices — rather than naming something. And never treat two tools agreeing as corroboration until you know they got there by different routes: the same CSCO run produced an exact target match (84.69) between two detectors that reached it by unrelated arithmetic.
+
+  `pivots_kernel` now does the pivot-width check for you, on prices read from real bar highs and lows.
+
+- **`patterns_lmw` is a second opinion, not a screen.** The textbook Lo/Mamaysky/Wang definitions match **43.4% of five-pivot windows from pure random walks** — on live AAPL bars they returned 36 detections where our detector returned 2. Read it only where it *disagrees* with `patterns_detect`, and never quote its count.
+
+- **A squeeze carries a base rate.** `patterns_detect` attaches Bulkowski's NR7 statistics: an up breakout in a bull market **fails to move 5% 46% of the time**, win rate 57%. Quote that next to any volatility-contraction call. `vcp_check` is the stricter, fully mechanical version — zero detections across 200 random walks — and names which clause failed when it says no.
 
 ## Step 7 — Projection, if there is a move to project
 

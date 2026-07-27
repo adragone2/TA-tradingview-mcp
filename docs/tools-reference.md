@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **157 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **162 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -230,9 +230,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`strategy_check`** — Evaluate a strategy against the symbol on the chart, criterion by criterion, showing the ACTUAL value on each side of every comparison
 - **`strategy_scan`** — Check a strategy across several symbols and return the ones where every criterion passes
 
-### patterns_* (1)
+### patterns_* (2)
 
 - **`patterns_detect`** — Detect candlestick and chart patterns on the chart from the bars themselves
+- **`patterns_lmw`** — The Lo/Mamaysky/Wang pattern definitions verbatim (head-and-shoulders, broadening, triangle, rectangle, double top/bottom) as a SECOND OPINION on patt
 
 ### candle_* (1)
 
@@ -343,6 +344,22 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### export_* (1)
 
 - **`export_bars_csv`** — Write the chart's bars to a CSV file
+
+### momentum_* (1)
+
+- **`momentum_read`** — Time-series momentum — the best-replicated effect in the technical literature, and the one this toolchain lacked
+
+### vcp_* (1)
+
+- **`vcp_check`** — Minervini's volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior 
+
+### pivots_* (1)
+
+- **`pivots_kernel`** — Locate swing pivots by kernel regression, then read each one from the ACTUAL bar high or low — the step from Lo, Mamaysky & Wang that keeps every repo
+
+### deflated_* (1)
+
+- **`deflated_sharpe`** — Correct a Sharpe ratio for how hard you looked for it
 
 ---
 

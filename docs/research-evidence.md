@@ -149,20 +149,42 @@ One failure mode named in that survey applies to **me specifically** — the **"
 
 Ordered by evidence strength × how cheaply we can act.
 
-| # | Change | Where | Why |
-|---|---|---|---|
-| 1 | Track trial count; report Deflated Sharpe | `backtest.js`, `strategy.js` | Untested scans are the exact procedure White's RC invalidates |
-| 2 | Map smoothed extrema back to real prices | `patterns.js` | Fixes the CSCO converging/diverging bug structurally |
-| 3 | Attach NR7 / flag base rates to squeeze calls | `patterns.js` | We flagged an NR7 on AAPL with no 46%-failure caveat |
-| 4 | Add a time-series momentum tool (12m/1m) | new `src/core/momentum.js` | The best-replicated effect in the literature; we don't have it |
-| 5 | Bandwidth sweep through the synthetic harness | `synthetic.js` | Settles an open question in the literature with tooling we own |
-| 6 | Formal E1..E5 definitions as a second opinion | `patterns.js` | Independent of our geometric heuristics |
-| 7 | Implement VCP as a testable rule | `rules.json` | Mechanical, and it matched the AAPL squeeze |
-| 8 | Purged CV + embargo | wherever fitting happens | Prerequisite for any of Tier 3 |
-| 9 | Triple-barrier labelling | `backtest.js` | Makes labels match how trades actually exit |
-| 10 | Meta-labelling layer | new | Highest ceiling, but needs 1–3 and 8 first |
+All ten shipped on 2026-07-27. What follows is what each one turned out to be, including where the plan was wrong.
 
-**The strategic point.** Items 1–3 do not add capability; they make existing output honest. Item 4 adds the one thing the literature actually supports and we lack. Everything in Tier 3 is downstream of 1–3 and 8 — building a meta-labelling model on top of uncorrected, leakage-prone backtests would produce a confident wrong answer faster.
+| # | Change | Where | Status |
+|---|---|---|---|
+| 1 | Trial count + Deflated Sharpe | `validation.js`, `backtest.js`, `strategy.js` | done |
+| 2 | Smoothed extrema mapped to real prices | `kernel.js` | done |
+| 3 | NR7 base rates on squeeze calls | `patterns.js` | done |
+| 4 | Time-series momentum | `momentum.js` | done |
+| 5 | Bandwidth sweep | `scripts/bandwidth-sweep.js` | done — **settled** |
+| 6 | Formal E1..E5 definitions | `lmw_patterns.js` | done — **and demoted** |
+| 7 | VCP as a testable rule | `vcp.js` | done |
+| 8 | Purged CV + embargo | `validation.js` | done |
+| 9 | Triple-barrier labelling | `labeling.js` | done |
+| 10 | Meta-labelling layer | `metalabel.js` | done |
+
+956 unit tests, all passing. Five MCP tools registered (162 total).
+
+### What measurement changed about the plan
+
+**The multiple-testing hole was worse than argued.** Searching 200 random return series and keeping the best yields an **annualised Sharpe of 2.19** with a probabilistic Sharpe of **0.985**. The deflated Sharpe is **0.267**. Uncorrected, mined noise is indistinguishable from a discovery — that measurement is now a test.
+
+**Item 6 was the plan's biggest error.** I proposed adopting the LMW definitions as a second detector. Measured, they match **43.4% of five-pivot windows drawn from pure random walks**. Live on the same AAPL bars our detector reports 2 patterns and LMW reports 36. They are not a screen and are now shipped with that number attached and explicitly demoted to a second opinion.
+
+The per-pattern breakdown reverses the intuition. The inequality-chain patterns (triangle, broadening) are the *most* selective at ~2%; **rectangle is the most permissive at 13.6%**, with head-and-shoulders around 9%. Their tolerance terms — 0.75% and 1.5% of an average — are easy to satisfy when pivots happen to cluster.
+
+That casts a shadow on the one result that *did* replicate. **Rectangle was the only pattern to survive Nekrasov's reproduction, and rectangle is the definition that fires most often on noise.** A definition that fires often yields a larger conditional sample and more power in a KS test. Significance without an edge would look exactly like this. I cannot prove that is what happened, but the coincidence is not reassuring.
+
+**The bandwidth question is settled for our data.** Nekrasov's claim that LMW's 0.3×h\* over-detects local extrema is **supported**: 98.9 pivots per random walk against 73.9 at the cross-validated bandwidth. Default is 1.0×, parameterised.
+
+**VCP is the most selective thing in the repo** — **zero** detections across 200 random walks, against 68% of walks containing a structural pattern. The reason is structural: VCP is a conjunction of six numeric clauses where most chart patterns are one or two. Selectivity is not accuracy, and the module says so.
+
+### The strategic point, revised
+
+Items 1–3 added no capability; they made existing output honest, and that was the right order. Item 4 added the one effect the literature actually supports.
+
+But the sharpest result is not any single module — it is that **our own geometric detector is dramatically more selective than the academic definitions it was going to be corrected by.** The plan assumed the literature would raise our standard. Measured, it lowered it. The value taken from LMW is the *pivot method* — smooth to locate, read the real price — not the pattern rules.
 
 ## What I could not verify
 
