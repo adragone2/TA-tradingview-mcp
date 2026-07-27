@@ -720,6 +720,203 @@ export const CANDLE_PATTERNS = [
   'dark_cloud_cover', 'piercing_line', 'inside_bar', 'gap_up', 'gap_down',
   'NR4', 'NR7',
 ];
+/* ---------------------- measured structural statistics ------------------ */
+
+/**
+ * Bulkowski's measured statistics for the chart patterns this file detects.
+ *
+ * Extracted from the Results Snapshot of each chapter in the Encyclopedia of
+ * Chart Patterns (2nd ed., 2005) — his own measurements over thousands of
+ * patterns, not folklore. Until now every structural detection here reported
+ * "no measured success rate", which was honest but unhelpful when the numbers
+ * exist and the user owns the book.
+ *
+ * Fields, all as percentages:
+ *   rank                    performance rank among his pattern set, 1 = best
+ *   break_even_failure_pct  how often price fails to move even 5% after the break
+ *   average_move_pct        average rise (up breakouts) or decline (down breakouts)
+ *   meeting_target_pct      how often the measured-move target is reached
+ *   throwback_pullback_pct  how often price returns to the breakout level first
+ *
+ * Split by BREAKOUT DIRECTION and by BULL/BEAR market, because that split is
+ * the most valuable thing in the data and the part folklore omits entirely. A
+ * rising wedge breaking down fails 24% of the time in a bull market; the same
+ * pattern is presented everywhere as simply "bearish".
+ *
+ * `_range` fields mean Bulkowski measured sub-variants this detector does not
+ * distinguish — the four Adam/Eve double top and bottom combinations, and the
+ * top/bottom split for rectangles and broadening formations. The range is
+ * reported rather than an average, because an average across variants is a
+ * number he never measured.
+ *
+ * Extraction note: the values were parsed from the PDF's two-column layout and
+ * validated by field SHAPE — a rank must read "N out of M", a volume trend must
+ * be Upward/Downward/Flat, the rest must be percentages. That check caught a
+ * block where a "Flat" volume trend shifted every subsequent row by one and
+ * turned a 44% target rate into 1%. A shifted row is worse than missing data
+ * because it is wrong without looking wrong.
+ */
+export const STRUCTURAL_STATS = {
+  ascending_triangle: {
+    downward: {
+      bull: { rank: '9/21', break_even_failure_pct: 11, average_move_pct: 19, meeting_target_pct: 68, throwback_pullback_pct: 49 },
+      bear: { rank: '9/21', break_even_failure_pct: 3, average_move_pct: 24, meeting_target_pct: 66, throwback_pullback_pct: 45 },
+    },
+    upward: {
+      bull: { rank: '17/23', break_even_failure_pct: 13, average_move_pct: 35, meeting_target_pct: 75, throwback_pullback_pct: 57 },
+      bear: { rank: '11/19', break_even_failure_pct: 12, average_move_pct: 30, meeting_target_pct: 63, throwback_pullback_pct: 54 },
+    },
+  },
+  bear_flag: {
+    downward: {
+      bull: { rank: null, break_even_failure_pct: 2, average_move_pct: 16, meeting_target_pct: 47, throwback_pullback_pct: 46 },
+      bear: { rank: null, break_even_failure_pct: 0, average_move_pct: 25, meeting_target_pct: 54, throwback_pullback_pct: 44 },
+    },
+  },
+  broadening_formation: {
+    downward: {
+      bull: { break_even_failure_pct_range: [16, 18], average_move_pct_range: [15, 15], meeting_target_pct_range: [37, 44], throwback_pullback_pct_range: [42, 48] },
+      bear: { break_even_failure_pct_range: [3, 9], average_move_pct_range: [18, 20], meeting_target_pct_range: [31, 32], throwback_pullback_pct_range: [56, 62] },
+    },
+    upward: {
+      bull: { break_even_failure_pct_range: [10, 15], average_move_pct_range: [27, 29], meeting_target_pct_range: [59, 62], throwback_pullback_pct_range: [41, 54] },
+      bear: { break_even_failure_pct_range: [9, 11], average_move_pct_range: [21, 24], meeting_target_pct_range: [53, 61], throwback_pullback_pct_range: [44, 53] },
+    },
+  },
+  bull_flag: {
+    upward: {
+      bull: { rank: null, break_even_failure_pct: 4, average_move_pct: 23, meeting_target_pct: 64, throwback_pullback_pct: 43 },
+      bear: { rank: null, break_even_failure_pct: 3, average_move_pct: 17, meeting_target_pct: 55, throwback_pullback_pct: 53 },
+    },
+  },
+  descending_triangle: {
+    downward: {
+      bull: { rank: '10/21', break_even_failure_pct: 16, average_move_pct: 16, meeting_target_pct: 54, throwback_pullback_pct: 54 },
+      bear: { rank: '12/21', break_even_failure_pct: 11, average_move_pct: 25, meeting_target_pct: 50, throwback_pullback_pct: 59 },
+    },
+    upward: {
+      bull: { rank: '5/23', break_even_failure_pct: 7, average_move_pct: 47, meeting_target_pct: 84, throwback_pullback_pct: 37 },
+      bear: { rank: '7/19', break_even_failure_pct: 9, average_move_pct: 27, meeting_target_pct: 61, throwback_pullback_pct: 52 },
+    },
+  },
+  double_bottom: {
+    upward: {
+      bull: { break_even_failure_pct_range: [4, 5], average_move_pct_range: [35, 40], meeting_target_pct_range: [66, 67], throwback_pullback_pct_range: [55, 64] },
+      bear: { break_even_failure_pct_range: [4, 8], average_move_pct_range: [23, 33], meeting_target_pct_range: [47, 56], throwback_pullback_pct_range: [46, 61] },
+    },
+  },
+  double_top: {
+    downward: {
+      bull: { break_even_failure_pct_range: [8, 14], average_move_pct_range: [15, 19], meeting_target_pct_range: [69, 73], throwback_pullback_pct_range: [59, 64] },
+      bear: { break_even_failure_pct_range: [2, 11], average_move_pct_range: [19, 25], meeting_target_pct_range: [68, 79], throwback_pullback_pct_range: [48, 58] },
+    },
+  },
+  falling_wedge: {
+    downward: {
+      bull: { rank: '17/21', break_even_failure_pct: 15, average_move_pct: 15, meeting_target_pct: 30, throwback_pullback_pct: 69 },
+      bear: { rank: '7/21', break_even_failure_pct: 6, average_move_pct: 24, meeting_target_pct: 36, throwback_pullback_pct: 72 },
+    },
+    upward: {
+      bull: { rank: '20/23', break_even_failure_pct: 11, average_move_pct: 32, meeting_target_pct: 70, throwback_pullback_pct: 56 },
+      bear: { rank: '11/19', break_even_failure_pct: 11, average_move_pct: 26, meeting_target_pct: 60, throwback_pullback_pct: 61 },
+    },
+  },
+  head_and_shoulders: {
+    downward: {
+      bull: { rank: '1/21', break_even_failure_pct: 4, average_move_pct: 22, meeting_target_pct: 55, throwback_pullback_pct: 50 },
+      bear: { rank: '6/21', break_even_failure_pct: 1, average_move_pct: 29, meeting_target_pct: 56, throwback_pullback_pct: 64 },
+    },
+  },
+  inverse_head_and_shoulders: {
+    upward: {
+      bull: { rank: '7/23', break_even_failure_pct: 3, average_move_pct: 38, meeting_target_pct: 74, throwback_pullback_pct: 45 },
+      bear: { rank: '6/19', break_even_failure_pct: 4, average_move_pct: 30, meeting_target_pct: 58, throwback_pullback_pct: 51 },
+    },
+  },
+  rectangle: {
+    downward: {
+      bull: { break_even_failure_pct_range: [11, 16], average_move_pct_range: [14, 17], meeting_target_pct_range: [50, 63], throwback_pullback_pct_range: [58, 69] },
+      bear: { break_even_failure_pct_range: [4, 9], average_move_pct_range: [21, 25], meeting_target_pct_range: [63, 66], throwback_pullback_pct_range: [53, 65] },
+    },
+    upward: {
+      bull: { break_even_failure_pct_range: [9, 10], average_move_pct_range: [39, 46], meeting_target_pct_range: [80, 85], throwback_pullback_pct_range: [53, 64] },
+      bear: { break_even_failure_pct_range: [11, 16], average_move_pct_range: [20, 24], meeting_target_pct_range: [60, 64], throwback_pullback_pct_range: [60, 71] },
+    },
+  },
+  rising_wedge: {
+    downward: {
+      bull: { rank: '20/21', break_even_failure_pct: 24, average_move_pct: 14, meeting_target_pct: 46, throwback_pullback_pct: 63 },
+      bear: { rank: '21/21', break_even_failure_pct: 15, average_move_pct: 20, meeting_target_pct: 40, throwback_pullback_pct: 63 },
+    },
+    upward: {
+      bull: { rank: '18/23', break_even_failure_pct: 8, average_move_pct: 28, meeting_target_pct: 58, throwback_pullback_pct: 73 },
+      bear: { rank: '17/19', break_even_failure_pct: 14, average_move_pct: 17, meeting_target_pct: 33, throwback_pullback_pct: 66 },
+    },
+  },
+  symmetrical_triangle: {
+    downward: {
+      bull: { rank: '15/21', break_even_failure_pct: 13, average_move_pct: 17, meeting_target_pct: 48, throwback_pullback_pct: 59 },
+      bear: { rank: '18/21', break_even_failure_pct: 9, average_move_pct: 19, meeting_target_pct: 42, throwback_pullback_pct: 62 },
+    },
+    upward: {
+      bull: { rank: '16/23', break_even_failure_pct: 9, average_move_pct: 31, meeting_target_pct: 66, throwback_pullback_pct: 37 },
+      bear: { rank: '7/19', break_even_failure_pct: 7, average_move_pct: 26, meeting_target_pct: 57, throwback_pullback_pct: 55 },
+    },
+  },
+  triple_bottom: {
+    upward: {
+      bull: { rank: '7/23', break_even_failure_pct: 4, average_move_pct: 37, meeting_target_pct: 64, throwback_pullback_pct: 64 },
+      bear: { rank: '8/19', break_even_failure_pct: 8, average_move_pct: 23, meeting_target_pct: 57, throwback_pullback_pct: 61 },
+    },
+  },
+  triple_top: {
+    downward: {
+      bull: { rank: '7/21', break_even_failure_pct: 10, average_move_pct: 19, meeting_target_pct: 40, throwback_pullback_pct: 61 },
+      bear: { rank: '12/21', break_even_failure_pct: 5, average_move_pct: 24, meeting_target_pct: 51, throwback_pullback_pct: 64 },
+    },
+  },
+};
+
+/**
+ * Measured statistics for a detected pattern.
+ *
+ * `direction` is the breakout direction; `market` is the broader regime, which
+ * the caller has to supply because a chart of one symbol cannot know it. Both
+ * default to the pattern's conventional reading, and the answer says which
+ * assumptions it used.
+ */
+export function statsFor(pattern, { direction = null, market = 'bull' } = {}) {
+  const entry = STRUCTURAL_STATS[pattern];
+  if (!entry) return null;
+
+  const dir = direction && entry[direction] ? direction : Object.keys(entry)[0];
+  const mkt = market === 'bear' ? 'bear' : 'bull';
+  const s = entry[dir]?.[mkt];
+  if (!s) return null;
+
+  const ranged = 'break_even_failure_pct_range' in s;
+  const fail = ranged ? s.break_even_failure_pct_range : s.break_even_failure_pct;
+  const target = ranged ? s.meeting_target_pct_range : s.meeting_target_pct;
+  const move = ranged ? s.average_move_pct_range : s.average_move_pct;
+  const pct = (v) => (Array.isArray(v) ? `${v[0]}-${v[1]}%` : `${v}%`);
+
+  return {
+    ...s,
+    breakout_direction: dir,
+    market_assumed: mkt,
+    directions_measured: Object.keys(entry),
+    summary: `Measured over Bulkowski's sample: fails to move 5% ${pct(fail)} of the time, average ${dir === 'upward' ? 'rise' : 'decline'} ${pct(move)}, reaches the measured-move target ${pct(target)} of the time.`,
+    ...(ranged ? { range_note: 'A range because Bulkowski measured sub-variants this detector does not distinguish. The range is reported rather than an average, which is a number he never measured.' } : {}),
+    ...(entry.upward && entry.downward ? {
+      both_directions: 'This pattern was measured breaking BOTH ways. Do not assume the conventional direction — pass the direction price actually broke.',
+    } : {}),
+    market_note: mkt === 'bull'
+      ? 'Bull-market figures. Pass market:"bear" for the other set — the difference is often large and is the part folklore omits.'
+      : 'Bear-market figures.',
+    source: 'Bulkowski, Encyclopedia of Chart Patterns, 2nd ed. (2005). His measurements, not measurements made here.',
+  };
+}
+
 export const STRUCTURAL_PATTERNS = [
   'double_top', 'double_bottom', 'triple_top', 'triple_bottom',
   'head_and_shoulders', 'inverse_head_and_shoulders',
@@ -747,6 +944,7 @@ export function detectPatterns(bars, {
   wick_ratio = 2,
   small_body_pct = 30,
   include = null,
+  market = 'bull',
 } = {}) {
   if (!Array.isArray(bars) || bars.length < 3) {
     return { candlestick: [], structural: [], note: 'Not enough bars to detect anything.' };
@@ -791,6 +989,21 @@ export function detectPatterns(bars, {
   // Newest first — the most recent shape is the one being acted on.
   const cs = filter(candlestick).sort((a, b) => b.index - a.index);
   const st = filter(recent).sort((a, b) => (a.bars_ago ?? 1e9) - (b.bars_ago ?? 1e9));
+
+  // Attach Bulkowski's measured statistics. Only to CONFIRMED patterns: his
+  // figures are all measured from the breakout onward, so quoting them against
+  // a shape that has not broken out yet applies a number to an event that has
+  // not happened.
+  for (const p of st) {
+    if (p.status !== 'confirmed') {
+      p.stats_note = 'No measured statistics attached: Bulkowski measures from the breakout onward, and this pattern has not broken out. The numbers do not apply to a forming shape.';
+      continue;
+    }
+    const dir = p.breakout_direction
+      || (p.direction === 'bullish' ? 'upward' : p.direction === 'bearish' ? 'downward' : null);
+    const s = statsFor(p.pattern, { direction: dir, market });
+    if (s) p.measured = s;
+  }
 
   return {
     candlestick: cs,

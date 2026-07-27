@@ -88,7 +88,6 @@ Still missing:
 |---|---|
 | **Indicator crosses** | RSI 50 cross, 9/20 × 50 SMA. Note `rsi > 50` is a *state*; a **cross** is an event, and using the state fires on every bar of a trend |
 | **MA slope** | "SMA20 sloping, not flat" |
-
 | **Wave position** | "buy wave 3" — `elliott_count` enumerates counts, but wave position is not an operand, and the count is subjective anyway |
 | **Pullback depth %** | ABCD's 40–70% retracement |
 | **Zone proximity** | "price returning to a demand zone" — `zones_find` computes zones, but zone membership is not an operand |

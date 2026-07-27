@@ -12,7 +12,7 @@ const wrap = (fn) => async (args = {}) => {
 export function registerPatternTools(server) {
   server.tool(
     'patterns_detect',
-    'Detect candlestick and chart patterns on the chart from the bars themselves. Every structural pattern reports status "forming" or "confirmed" — a pattern is NOT complete until price closes through the level that completes it, and reporting a forming pattern as a signal is the classic error. Each detection carries the measurements behind it and, where defined, the measured-move target.',
+    'Detect candlestick and chart patterns on the chart from the bars themselves. CONFIRMED structural patterns carry Bulkowski's measured statistics — break-even failure rate, average move, how often the measured-move target is reached — split by breakout direction and bull/bear market. Every structural pattern reports status "forming" or "confirmed" — a pattern is NOT complete until price closes through the level that completes it, and reporting a forming pattern as a signal is the classic error. Each detection carries the measurements behind it and, where defined, the measured-move target.',
     {
       count: z.coerce.number().optional().describe('Bars to analyze (default 300)'),
       recent_bars: z.coerce.number().optional().describe('How many recent bars to scan for candlestick patterns (default 10 — a doji 300 bars ago is noise)'),
@@ -20,6 +20,7 @@ export function registerPatternTools(server) {
       peak_tolerance_pct: z.coerce.number().optional().describe('How close two peaks must be to count as the same level (default 2)'),
       max_age_bars: z.coerce.number().optional().describe('Ignore structural patterns that finished more than this many bars ago — older ones are history, not setups (default 60)'),
       include: z.array(z.string()).optional().describe('Only report these pattern names'),
+      market: z.enum(['bull', 'bear']).optional().describe('Broader market regime, for Bulkowski statistics (default bull). The bull/bear difference is often large'),
     },
     wrap(async ({ count = 300, ...opts }) => {
       const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
@@ -34,6 +35,7 @@ export function registerPatternTools(server) {
           'A structural pattern with status "forming" has NOT completed. Say so — do not present it as a signal.',
           'Candlestick reversal patterns only mean something against a prior trend. Check prior_trend; where it is sideways the tool says so in a caveat.',
           'Targets are the standard measured move, not a forecast. They assume the pattern behaves typically, which often it does not.',
+          'Measured statistics are attached only to CONFIRMED patterns. Bulkowski measures from the breakout onward, so they do not apply to a forming shape — quote meeting_target_pct alongside any target you report.',
         ],
         note: 'Patterns are computed from the bars with stated thresholds, not judged by eye. Every detection carries its measurements so the claim can be checked.',
       };
