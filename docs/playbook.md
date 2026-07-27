@@ -101,3 +101,51 @@ Still missing:
 - Several were written for US small-cap day trading with a specific broker and platform. Windows, thresholds and instruments may not transfer.
 - Source PDFs stay in `books/`, git-ignored. Do not commit them or reproduce them at length.
 - Nothing here is trade advice.
+
+## Triangle / contraction continuation (Cory Mitchell, Trade That Swing)
+
+The most mechanically specified setup collected so far. Recorded in full because most of it is computable and several primitives are missing.
+
+**Universe filter (before the pattern matters)**
+- Strong stock in an uptrend, near 52-week highs.
+- **Stronger than the S&P 500** — `relative_strength` answers this directly.
+- No swing trades held through earnings, and none taken just before earnings — `ta_trading_context`.
+
+**Formation sequence**
+1. Overall uptrend.
+2. Pullback (downswing 1).
+3. Rally that reaches the prior high or a bit lower. A marginally higher high is fine; price shooting well above prior highs while contracting is not.
+4. Second drop, ideally reaching into the turning point of the first. A second drop much smaller than the first suggests a bigger drop still to come.
+5. Price rallies and forms a **consolidation** in the middle-to-upper portion of the triangle, or just above its upper line. Consolidation = **three or more bars moving sideways**.
+
+**Volume**
+- At least one low-volume day during the consolidation; two or three better.
+- Volume must **not** be increasing into the consolidation (absent a reason such as earnings).
+
+**Entry and stop — the part that differs from textbook triangle trading**
+- Entry is a buy-stop above the **consolidation** high, not the triangle.
+- Stop just below the **consolidation** low, not the triangle.
+- That is the entry-precision principle: same target, materially smaller stop.
+
+**Tightness — relative, not absolute**
+- "Tight" is judged against *that stock's own* prior contractions, on a log scale.
+- A contraction notably larger than the earlier ones in the same uptrend is more likely a **topping** pattern. Do not trade it.
+
+**Exhaustion count**
+- Two or three contractions in an uptrend is normal. **After four or more, a bigger pullback becomes more likely.**
+- When contractions turn loose and choppy and volume stays high even during consolidations, stop trading the name.
+
+**Targets**
+- At least **3:1** reward:risk. 6% risk implies an 18% target.
+- Consolidation at the *bottom* of the triangle is a different setup ("front-running"), not this one.
+
+**Missing primitives this needs** — none of these exist yet:
+
+| Needed | For |
+|---|---|
+| Distance from 52-week high | the universe filter |
+| Consolidation detection (3+ sideways bars, tight) | the entry trigger |
+| Contraction sequence: count and relative height | tightness, and the four-contraction exhaustion rule |
+
+> Source: [Trade That Swing](https://tradethatswing.com/how-to-swing-trade-continuation-patterns-in-stocks-and-which-ones-to-trade/), read July 2026.
+
