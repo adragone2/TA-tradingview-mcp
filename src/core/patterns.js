@@ -57,6 +57,95 @@ export const CANDLE_STATS = {
   dark_cloud_cover:  { acts_as: 'bearish reversal',     reliability_pct: 60, rank: 22 },
 };
 
+/**
+ * Nison's context and confirmation rules.
+ *
+ * `CANDLE_STATS` says how often a pattern WORKS. This says when it is a pattern
+ * at all — which is the prior question, and the one detection alone cannot
+ * answer. Nison is explicit that the identical shape means different things in
+ * different places, and that some patterns require confirmation while others do
+ * not:
+ *
+ *   "A hammer must come after a decline. A hanging man must come after a rally."
+ *   "A hanging man should be confirmed, while a hammer need not be."
+ *
+ * That asymmetry was not represented here at all — the two were reported the
+ * same way, which makes an unconfirmed hanging man look like a signal when its
+ * own author says it is not one yet.
+ *
+ * For the engulfing pattern he requires "a clearly definable uptrend or
+ * downtrend, even if the trend is short term", and allows one exception to the
+ * opposite-colour rule: a DOJI engulfed by a very large body still counts.
+ *
+ * Source: Nison, Japanese Candlestick Charting Techniques, 2nd ed., ch. 4.
+ */
+export const NISON_RULES = {
+  hammer:            { requires_prior: 'down', confirmation_required: false, note: 'A hammer is valid even after a short-term decline, and need not be confirmed.' },
+  hanging_man:       { requires_prior: 'up',   confirmation_required: true,  extended_move_preferred: true,
+                       confirmation: 'a close beneath the hanging man; at minimum a lower opening under its real body',
+                       note: 'Should emerge after an EXTENDED rally, preferably at a high. Nison requires confirmation for this one.' },
+  shooting_star:     { requires_prior: 'up',   confirmation_required: true,
+                       confirmation: 'a lower close on the following session' },
+  inverted_hammer:   { requires_prior: 'down', confirmation_required: true,
+                       confirmation: 'a higher close on the following session' },
+  bullish_engulfing: { requires_prior: 'down', confirmation_required: false, note: 'Needs a clearly definable downtrend, even a short-term one.' },
+  bearish_engulfing: { requires_prior: 'up',   confirmation_required: false, note: 'Needs a clearly definable uptrend, even a short-term one.' },
+  dark_cloud_cover:  { requires_prior: 'up',   confirmation_required: false },
+  piercing_line:     { requires_prior: 'down', confirmation_required: false },
+};
+
+/**
+ * Check a detected candle against Nison's context and confirmation rules.
+ *
+ * Confirmation is judged from the bar AFTER the pattern. Where that bar does
+ * not exist yet the answer is `awaiting_confirmation` — the same discipline
+ * structural patterns already use for `forming`, and for the same reason: a
+ * pattern whose required confirmation has not happened is a hypothesis.
+ */
+export function nisonCheck(pattern, bars, index) {
+  const rule = NISON_RULES[pattern];
+  if (!rule) return null;
+
+  const trend = priorTrend(bars, index);
+  const contextOk = trend === rule.requires_prior;
+
+  const out = {
+    requires_prior_trend: rule.requires_prior,
+    prior_trend_seen: trend,
+    context_ok: contextOk,
+    confirmation_required: rule.confirmation_required,
+    ...(rule.note ? { nison_note: rule.note } : {}),
+  };
+
+  if (!contextOk) {
+    out.context_warning = trend === 'unknown'
+      ? `Not enough prior bars to establish the ${rule.requires_prior}trend this pattern requires.`
+      : `This pattern requires a prior ${rule.requires_prior}trend and the prior move was ${trend}. Nison's own rule makes it not a ${pattern} here — it is the shape without the context.`;
+  }
+
+  if (rule.confirmation_required) {
+    const next = bars[index + 1];
+    const p = bars[index];
+    if (!next) {
+      out.confirmation_status = 'awaiting_confirmation';
+      out.confirmation_rule = rule.confirmation;
+      out.confirmation_warning = `Nison requires confirmation for this pattern and the next bar does not exist yet. Needed: ${rule.confirmation}. Until then it is a hypothesis, not a signal.`;
+    } else {
+      const bearishPattern = rule.requires_prior === 'up';
+      const confirmed = bearishPattern
+        ? next.close < Math.min(p.open, p.close)
+        : next.close > Math.max(p.open, p.close);
+      out.confirmation_status = confirmed ? 'confirmed' : 'not_confirmed';
+      out.confirmation_rule = rule.confirmation;
+      if (!confirmed) {
+        out.confirmation_warning = `The following bar did not confirm (needed ${rule.confirmation}). Nison treats an unconfirmed ${pattern} as no signal.`;
+      }
+    }
+  }
+
+  return out;
+}
+
 /** Attach the measured behaviour, and let it override the traditional label. */
 function withStats(p, statsKey = p.pattern) {
   const s = CANDLE_STATS[statsKey];
@@ -988,6 +1077,14 @@ export function detectPatterns(bars, {
 
   // Newest first — the most recent shape is the one being acted on.
   const cs = filter(candlestick).sort((a, b) => b.index - a.index);
+
+  // Nison's context and confirmation rules. Detection says the shape is there;
+  // this says whether it is a pattern at all, and whether its author would
+  // consider it actionable yet.
+  for (const p of cs) {
+    const n = nisonCheck(p.pattern, bars, p.index);
+    if (n) p.nison = n;
+  }
   const st = filter(recent).sort((a, b) => (a.bars_ago ?? 1e9) - (b.bars_ago ?? 1e9));
 
   // Attach Bulkowski's measured statistics. Only to CONFIRMED patterns: his

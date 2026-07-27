@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **153 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **156 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -327,6 +327,18 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### portfolio_* (1)
 
 - **`portfolio_heat`** — Total open risk across positions if every stop is hit at once
+
+### timeframe_* (1)
+
+- **`timeframe_plan`** — Which timeframes to use for a trading style, and why
+
+### mtf_* (1)
+
+- **`mtf_analyze`** — Trend and regime across three timeframes at once, and whether they AGREE
+
+### relative_* (1)
+
+- **`relative_strength`** — Performance against a benchmark — the "compared to what" question no single-symbol tool can answer
 
 ---
 

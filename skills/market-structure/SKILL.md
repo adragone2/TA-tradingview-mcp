@@ -107,3 +107,15 @@ Then report: the trend, the nearest level either side **with its reason**, and a
   **Always read `since_last_leg`.** The last confirmed leg ends some way back because swings need bars to their right; when price has run since, the warning says so. Never describe the last leg as what price is doing now.
 - **`divergence_survey`** — price against RSI, MACD, OBV and MFI, reporting where they agree.
 - **`zones_find`** — where price DEPARTED from, which is a different question from where it reversed. Use both.
+
+## Structure is timeframe-relative
+
+A daily "range" inside a weekly uptrend is a pullback; the same daily range inside a weekly downtrend is a bounce. The daily chart cannot tell you which.
+
+```
+mtf_analyze          → trend and regime on three timeframes, and whether they agree
+timeframe_plan       → which three a given style implies
+relative_strength    → and whether any of it is beating the benchmark
+```
+
+Re-run structure per timeframe rather than assuming a level or a trend carries across.

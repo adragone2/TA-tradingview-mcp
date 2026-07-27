@@ -41,6 +41,21 @@ This is the gate, not a formality.
 
 A report that finds a setup on a chart with efficiency 0.06 has failed, however many tools it ran.
 
+## Step 2.5 — Which timeframe, and does it agree with the one above it?
+
+```
+timeframe_plan style=swing        → which three timeframes this style implies
+mtf_analyze base_label=1D         → trend and regime across three at once
+```
+
+Timeframes step by a factor of 4-6 into three screens: **context** grants permission, **structure** finds the setup, **trigger** times it. Swing is weekly/daily/hourly; day trading is daily/hourly/15m.
+
+`mtf_analyze` aggregates upward from the loaded bars, so the chart is never switched.
+
+- **Read `alignment.permitted_direction` before looking for a setup.** A daily long inside a weekly downtrend is countertrend, and the tool says so in those words. Take it if you like, but say it out loud.
+- **Check `partial_last_bar`.** A half-finished weekly bar can show a reversal that has not happened. It is the commonest way multi-timeframe analysis misleads.
+- For US equities the swing trigger is **1H, not 4H** — a 6.5-hour session makes a 4H bar only ~1.6x a daily, too close to be a separate screen. `swing_24h` is the crypto/FX variant.
+
 ## Step 3 — Structure
 
 ```
@@ -64,6 +79,21 @@ anchored_vwap              → anchored to the last major swing
 **Quote each level's `reason`.** "733 — 7 tests, flipped, 27 bars traded within it" can be argued with. "733" cannot.
 
 > **The failure mode to watch for:** after a large decline, every swing-derived level sits *above* price and `levels_find` returns nothing below. That is a real finding, not a tool failure — **there is no tested support beneath price.** Say exactly that, then give the nearest reference that does exist: the value-area low from `volume_profile`, a round number, or the prior range low. Never leave "nearest support" blank, and never invent one.
+
+## Step 4.5 — Compared to what?
+
+```
+relative_strength benchmark=AMEX:SPY
+```
+
+No single-symbol tool can answer this, and it changes the read. A stock up 8% looks strong until its index is up 12%.
+
+- Read `leadership` **and** `leadership_note`. A recent bounce inside long-term underperformance comes back as `mixed`, not `outperforming` — do not quote the short window alone.
+- `high_warning` is the one to watch: price at a new high while the RS line is not means the move is market-led rather than stock-led.
+- This is **not** the RSI. RSI compares a symbol to its own past; this compares it to another symbol.
+- RS says nothing about direction. A stock can outperform all the way down.
+
+The tool switches the chart to the benchmark and restores it; if restoring fails it raises rather than leaving the chart elsewhere.
 
 ## Step 5 — What kind of market this is
 
@@ -90,6 +120,7 @@ Rules that decide whether any of this is reportable:
 - A structural pattern is **forming** until price closes through its completion level. A forming pattern is a hypothesis. Never present one as a signal.
 - Confirmed patterns carry Bulkowski's `measured` statistics — quote `break_even_failure_pct` and `meeting_target_pct` next to any target.
 - Divergence: prefer `divergence_survey`. One indicator out of four is weak, and in a strong trend divergence is normal rather than a warning.
+- **Candles carry Nison's context and confirmation rules in a `nison` block.** A hammer needs no confirmation; a hanging man does, and until the next bar closes beneath it the status is `awaiting_confirmation` — a hypothesis, not a signal. Check `context_ok` too: the same shape without its required prior trend is not the pattern.
 - Zones: read `total_found` before the list. Dozens exist; the returned ones are not rare.
 
 ## Step 7 — Projection, if there is a move to project

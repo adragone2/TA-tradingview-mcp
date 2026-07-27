@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-153 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+156 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 153 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 156 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
@@ -35,6 +35,8 @@
 | Anything is broken | `tv_doctor` — every failing check carries its fix |
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | `chart-analysis` skill |
+| "Which timeframe?" / swing vs day | `timeframe_plan` then `mtf_analyze` — context grants permission, structure finds the setup |
+| "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |

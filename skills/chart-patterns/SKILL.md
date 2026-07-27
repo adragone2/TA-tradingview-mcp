@@ -164,3 +164,15 @@ Confirmed structural patterns now carry Bulkowski's measurements in a `measured`
 - Some patterns carry a `_range` instead of a figure, because Bulkowski measured sub-variants this detector cannot tell apart. Report the range; the average is a number he never measured.
 
 Also useful alongside: **`candle_read`** classifies any candle as momentum, reaction or indecision — it always answers, where `patterns_detect` answers only for named patterns.
+
+## Nison's context and confirmation rules
+
+`measured` says how often a pattern works. The `nison` block on each candlestick says whether it is a pattern **at all** — the prior question, and one detection alone cannot answer.
+
+- **`context_ok`** — Nison requires a prior trend: "A hammer must come after a decline. A hanging man must come after a rally." The identical shape without that context is the shape, not the pattern. Report `context_warning` when present.
+- **`confirmation_required`** — this is asymmetric and it matters: a **hammer need not be confirmed, a hanging man must be.** Same for shooting star and inverted hammer.
+- **`confirmation_status`** — `confirmed`, `not_confirmed`, or `awaiting_confirmation` when the next bar does not exist yet. Treat the last two exactly as you treat a `forming` structural pattern: a hypothesis, never a signal.
+
+For the engulfing pattern he requires a clearly definable trend, even a short-term one, and allows one exception to the opposite-colour rule — a doji engulfed by a very large body still counts.
+
+> Source: Nison, *Japanese Candlestick Charting Techniques*, 2nd ed., ch. 4.
