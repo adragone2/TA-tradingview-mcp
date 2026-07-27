@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 122 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 124 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -33,7 +33,8 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | [chart-analysis](../skills/chart-analysis/SKILL.md) skill |
 | "What's the trend?" / "where's the structure?" | [market-structure](../skills/market-structure/SKILL.md) skill — `structure_analyze`, never read off a screenshot |
-| "Any patterns here?" / "is this a double top?" | `patterns_detect` — check `status`: forming is NOT a signal |
+| "Any patterns here?" / "is this a double top?" | [chart-patterns](../skills/chart-patterns/SKILL.md) skill — check `status`: forming is NOT a signal |
+| "Was that breakout real?" | `breakout_check`, `level_pressure` — measurements, not adjectives |
 | "Where are support and resistance?" | `levels_find` → `levels_draw`. Quote each level's `reason` |
 | "Mark my entry / stop / targets" | `draw_trade_plan` — one call, never hand-built from `draw_shape` |
 | "How much should I buy?" | `position_size`, or `position_read` for a plan the user drew by hand |
@@ -92,7 +93,7 @@ wrds-mcp/      separate MCP server for historical research
 ```
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
-- [tools-reference.md](tools-reference.md) — all 122 tools by group
+- [tools-reference.md](tools-reference.md) — all 124 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data

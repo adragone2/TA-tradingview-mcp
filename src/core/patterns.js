@@ -24,6 +24,64 @@ import { findSwings, alternateSwings } from './structure.js';
 const round = (n, dp = 6) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 const pct = (a, b) => (b === 0 ? Infinity : Math.abs(a - b) / Math.abs(b) * 100);
 
+/**
+ * What each candlestick pattern ACTUALLY does, measured.
+ *
+ * Bulkowski tested 103 candle types against real price data, and several of
+ * the results contradict what the patterns are traditionally said to mean:
+ *
+ *   - the hanging man is called bearish, and acts as a BULLISH continuation
+ *   - the inverted hammer is called bullish, and acts as a BEARISH continuation
+ *   - the bearish harami is called bearish, and acts as a BULLISH continuation
+ *
+ * Those three were labelled the traditional way here until this table was
+ * added. Folk direction is not a fact, so `acts_as` and `reliability_pct`
+ * come from the measurements and `direction` follows them — not the folklore.
+ *
+ * `rank` is out of 103 candle types, 1 best, and describes how far price
+ * travels AFTER the pattern. High reliability with a poor rank means it
+ * reliably marks a turn that then goes nowhere much.
+ *
+ * Source: thepatternsite.com (Bulkowski), accessed July 2026.
+ */
+export const CANDLE_STATS = {
+  hammer:            { acts_as: 'bullish reversal',     reliability_pct: 60, rank: 65 },
+  hanging_man:       { acts_as: 'bullish continuation', reliability_pct: 59, rank: 87 },
+  shooting_star:     { acts_as: 'bearish reversal',     reliability_pct: 59, rank: null },
+  inverted_hammer:   { acts_as: 'bearish continuation', reliability_pct: 65, rank: 6 },
+  bullish_engulfing: { acts_as: 'bullish reversal',     reliability_pct: 63, rank: 22 },
+  bearish_engulfing: { acts_as: 'bearish reversal',     reliability_pct: 79, rank: 5 },
+  harami_bullish:    { acts_as: 'bullish reversal',     reliability_pct: 53, rank: 38 },
+  harami_bearish:    { acts_as: 'bullish continuation', reliability_pct: 53, rank: 72 },
+  piercing_line:     { acts_as: 'bullish reversal',     reliability_pct: 64, rank: 21 },
+  dark_cloud_cover:  { acts_as: 'bearish reversal',     reliability_pct: 60, rank: 22 },
+};
+
+/** Attach the measured behaviour, and let it override the traditional label. */
+function withStats(p, statsKey = p.pattern) {
+  const s = CANDLE_STATS[statsKey];
+  if (!s) return p;
+  const measuredDirection = s.acts_as.startsWith('bullish') ? 'bullish' : 'bearish';
+  const contradicts = p.direction !== 'neutral' && p.direction !== measuredDirection;
+  return {
+    ...p,
+    direction: measuredDirection,
+    reliability: {
+      acts_as: s.acts_as,
+      pct: s.reliability_pct,
+      rank_of_103: s.rank,
+      // Near 50% is a coin flip dressed as a signal — say so rather than
+      // letting the pattern's name do the arguing.
+      verdict: s.reliability_pct >= 65 ? 'reliable'
+        : s.reliability_pct >= 58 ? 'modest'
+        : 'close to random',
+    },
+    ...(contradicts
+      ? { contradicts_folklore: `Traditionally called ${p.direction}, but measured as a ${s.acts_as} ${s.reliability_pct}% of the time. The measurement wins.` }
+      : {}),
+  };
+}
+
 /* ---------------------------- bar anatomy ---------------------------- */
 
 export function anatomy(bar) {
@@ -79,11 +137,49 @@ function candlesAt(bars, i, opts) {
 
   // --- one-bar ---
   if (a.body_pct <= doji_body_pct) {
+    // The doji family. Which one it is depends on where the tiny body sits,
+    // and that changes the meaning completely: a dragonfly is buyers taking
+    // back a whole session, a gravestone is sellers doing the same.
+    const upper = a.upper_wick, lower = a.lower_wick;
+    let variant = 'doji', dir = 'neutral', meaning = 'indecision — open and close nearly equal';
+    if (a.range === 0) {
+      variant = 'four_price_doji'; meaning = 'open, high, low and close identical — no information, and very rare';
+    } else if (lower >= a.range * 0.66 && upper <= a.range * 0.15) {
+      variant = 'dragonfly_doji'; dir = 'bullish';
+      meaning = 'sold off through the session, then closed back at the open — buyers took it all back';
+    } else if (upper >= a.range * 0.66 && lower <= a.range * 0.15) {
+      variant = 'gravestone_doji'; dir = 'bearish';
+      meaning = 'rallied through the session, then closed back at the open — sellers took it all back';
+    } else if (a.range > 0 && upper > a.range * 0.25 && lower > a.range * 0.25) {
+      variant = 'long_legged_doji';
+      meaning = 'wide range either side of an unchanged close — volatile indecision';
+    }
     out.push({
-      ...base, pattern: 'doji', bars: 1, direction: 'neutral',
-      meaning: 'indecision — open and close nearly equal',
-      measurements: { body_pct_of_range: round(a.body_pct, 1) },
+      ...base, pattern: variant, bars: 1, direction: dir,
+      meaning,
+      measurements: {
+        body_pct_of_range: round(a.body_pct, 1),
+        upper_wick_pct: round(a.range ? (upper / a.range) * 100 : 0, 1),
+        lower_wick_pct: round(a.range ? (lower / a.range) * 100 : 0, 1),
+      },
     });
+  }
+
+  // Momentum candle: a body more than `momentum_ratio` times the average of
+  // the preceding bodies. This is the measurable version of "a strong candle",
+  // which every source leans on and none of them define.
+  if (i >= 5) {
+    const prevBodies = bars.slice(i - 5, i).map((x) => Math.abs(x.close - x.open));
+    const avgBody = prevBodies.reduce((x, y) => x + y, 0) / prevBodies.length;
+    if (avgBody > 0 && a.body >= avgBody * (opts.momentum_ratio || 2)) {
+      out.push({
+        ...base,
+        pattern: a.bullish ? 'bullish_momentum_candle' : 'bearish_momentum_candle',
+        bars: 1, direction: a.bullish ? 'bullish' : 'bearish',
+        meaning: 'body far larger than the recent average — one side took control, and momentum often carries on',
+        measurements: { body_vs_avg: round(a.body / avgBody, 2), body: round(a.body), avg_prior_body: round(avgBody) },
+      });
+    }
   }
 
   const longLower = a.lower_wick >= wick_ratio * a.body && a.upper_wick <= a.body;
@@ -91,7 +187,7 @@ function candlesAt(bars, i, opts) {
 
   if (longLower && a.body_pct > doji_body_pct) {
     // Same shape, different name by context — that is the entire distinction.
-    out.push({
+    out.push(withStats({
       ...base,
       pattern: trend === 'down' ? 'hammer' : 'hanging_man',
       bars: 1,
@@ -103,11 +199,11 @@ function candlesAt(bars, i, opts) {
       ...(trend === 'sideways' || trend === 'unknown'
         ? { caveat: 'No clear prior trend, so this shape carries little reversal meaning.' }
         : {}),
-    });
+    }));
   }
 
   if (longUpper && a.body_pct > doji_body_pct) {
-    out.push({
+    out.push(withStats({
       ...base,
       pattern: trend === 'up' ? 'shooting_star' : 'inverted_hammer',
       bars: 1,
@@ -119,7 +215,7 @@ function candlesAt(bars, i, opts) {
       ...(trend === 'sideways' || trend === 'unknown'
         ? { caveat: 'No clear prior trend, so this shape carries little reversal meaning.' }
         : {}),
-    });
+    }));
   }
 
   if (i === 0) return out;
@@ -133,17 +229,17 @@ function candlesAt(bars, i, opts) {
   // Engulfing: the second BODY completely contains the first body.
   if (cTop >= pTop && cBottom <= pBottom && a.body > pa.body && pa.body > 0) {
     if (a.bullish && pa.bearish) {
-      out.push({
+      out.push(withStats({
         ...base, pattern: 'bullish_engulfing', bars: 2, direction: 'bullish',
         meaning: 'up bar whose body swallows the prior down bar',
         measurements: { body_ratio: round(a.body / pa.body, 2) },
-      });
+      }));
     } else if (a.bearish && pa.bullish) {
-      out.push({
+      out.push(withStats({
         ...base, pattern: 'bearish_engulfing', bars: 2, direction: 'bearish',
         meaning: 'down bar whose body swallows the prior up bar',
         measurements: { body_ratio: round(a.body / pa.body, 2) },
-      });
+      }));
     }
   }
 
@@ -151,31 +247,30 @@ function candlesAt(bars, i, opts) {
   if (cTop <= pTop && cBottom >= pBottom && pa.body > 0 && a.body < pa.body
       && (a.body / pa.body) * 100 <= small_body_pct
       && ((a.bullish && pa.bearish) || (a.bearish && pa.bullish))) {
-    out.push({
+    out.push(withStats({
       ...base, pattern: 'harami', bars: 2,
       direction: a.bullish ? 'bullish' : 'bearish',
       meaning: 'small body contained within the previous larger body — momentum stalling',
       measurements: { body_ratio: round(a.body / pa.body, 2) },
-      caveat: 'Commonly called a reversal, but the reference data has it breaking either way.',
-    });
+    }, a.bullish ? 'harami_bullish' : 'harami_bearish'));
   }
 
   // Dark cloud cover / piercing line: opens beyond the prior bar, closes back
   // past the MIDPOINT of the prior body without fully engulfing it.
   const pMid = (p.open + p.close) / 2;
   if (pa.bullish && a.bearish && b.open > p.high && b.close < pMid && b.close > p.open) {
-    out.push({
+    out.push(withStats({
       ...base, pattern: 'dark_cloud_cover', bars: 2, direction: 'bearish',
       meaning: 'gapped up, then closed back below the midpoint of the prior up bar',
       measurements: { penetration_pct: round(((p.close - b.close) / (p.close - p.open)) * 100, 1) },
-    });
+    }));
   }
   if (pa.bearish && a.bullish && b.open < p.low && b.close > pMid && b.close < p.open) {
-    out.push({
+    out.push(withStats({
       ...base, pattern: 'piercing_line', bars: 2, direction: 'bullish',
       meaning: 'gapped down, then closed back above the midpoint of the prior down bar',
       measurements: { penetration_pct: round(((b.close - p.close) / (p.open - p.close)) * 100, 1) },
-    });
+    }));
   }
 
   // Inside bar — the whole RANGE is contained, not just the body.
@@ -253,7 +348,7 @@ function structuralPatterns(bars, swings, opts) {
       const neck = b.price;
       const height = Math.max(a.price, c.price) - neck;
       found.push({
-        pattern: 'double_top', direction: 'bearish', bars: c.index - a.index + 1,
+        pattern: 'double_top', type: 'reversal', direction: 'bearish', bars: c.index - a.index + 1,
         status: confirm(neck, 'down'),
         completion_level: round(neck),
         target: round(neck - height),
@@ -268,7 +363,7 @@ function structuralPatterns(bars, swings, opts) {
       const neck = b.price;
       const height = neck - Math.min(a.price, c.price);
       found.push({
-        pattern: 'double_bottom', direction: 'bullish', bars: c.index - a.index + 1,
+        pattern: 'double_bottom', type: 'reversal', direction: 'bullish', bars: c.index - a.index + 1,
         status: confirm(neck, 'up'),
         completion_level: round(neck),
         target: round(neck + height),
@@ -290,7 +385,7 @@ function structuralPatterns(bars, swings, opts) {
         const neck = Math.min(t1.price, t2.price);
         const height = Math.max(p1.price, p2.price, p3.price) - neck;
         found.push({
-          pattern: 'triple_top', direction: 'bearish', bars: p3.index - p1.index + 1,
+          pattern: 'triple_top', type: 'reversal', direction: 'bearish', bars: p3.index - p1.index + 1,
           status: confirm(neck, 'down'),
           completion_level: round(neck), target: round(neck - height),
           measurements: { peaks: [round(p1.price), round(p2.price), round(p3.price)], troughs: [round(t1.price), round(t2.price)], height: round(height) },
@@ -304,12 +399,15 @@ function structuralPatterns(bars, swings, opts) {
         const neck = (t1.price + t2.price) / 2;
         const height = p2.price - neck;
         found.push({
-          pattern: 'head_and_shoulders', direction: 'bearish', bars: p3.index - p1.index + 1,
+          pattern: 'head_and_shoulders', type: 'reversal', direction: 'bearish', bars: p3.index - p1.index + 1,
           status: confirm(neck, 'down'),
           completion_level: round(neck), target: round(neck - height),
-          measurements: { left_shoulder: round(p1.price), head: round(p2.price), right_shoulder: round(p3.price), neckline: round(neck), shoulder_difference_pct: round(pct(p1.price, p3.price), 2), height: round(height) },
+          measurements: { left_shoulder: round(p1.price), head: round(p2.price), right_shoulder: round(p3.price), neckline: round(neck), shoulder_difference_pct: round(pct(p1.price, p3.price), 2), height: round(height), trough_1: round(t1.price), trough_2: round(t2.price), downsloping_neckline: t2.price < t1.price },
           from_time: p1.time, to_time: p3.time,
           note: 'Completes only on a close below the neckline. Target is head-to-neckline projected down from the neckline.',
+          ...(t2.price < t1.price
+            ? { structure_confirms: 'The second trough is below the first, so price is already making lower highs AND lower lows — structure has turned before the neckline breaks. This is the stronger version.' }
+            : { structure_caveat: 'The second trough is not below the first, so structure has not yet turned. Weaker than the down-sloping-neckline version.' }),
         });
       }
     }
@@ -320,7 +418,7 @@ function structuralPatterns(bars, swings, opts) {
         const neck = Math.max(p1.price, p2.price);
         const height = neck - Math.min(t1.price, t2.price, t3.price);
         found.push({
-          pattern: 'triple_bottom', direction: 'bullish', bars: t3.index - t1.index + 1,
+          pattern: 'triple_bottom', type: 'reversal', direction: 'bullish', bars: t3.index - t1.index + 1,
           status: confirm(neck, 'up'),
           completion_level: round(neck), target: round(neck + height),
           measurements: { troughs: [round(t1.price), round(t2.price), round(t3.price)], peaks: [round(p1.price), round(p2.price)], height: round(height) },
@@ -333,7 +431,7 @@ function structuralPatterns(bars, swings, opts) {
         const neck = (p1.price + p2.price) / 2;
         const height = neck - t2.price;
         found.push({
-          pattern: 'inverse_head_and_shoulders', direction: 'bullish', bars: t3.index - t1.index + 1,
+          pattern: 'inverse_head_and_shoulders', type: 'reversal', direction: 'bullish', bars: t3.index - t1.index + 1,
           status: confirm(neck, 'up'),
           completion_level: round(neck), target: round(neck + height),
           measurements: { left_shoulder: round(t1.price), head: round(t2.price), right_shoulder: round(t3.price), neckline: round(neck), shoulder_difference_pct: round(pct(t1.price, t3.price), 2), height: round(height) },
@@ -347,10 +445,152 @@ function structuralPatterns(bars, swings, opts) {
   return found;
 }
 
+/* ------------------------ trendline patterns -------------------------- */
+
+/** Least-squares slope of price against bar index, as percent of price per bar. */
+export function slopePctPerBar(points) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  const n = points.length;
+  const mx = points.reduce((s, p) => s + p.index, 0) / n;
+  const my = points.reduce((s, p) => s + p.price, 0) / n;
+  let num = 0, den = 0;
+  for (const p of points) { num += (p.index - mx) * (p.price - my); den += (p.index - mx) ** 2; }
+  if (den === 0 || my === 0) return null;
+  return (num / den) / my * 100;
+}
+
+/** Value of the fitted line at a given bar index. */
+function lineAt(points, index) {
+  const n = points.length;
+  const mx = points.reduce((s, p) => s + p.index, 0) / n;
+  const my = points.reduce((s, p) => s + p.price, 0) / n;
+  let num = 0, den = 0;
+  for (const p of points) { num += (p.index - mx) * (p.price - my); den += (p.index - mx) ** 2; }
+  const slope = den === 0 ? 0 : num / den;
+  return my + slope * (index - mx);
+}
+
+/**
+ * Triangles, rectangles, wedges, flags and broadening formations.
+ *
+ * All of these are "two trend lines" patterns; what separates them is only the
+ * SIGN of each slope and whether the lines converge. So they are detected once,
+ * from the same fitted lines, and named from the geometry — rather than as six
+ * near-duplicate detectors that could disagree with each other.
+ *
+ * Bulkowski's requirement is enforced: at least two minor highs AND two minor
+ * lows must touch (or come close to) the lines. Fewer than that is not a
+ * pattern, it is two points and an opinion.
+ */
+function trendlinePatterns(bars, swings, {
+  window_bars = 60,
+  flat_slope_pct = 0.05,
+  min_touches = 2,
+} = {}) {
+  const lastIndex = bars.length - 1;
+  const start = Math.max(0, lastIndex - window_bars);
+  const inWindow = swings.filter((s) => s.index >= start);
+  const highs = inWindow.filter((s) => s.kind === 'high');
+  const lows = inWindow.filter((s) => s.kind === 'low');
+
+  if (highs.length < min_touches || lows.length < min_touches) return [];
+
+  const hSlope = slopePctPerBar(highs);
+  const lSlope = slopePctPerBar(lows);
+  if (hSlope == null || lSlope == null) return [];
+
+  const first = Math.min(highs[0].index, lows[0].index);
+  const widthStart = lineAt(highs, first) - lineAt(lows, first);
+  const widthEnd = lineAt(highs, lastIndex) - lineAt(lows, lastIndex);
+  if (!(widthStart > 0) || !(widthEnd > 0)) return [];
+  const converging = widthEnd < widthStart * 0.9;
+  const diverging = widthEnd > widthStart * 1.1;
+
+  const flatHigh = Math.abs(hSlope) < flat_slope_pct;
+  const flatLow = Math.abs(lSlope) < flat_slope_pct;
+  const resistance = lineAt(highs, lastIndex);
+  const support = lineAt(lows, lastIndex);
+  const height = Math.max(...highs.map((s) => s.price)) - Math.min(...lows.map((s) => s.price));
+  const spanBars = lastIndex - first;
+  const last = bars[lastIndex];
+
+  let pattern = null, direction = 'bilateral', note = '', type = null, avoid = null;
+  if (flatHigh && lSlope > flat_slope_pct) {
+    pattern = 'ascending_triangle'; direction = 'bullish'; type = 'continuation';
+    note = 'Horizontal resistance with rising lows. Usually continues the prior trend, but it does break down sometimes.';
+  } else if (flatLow && hSlope < -flat_slope_pct) {
+    pattern = 'descending_triangle'; direction = 'bearish'; type = 'continuation';
+    note = 'Horizontal support with falling highs. Roughly two in three break downward.';
+  } else if (hSlope < -flat_slope_pct && lSlope > flat_slope_pct && converging) {
+    pattern = 'symmetrical_triangle'; direction = 'bilateral'; type = 'uncertain';
+    note = 'Converging lines with no directional bias of its own. Textbooks call it a continuation; in practice it often just becomes a sideways range.';
+    avoid = 'Direction is not knowable in advance, and these frequently resolve into a trading range rather than a trend. A breakout from one is often just a normal swing inside that range. Treat with suspicion rather than as a setup.';
+  } else if (flatHigh && flatLow) {
+    pattern = 'rectangle'; direction = 'bilateral'; type = 'uncertain';
+    note = 'A trading range bounded by two horizontal lines. Prone to false breakouts.';
+    avoid = 'Price action inside a range is close to random. Beware of finding further patterns in it — that is where most imaginary patterns come from.';
+  } else if (hSlope > flat_slope_pct && lSlope > flat_slope_pct && converging && lSlope > hSlope) {
+    // Both rise, and the LOWER line rises faster — that is what closes the
+    // wedge. Without the steeper-line test this is just a rising channel.
+    pattern = 'rising_wedge'; direction = 'bearish'; type = 'reversal or continuation';
+    note = 'Both lines rise while the lower one rises faster, narrowing the range. Breaks DOWN despite rising prices. Acts as a reversal after an uptrend and a continuation after a downtrend.';
+  } else if (hSlope < -flat_slope_pct && lSlope < -flat_slope_pct && converging && hSlope < lSlope) {
+    pattern = 'falling_wedge'; direction = 'bullish'; type = 'reversal or continuation';
+    note = 'Both lines fall while the upper one falls faster, narrowing the range. Breaks UP despite falling prices. Acts as a reversal after a downtrend and a continuation after an uptrend.';
+  } else if (diverging && hSlope > 0 && lSlope < 0) {
+    pattern = 'broadening_formation'; direction = 'bilateral'; type = 'uncertain';
+    note = 'Diverging lines — a megaphone, meaning volatility is rising. Direction AND type are both uncertain.';
+    avoid = 'These frequently resolve into a plain trading range. Inside a range, price action is close to random and it is easy to "find" more patterns in the noise. Treat as a reason NOT to trade rather than a setup.';
+  } else if (Math.abs(hSlope - lSlope) < flat_slope_pct && !flatHigh && spanBars <= 15) {
+    pattern = hSlope < 0 ? 'bull_flag' : 'bear_flag';
+    direction = hSlope < 0 ? 'bullish' : 'bearish';
+    type = 'continuation';
+    note = 'Parallel lines sloping against the prior move, over a short span — a pause, not a turn. Quality depends mostly on the IMPULSE INTO it: a sharp move with large candles makes a good flag, a slow drift makes a poor one.';
+  }
+  if (!pattern) return [];
+
+  // Which line completes it, and which way. Bilateral patterns can complete
+  // either way, so the nearer line is reported as the one in play.
+  const upBreak = last.close > resistance;
+  const downBreak = last.close < support;
+  const completion = direction === 'bearish' ? support
+    : direction === 'bullish' ? resistance
+    : (Math.abs(last.close - resistance) < Math.abs(last.close - support) ? resistance : support);
+
+  const status = (upBreak || downBreak) ? 'confirmed' : 'forming';
+  const brokeUp = upBreak;
+
+  return [{
+    pattern, direction,
+    ...(type ? { type } : {}),
+    status,
+    ...(avoid ? { avoid } : {}),
+    ...(status === 'confirmed' ? { broke: brokeUp ? 'up' : 'down' } : {}),
+    bars: spanBars,
+    bars_ago: 0,
+    completion_level: round(completion),
+    // Measure rule: the pattern's height projected from the breakout level.
+    target: status === 'confirmed'
+      ? round(brokeUp ? resistance + height : support - height)
+      : round(direction === 'bearish' ? support - height : resistance + height),
+    measurements: {
+      resistance_now: round(resistance), support_now: round(support),
+      upper_slope_pct_per_bar: round(hSlope, 4), lower_slope_pct_per_bar: round(lSlope, 4),
+      touches_high: highs.length, touches_low: lows.length,
+      height: round(height), width_start: round(widthStart), width_end: round(widthEnd),
+      converging, diverging,
+    },
+    from_time: bars[first]?.time ?? null,
+    to_time: last.time,
+    note,
+  }];
+}
+
 /* ------------------------------ entry point --------------------------- */
 
 export const CANDLE_PATTERNS = [
-  'doji', 'hammer', 'hanging_man', 'shooting_star', 'inverted_hammer',
+  'doji', 'dragonfly_doji', 'gravestone_doji', 'long_legged_doji', 'four_price_doji',
+  'bullish_momentum_candle', 'bearish_momentum_candle', 'hammer', 'hanging_man', 'shooting_star', 'inverted_hammer',
   'bullish_engulfing', 'bearish_engulfing', 'harami',
   'dark_cloud_cover', 'piercing_line', 'inside_bar', 'gap_up', 'gap_down',
   'NR4', 'NR7',
@@ -358,6 +598,9 @@ export const CANDLE_PATTERNS = [
 export const STRUCTURAL_PATTERNS = [
   'double_top', 'double_bottom', 'triple_top', 'triple_bottom',
   'head_and_shoulders', 'inverse_head_and_shoulders',
+  'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
+  'rectangle', 'rising_wedge', 'falling_wedge', 'broadening_formation',
+  'bull_flag', 'bear_flag',
 ];
 
 /**
@@ -373,6 +616,8 @@ export function detectPatterns(bars, {
   lookback = 5,
   peak_tolerance_pct = 2,
   max_age_bars = 60,
+  window_bars = 60,
+  flat_slope_pct = 0.05,
   doji_body_pct = 10,
   wick_ratio = 2,
   small_body_pct = 30,
@@ -395,7 +640,10 @@ export function detectPatterns(bars, {
   }
 
   const swings = findSwings(bars, { lookback });
-  const all = structuralPatterns(bars, swings, opts);
+  const all = [
+    ...structuralPatterns(bars, swings, opts),
+    ...trendlinePatterns(bars, swings, { window_bars, flat_slope_pct, min_touches: 2 }),
+  ];
 
   // Age every pattern by how long ago it finished forming. Without this the
   // output is dominated by shapes from hundreds of bars back, at prices far

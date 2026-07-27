@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **122 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **124 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -230,6 +230,14 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### patterns_* (1)
 
 - **`patterns_detect`** — Detect candlestick and chart patterns on the chart from the bars themselves
+
+### breakout_* (1)
+
+- **`breakout_check`** — Score a breakout of a price level against five measurable criteria: momentum (body vs recent average), how far beyond the level it CLOSED, volume vs a
+
+### level_* (1)
+
+- **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier and the le
 
 ---
 

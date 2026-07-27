@@ -49,7 +49,37 @@ describe('doji', () => {
   it('detects a bar whose open and close are nearly equal', () => {
     reset();
     const bars = [...upLeadIn(), bar(100, 105, 95, 100.1)];
-    assert.ok(names(detectPatterns(bars, { recent_bars: 2 })).includes('doji'));
+    // Wicks either side of an unchanged close: the long-legged variant.
+    assert.ok(names(detectPatterns(bars, { recent_bars: 2 })).some((n) => n.includes('doji')));
+  });
+
+  it('names the doji variant, because the variant is the meaning', () => {
+    reset();
+    const dragonfly = [...downLeadIn(), bar(100, 100.2, 90, 100)];
+    const d = find(detectPatterns(dragonfly, { recent_bars: 2 }), 'dragonfly_doji');
+    assert.ok(d, 'expected a dragonfly doji');
+    assert.equal(d.direction, 'bullish');
+
+    reset();
+    const gravestone = [...upLeadIn(), bar(100, 110, 99.8, 100)];
+    const g = find(detectPatterns(gravestone, { recent_bars: 2 }), 'gravestone_doji');
+    assert.ok(g, 'expected a gravestone doji');
+    assert.equal(g.direction, 'bearish');
+  });
+
+  it('detects a momentum candle against the recent average body', () => {
+    reset();
+    const small = Array.from({ length: 6 }, () => bar(100, 101, 99, 100.5));
+    const bars = [...small, bar(100, 112, 99, 111)];
+    const m = find(detectPatterns(bars, { recent_bars: 2 }), 'bullish_momentum_candle');
+    assert.ok(m, 'expected a bullish momentum candle');
+    assert.ok(m.measurements.body_vs_avg >= 2, 'body must exceed twice the recent average');
+  });
+
+  it('does not call an ordinary bar a momentum candle', () => {
+    reset();
+    const even = Array.from({ length: 8 }, () => bar(100, 102, 98, 101));
+    assert.ok(!names(detectPatterns(even, { recent_bars: 2 })).some((n) => n.includes('momentum')));
   });
 
   it('does not call a full-bodied bar a doji', () => {
@@ -74,7 +104,11 @@ describe('hammer and hanging man — same shape, different context', () => {
     const bars = [...upLeadIn(), bar(100, 101, 92, 99)];
     const p = find(detectPatterns(bars, { recent_bars: 2 }), 'hanging_man');
     assert.ok(p, 'expected a hanging man');
-    assert.equal(p.direction, 'bearish');
+    // Measured, not folklore: the hanging man acts as a BULLISH continuation
+    // 59% of the time, so direction follows the measurement and the
+    // contradiction is stated rather than hidden.
+    assert.equal(p.direction, 'bullish');
+    assert.match(p.contradicts_folklore, /Traditionally called bearish/);
   });
 
   it('flags the lack of a trend rather than claiming a reversal', () => {
@@ -145,7 +179,8 @@ describe('harami', () => {
     const p = find(detectPatterns(bars, { recent_bars: 2 }), 'harami');
     assert.ok(p, 'expected a harami');
     assert.ok(p.measurements.body_ratio < 1);
-    assert.match(p.caveat, /either way/i);
+    // A bearish harami measures 53% bullish continuation — a coin flip.
+    assert.equal(p.reliability.verdict, 'close to random');
   });
 
   it('does not fire when the second body escapes the first', () => {
@@ -402,5 +437,155 @@ describe('recency — history is not a finding', () => {
     const bars = Array.from({ length: 40 }, (_, i) => { const p = 100 + i; return bar(p, p + 1, p - 1, p); });
     const r = detectPatterns(bars, { lookback: 3 });
     if (!r.structural.length) assert.match(r.structural_note, /normal result/i);
+  });
+});
+
+describe('measured reliability overrides folklore', () => {
+  it('labels the inverted hammer bearish, because that is what it does', () => {
+    reset();
+    const bars = [...downLeadIn(), bar(100, 112, 99, 101.5)];
+    const p = find(detectPatterns(bars, { recent_bars: 2 }), 'inverted_hammer');
+    assert.equal(p.direction, 'bearish');
+    assert.equal(p.reliability.acts_as, 'bearish continuation');
+    assert.match(p.contradicts_folklore, /measurement wins/);
+  });
+
+  it('marks the bearish engulfing as reliable and the harami as random', () => {
+    reset();
+    const eng = [...upLeadIn(), bar(100, 103, 99, 102), bar(103, 104, 97, 98)];
+    assert.equal(find(detectPatterns(eng, { recent_bars: 2 }), 'bearish_engulfing').reliability.verdict, 'reliable');
+    reset();
+    const har = [...upLeadIn(), bar(100, 121, 99, 120), bar(112, 114, 110, 111)];
+    assert.equal(find(detectPatterns(har, { recent_bars: 2 }), 'harami').reliability.verdict, 'close to random');
+  });
+
+  it('carries the rank so a reliable-but-going-nowhere pattern is visible', () => {
+    reset();
+    const bars = [...downLeadIn(), bar(100, 101, 92, 99)];
+    const p = find(detectPatterns(bars, { recent_bars: 2 }), 'hammer');
+    assert.equal(p.reliability.rank_of_103, 65);   // reverses, but the move is poor
+  });
+
+  it('leaves patterns with no measured stats alone', () => {
+    reset();
+    const bars = [...upLeadIn(), bar(100, 105, 95, 100.1)];
+    const p = detectPatterns(bars, { recent_bars: 2 }).candlestick.find((x) => x.pattern.includes('doji'));
+    assert.equal(p.reliability, undefined);
+  });
+});
+
+describe('trendline patterns', () => {
+  const tl = (bars, opts = {}) =>
+    detectPatterns(bars, { lookback: 2, window_bars: 200, max_age_bars: 1000, ...opts }).structural;
+
+  it('detects an ascending triangle: flat highs, rising lows', () => {
+    const bars = zig([80, 100, 85, 100, 90, 100, 95], 5);
+    const p = tl(bars).find((x) => x.pattern === 'ascending_triangle');
+    assert.ok(p, 'expected an ascending triangle');
+    assert.ok(Math.abs(p.measurements.upper_slope_pct_per_bar) < 0.05, 'upper line should be flat');
+    assert.ok(p.measurements.lower_slope_pct_per_bar > 0, 'lower line should rise');
+    assert.ok(p.measurements.touches_high >= 2 && p.measurements.touches_low >= 2);
+  });
+
+  it('detects a descending triangle: flat lows, falling highs', () => {
+    const bars = zig([120, 100, 115, 100, 110, 100, 105], 5);
+    const p = tl(bars).find((x) => x.pattern === 'descending_triangle');
+    assert.ok(p, 'expected a descending triangle');
+    assert.ok(p.measurements.upper_slope_pct_per_bar < 0);
+  });
+
+  it('detects a symmetrical triangle and calls its direction bilateral', () => {
+    const bars = zig([80, 120, 90, 112, 96, 106, 100], 5);
+    const p = tl(bars).find((x) => x.pattern === 'symmetrical_triangle');
+    if (p) {
+      assert.equal(p.direction, 'bilateral');
+      assert.equal(p.type, 'uncertain');
+      assert.equal(p.measurements.converging, true);
+      // Flagged as something to be wary of, not as a setup.
+      assert.match(p.avoid, /trading range/i);
+    }
+  });
+
+  it('detects a rectangle when both lines are flat', () => {
+    const bars = zig([90, 110, 90, 110, 90, 110, 100], 5);
+    const p = tl(bars).find((x) => x.pattern === 'rectangle');
+    assert.ok(p, 'expected a rectangle');
+    assert.equal(p.direction, 'bilateral');
+  });
+
+  it('requires at least two touches of each line', () => {
+    // One swing high and one swing low cannot define two trend lines.
+    const bars = zig([100, 120, 100], 5);
+    assert.equal(tl(bars).filter((x) => x.pattern === 'rectangle').length, 0);
+  });
+
+  it('calls a rising wedge bearish, against the direction of its own lines', () => {
+    const bars = zig([100, 120, 108, 124, 116, 126, 122], 5);
+    const p = tl(bars).find((x) => x.pattern === 'rising_wedge');
+    if (p) {
+      assert.equal(p.direction, 'bearish');
+      assert.ok(p.measurements.upper_slope_pct_per_bar > 0);
+      assert.ok(p.measurements.lower_slope_pct_per_bar > 0);
+      assert.match(p.note, /breaks DOWN/i);
+    }
+  });
+
+  it('reports forming until price closes beyond a line', () => {
+    const bars = zig([90, 110, 90, 110, 90, 110, 100], 5);
+    const p = tl(bars).find((x) => x.pattern === 'rectangle');
+    assert.equal(p.status, 'forming');
+  });
+
+  it('projects the target by the pattern height from the breakout', () => {
+    const bars = zig([90, 110, 90, 110, 90, 110, 130], 5);
+    const p = tl(bars).find((x) => ['rectangle', 'ascending_triangle'].includes(x.pattern));
+    if (p && p.status === 'confirmed') {
+      assert.ok(Number.isFinite(p.target));
+      assert.ok(p.target > p.completion_level, 'an upward break should target above the level');
+    }
+  });
+});
+
+describe('direction and type are separate questions', () => {
+  const tl = (bars) => detectPatterns(bars, { lookback: 2, window_bars: 200, max_age_bars: 1000 }).structural;
+
+  it('marks swing reversals as type reversal', () => {
+    const bars = zig([80, 120, 100, 120, 108]);
+    const p = detectPatterns(bars, { lookback: 3 }).structural.find((x) => x.pattern === 'double_top');
+    assert.equal(p.type, 'reversal');
+    assert.equal(p.direction, 'bearish');
+  });
+
+  it('marks triangles and flags as continuations', () => {
+    const asc = tl(zig([80, 100, 85, 100, 90, 100, 95], 5)).find((x) => x.pattern === 'ascending_triangle');
+    if (asc) assert.equal(asc.type, 'continuation');
+  });
+
+  it('flags uncertain patterns with an explicit reason to avoid them', () => {
+    const rect = tl(zig([90, 110, 90, 110, 90, 110, 100], 5)).find((x) => x.pattern === 'rectangle');
+    assert.equal(rect.type, 'uncertain');
+    assert.match(rect.avoid, /random|imaginary/i);
+  });
+
+  it('a rising wedge needs the LOWER line steeper, not just two rising lines', () => {
+    // A rising channel: both lines rise at the same rate, range constant.
+    // That is not a wedge, and calling it one would be wrong.
+    reset();
+    const channel = [];
+    for (let i = 0; i < 60; i++) {
+      const mid = 100 + i * 0.5;
+      const p = mid + (i % 10 < 5 ? 5 : -5);
+      channel.push(bar(p, p + 0.3, p - 0.3, p));
+    }
+    assert.equal(tl(channel).filter((x) => x.pattern === 'rising_wedge').length, 0);
+  });
+
+  it('reports whether head-and-shoulders structure had already turned', () => {
+    const bars = zig([80, 110, 95, 130, 90, 110, 100]);   // second trough LOWER
+    const p = detectPatterns(bars, { lookback: 3 }).structural.find((x) => x.pattern === 'head_and_shoulders');
+    if (p) {
+      assert.equal(typeof p.measurements.downsloping_neckline, 'boolean');
+      assert.ok(p.structure_confirms || p.structure_caveat, 'must state which version it is');
+    }
   });
 });

@@ -11,6 +11,7 @@ import { registerStructureTools } from "./tools/structure.js";
 import { registerBacktestTools } from "./tools/backtest.js";
 import { registerStrategyTools } from "./tools/strategy.js";
 import { registerPatternTools } from "./tools/patterns.js";
+import { registerBreakoutTools } from "./tools/breakout.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -34,7 +35,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 122 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 124 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -124,6 +125,14 @@ level. Never report a forming pattern as a signal — that is the single most
 common error with patterns. Candlestick reversals need a prior trend; the tool
 says so when there is none.
 
+Breakouts — score them, do not eyeball them:
+- breakout_check → scores a break of a level on five measurements: momentum,
+  how far beyond it CLOSED, volume, how established the level was, and
+  follow-through. The same five inverted are the signs of a false breakout.
+  A break reclaimed on the next bar is FAILED regardless of the other four.
+- level_pressure → lower highs into support (or higher lows into resistance)
+  mean the level is weakening and more likely to break than hold.
+
 Backtesting — three methods, one rule:
 - backtest_strategy → the Pine strategy on the chart: win rate, payoff,
   expectancy, profit factor, streaks, AND buy-and-hold over the same bars
@@ -212,6 +221,7 @@ registerStructureTools(server);
 registerBacktestTools(server);
 registerStrategyTools(server);
 registerPatternTools(server);
+registerBreakoutTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
