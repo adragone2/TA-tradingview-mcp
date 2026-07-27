@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **137 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **144 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -199,11 +199,12 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`ui_find_element`** — Find UI elements by text, aria-label, or CSS selector and return their positions
 - **`ui_evaluate`** — Execute JavaScript code in the TradingView page context for advanced automation
 
-### position_* (3)
+### position_* (4)
 
 - **`position_draw`** — Draw TradingView's native Long/Short Position tool — shaded risk and reward boxes with entry, stop and target, and a size TradingView computes from ac
 - **`position_read`** — Read Long/Short Position tools off the chart as plain prices — entry, stop, target, R:R and quantity
 - **`position_size`** — Position size for a trade already drawn on the chart, given an account size and risk percent
+- **`position_size_atr`** — Position size from volatility instead of from a fixed price stop
 
 ### structure_* (1)
 
@@ -230,6 +231,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### patterns_* (1)
 
 - **`patterns_detect`** — Detect candlestick and chart patterns on the chart from the bars themselves
+
+### candle_* (1)
+
+- **`candle_read`** — Classify the most recent candles into the only three families that exist — momentum (one side held control), reaction (one side pushed, the other took
 
 ### breakout_* (1)
 
@@ -281,6 +286,20 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`zones_find`** — Supply and demand zones — the base a move DEPARTED from, which is a different question from levels_find (where price repeatedly reversed)
 - **`zones_draw`** — Draw supply and demand zones on the chart as shaded rectangles, grouped so they clear in one call without touching your own drawings
+
+### risk_* (2)
+
+- **`risk_expectancy`** — Expectancy, break-even win rate and Kelly from a win rate and a payoff
+- **`risk_of_ruin`** — How often a drawdown this deep happens, by seeded Monte Carlo
+
+### drawdown_* (1)
+
+- **`drawdown_recovery`** — What a drawdown costs to recover: down 50% needs +100%, down 80% needs +400%
+
+### elliott_* (2)
+
+- **`elliott_count`** — Every rule-valid five-wave Elliott count in the bars — not "the" count
+- **`elliott_survey`** — Run the Elliott enumeration at several swing sensitivities and report whether they agree
 
 ---
 

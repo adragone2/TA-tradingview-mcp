@@ -39,4 +39,28 @@ export function registerPatternTools(server) {
       };
     }),
   );
+
+  server.tool(
+    'candle_read',
+    'Classify the most recent candles into the only three families that exist — momentum (one side held control), reaction (one side pushed, the other took it back), indecision (neither held). Unlike patterns_detect this ALWAYS answers, because every candle is one of the three whether or not it is also a named pattern. Use it for "what is the last candle saying"; use patterns_detect when you need a named pattern with measured statistics behind it.',
+    {
+      count: z.coerce.number().optional().describe('Bars to load (default 60)'),
+      recent: z.coerce.number().optional().describe('How many recent candles to classify (default 5)'),
+      context_bars: z.coerce.number().optional().describe('Bars before each candle used to judge what counts as large here (default 10)'),
+    },
+    wrap(async ({ count = 60, recent, context_bars }) => {
+      const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+      return {
+        success: true,
+        last_price: bars[bars.length - 1].close,
+        ...core.classifyRecent(bars, { count: recent, context_bars }),
+        rules: [
+          'A reaction candle means something at a level price has already tested. In the middle of a range it is a bar with a long wick.',
+          'On a reaction candle the wick carries the information, not the body colour.',
+          'An indecision candle is not tradeable alone. Where it appears is the whole point — after a long run it is momentum stalling.',
+        ],
+      };
+    }),
+  );
 }

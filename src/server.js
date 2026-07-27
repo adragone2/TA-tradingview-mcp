@@ -16,6 +16,8 @@ import { registerContextTools } from "./tools/context.js";
 import { registerWyckoffTools } from "./tools/wyckoff.js";
 import { registerLiquidityTools } from "./tools/liquidity.js";
 import { registerZoneTools } from "./tools/zones.js";
+import { registerRiskTools } from "./tools/risk.js";
+import { registerElliottTools } from "./tools/elliott.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -39,7 +41,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 137 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 144 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -154,6 +156,35 @@ here depends on it. What is measured is that price left fast, how far it got,
 and whether it has reacted there since. Zones are common — the count before
 filtering always comes back. "Fresh beats tested" is convention, not a
 measurement made here.
+
+Risk — ask these BEFORE sizing anything:
+- risk_expectancy → expectancy, BREAK-EVEN win rate, and Kelly, from a win rate
+  and a payoff. A win rate is meaningless without its payoff: 80% loses money
+  if the losses are big enough. Never compare a win rate to 50% — compare it to
+  break_even_win_rate_pct. Pass sample_size; it decides how far to trust Kelly.
+- risk_of_ruin → whether the account survives the edge. Seeded Monte Carlo.
+  Report the ruin probability and the worst 5%, never the median alone.
+- drawdown_recovery → down 50% needs +100%, down 80% needs +400%.
+- position_size_atr → sizing from volatility, and a check on whether a chosen
+  stop sits inside the instrument's ordinary bar range.
+Full Kelly is almost never the answer — it assumes the win rate is exact. If
+expectancy is negative, say so and stop: no size fixes a negative edge.
+Martingale is deliberately not implemented; explain why rather than building it.
+
+Elliott wave — enumerated, never chosen:
+- elliott_count → EVERY rule-valid five-wave count, with the total stated.
+- elliott_survey → the same at several sensitivities, reporting whether they
+  agree. Disagreement IS the finding — it is the method's subjectivity made
+  concrete for this chart.
+Never present one count as "the" count. The four Fibonacci relationships are
+measured against their typical bands, so a rule-valid count that fits none is
+visibly weak. No peer-reviewed support; use it as a road map, not a signal.
+
+Candles:
+- candle_read → classify recent candles as momentum / reaction / indecision.
+  Always answers, unlike patterns_detect which answers only for named patterns.
+  On a reaction candle the WICK carries the information, not the body colour,
+  and it only means something at a level price has already tested.
 
 Liquidity and VWAP:
 - anchored_vwap → VWAP from any bar (a swing low, an earnings gap) with
@@ -281,6 +312,8 @@ registerContextTools(server);
 registerWyckoffTools(server);
 registerLiquidityTools(server);
 registerZoneTools(server);
+registerRiskTools(server);
+registerElliottTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

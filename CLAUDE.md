@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-137 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+144 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 137 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 144 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
@@ -48,6 +48,9 @@
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
 | "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed |
 | "Backtest this" / "does it work?" | `backtest-strategy` skill — **always report buy-and-hold** |
+| "How much should I risk?" / "what's my expectancy?" | `risk-sizing` skill — expectancy AND risk of ruin. A win rate means nothing without its payoff |
+| "Count the waves" / "Elliott" | `elliott_survey` — returns EVERY rule-valid count, never one. Disagreement across sensitivities is the finding |
+| "What is this candle saying?" | `candle_read` — every candle is momentum, reaction or indecision. `patterns_detect` for named patterns |
 | "Did this ever work?" | `wrds_backtest_signal` |
 | "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
 

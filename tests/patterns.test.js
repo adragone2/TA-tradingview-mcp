@@ -12,7 +12,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { anatomy, detectPatterns, CANDLE_PATTERNS, STRUCTURAL_PATTERNS } from '../src/core/patterns.js';
+import { anatomy, detectPatterns, classifyCandle, classifyRecent, CANDLE_PATTERNS, STRUCTURAL_PATTERNS } from '../src/core/patterns.js';
 
 const DAY = 86400;
 let t = 1_700_000_000;
@@ -587,5 +587,141 @@ describe('direction and type are separate questions', () => {
       assert.equal(typeof p.measurements.downsloping_neckline, 'boolean');
       assert.ok(p.structure_confirms || p.structure_caveat, 'must state which version it is');
     }
+  });
+});
+
+describe('classifyCandle — the three families', () => {
+  const c = (o, h, l, cl) => ({ open: o, high: h, low: l, close: cl, volume: 1000, time: 1 });
+  /** Quiet bars with small real bodies — the baseline "large" is measured against. */
+  const quiet = (n = 10) => Array.from({ length: n }, () => c(100, 100.6, 99.4, 100.2));
+
+  it('calls a big-bodied candle with no wicks a marubozu', () => {
+    const r = classifyCandle(c(100, 110, 100, 110), quiet());
+    assert.equal(r.family, 'momentum');
+    assert.equal(r.subtype, 'marubozu');
+    assert.equal(r.direction, 'bullish');
+  });
+
+  it('calls a big body with small wicks momentum, not marubozu', () => {
+    const r = classifyCandle(c(100, 111, 99, 110), quiet());
+    assert.equal(r.family, 'momentum');
+    assert.equal(r.subtype, 'momentum_candle');
+  });
+
+  it('refuses to call a quiet wickless bar momentum', () => {
+    // Body dominates its own tiny range, but it is ordinary for this chart.
+    // Without the size-vs-context test this reads as momentum, which is wrong.
+    const r = classifyCandle(c(100, 100.5, 100, 100.5), quiet());
+    assert.notEqual(r.family, 'momentum');
+  });
+
+  it('reads a long lower wick as a BULLISH reaction whatever the body colour', () => {
+    const red = classifyCandle(c(109, 110, 100, 108), quiet());
+    assert.equal(red.family, 'reaction');
+    assert.equal(red.direction, 'bullish', 'the wick decides the direction, not the red body');
+    assert.match(red.meaning, /body colour matters much less/i);
+  });
+
+  it('reads a long upper wick as a bearish reaction', () => {
+    const r = classifyCandle(c(101, 110, 100, 102), quiet());
+    assert.equal(r.family, 'reaction');
+    assert.equal(r.direction, 'bearish');
+  });
+
+  it('says a reaction candle only counts at a level', () => {
+    const r = classifyCandle(c(109, 110, 100, 108), quiet());
+    assert.match(r.meaning, /middle of a range/i);
+  });
+
+  it('calls an open-equals-close candle in a normal range a doji', () => {
+    const r = classifyCandle(c(100, 100.7, 99.3, 100), quiet());
+    assert.equal(r.family, 'indecision');
+    assert.equal(r.subtype, 'doji');
+  });
+
+  it('calls a zero-body candle in an unusually WIDE range a high wave, not a doji', () => {
+    // The range is the information here. Collapsing this to "doji" would throw
+    // away that the bar was violent and still went nowhere.
+    const r = classifyCandle(c(100, 110, 90, 100), quiet());
+    assert.equal(r.subtype, 'high_wave');
+  });
+
+  it('separates a spinning top from a high-wave candle by range', () => {
+    const top = classifyCandle(c(100, 101, 99, 100.3), quiet());
+    assert.equal(top.family, 'indecision');
+    assert.equal(top.subtype, 'spinning_top');
+    const wave = classifyCandle(c(100, 110, 90, 100.6), quiet());
+    assert.equal(wave.subtype, 'high_wave', 'a small body inside an unusually wide range');
+  });
+
+  it('handles a bar with no range at all', () => {
+    const r = classifyCandle(c(100, 100, 100, 100), quiet());
+    assert.equal(r.family, 'indecision');
+    assert.equal(r.subtype, 'four_price_doji');
+  });
+
+  it('says an indecision candle is not tradeable alone', () => {
+    assert.match(classifyCandle(c(100, 100.7, 99.3, 100), quiet()).meaning, /not tradeable alone/i);
+  });
+
+  it('always returns one of exactly three families', () => {
+    const bars = [c(100, 110, 100, 110), c(109, 110, 100, 108), c(100, 100.7, 99.3, 100), c(100, 101, 99, 100.5)];
+    for (const b of bars) {
+      assert.ok(['momentum', 'reaction', 'indecision'].includes(classifyCandle(b, quiet()).family));
+    }
+  });
+
+  it('carries the reason behind every classification', () => {
+    for (const b of [c(100, 110, 100, 110), c(109, 110, 100, 108), c(100, 100.7, 99.3, 100)]) {
+      const r = classifyCandle(b, quiet());
+      assert.ok(r.reason && r.reason.length > 20, `thin reason: ${r.reason}`);
+    }
+  });
+});
+
+describe('classifyRecent', () => {
+  const c = (o, h, l, cl) => ({ open: o, high: h, low: l, close: cl, volume: 1000, time: 1 });
+
+  it('classifies the last N candles, newest first', () => {
+    const bars = [...Array.from({ length: 15 }, () => c(100, 100.6, 99.4, 100.2)), c(100, 110, 100, 110)];
+    const r = classifyRecent(bars, { count: 3 });
+    assert.equal(r.candles.length, 3);
+    assert.equal(r.candles[0].bars_ago, 0);
+    assert.equal(r.candles[0].family, 'momentum');
+  });
+
+  it('tallies the families', () => {
+    const bars = Array.from({ length: 20 }, () => c(100, 100.6, 99.4, 100.2));
+    const r = classifyRecent(bars, { count: 5 });
+    assert.equal(Object.values(r.tally).reduce((a, b) => a + b, 0), 5);
+  });
+
+  it('distinguishes itself from patterns_detect in the note', () => {
+    const bars = Array.from({ length: 20 }, () => c(100, 100.6, 99.4, 100.2));
+    assert.match(classifyRecent(bars).note, /patterns_detect/);
+  });
+
+  it('handles an empty series', () => {
+    assert.equal(classifyRecent([]).candles.length, 0);
+  });
+});
+
+describe('classifyCandle — reasons must match the subtype', () => {
+  const c = (o, h, l, cl) => ({ open: o, high: h, low: l, close: cl, volume: 1000, time: 1 });
+  const quiet = (n = 10) => Array.from({ length: n }, () => c(100, 100.6, 99.4, 100.2));
+
+  it('does not claim wicks on both sides for a one-sided small body', () => {
+    // Caught on a live chart: small_body is by definition NOT the two-sided
+    // case, so describing it as one was simply wrong.
+    const r = classifyCandle(c(100, 100.9, 99.95, 100.3), quiet());
+    if (r.subtype === 'small_body') {
+      assert.doesNotMatch(r.reason, /both sides/i);
+    }
+  });
+
+  it('keeps the both-sides description for a spinning top, where it is true', () => {
+    const r = classifyCandle(c(100, 101, 99, 100.3), quiet());
+    assert.equal(r.subtype, 'spinning_top');
+    assert.match(r.reason, /both sides/i);
   });
 });

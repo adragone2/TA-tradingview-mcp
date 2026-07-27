@@ -101,6 +101,131 @@ export function anatomy(bar) {
 }
 
 /**
+ * Classify ANY candle into one of three families.
+ *
+ * The named-pattern list runs to seventy-odd entries and memorising it is not
+ * how anyone reads a chart. Every candle, named or not, is one of three things,
+ * and the three answer the only question a single bar can answer — who was in
+ * control:
+ *
+ *   momentum   — a large body, small wicks. One side held control throughout.
+ *   reaction   — a wick far longer than the body. One side pushed, the other
+ *                took it back before the close.
+ *   indecision — a small body with wicks on both sides. Neither side held.
+ *
+ * This is deliberately independent of `detectCandlePatterns`: that function
+ * answers "is this a named pattern", which is often no. This one always answers.
+ *
+ * `context` is the previous bars, used to judge what counts as large here — a
+ * body is only a momentum body relative to the ones around it.
+ */
+export function classifyCandle(bar, context = []) {
+  const a = anatomy(bar);
+  if (!(a.range > 0)) {
+    return { family: 'indecision', subtype: 'four_price_doji', reason: 'Open, high, low and close are all the same price — no trading range at all.' };
+  }
+
+  const avgBody = context.length
+    ? context.reduce((s, b) => s + Math.abs(b.close - b.open), 0) / context.length
+    : null;
+  const avgRange = context.length
+    ? context.reduce((s, b) => s + (b.high - b.low), 0) / context.length
+    : null;
+
+  const bodyPct = a.body_pct;
+  const upper = a.upper_wick, lower = a.lower_wick;
+  const dir = a.bullish ? 'bullish' : a.bearish ? 'bearish' : 'neutral';
+
+  // Momentum: body dominates its own range, AND the body is large against
+  // recent bodies, AND it is large against the recent RANGE.
+  //
+  // All three are needed. Body-vs-range alone calls any wickless bar momentum.
+  // Adding body-vs-average-body is not enough either: on a chart of 1.2-wide
+  // bars, a 0.5-wide bar with no wicks is still 2.5x the average BODY while
+  // being a fraction of the average bar. Comparing against the average range is
+  // what catches that — the same guard zones.js needs, for the same reason.
+  const bodyDominates = bodyPct >= 65;
+  const bigForHere = avgBody == null ? true : a.body >= avgBody * 2;
+  const bigAgainstRange = avgRange == null ? true : a.body >= avgRange;
+  if (bodyDominates && bigForHere && bigAgainstRange) {
+    const shaved = upper <= a.range * 0.03 && lower <= a.range * 0.03;
+    return {
+      family: 'momentum',
+      subtype: shaved ? 'marubozu' : 'momentum_candle',
+      direction: dir,
+      body_pct: round(bodyPct, 1),
+      ...(avgBody ? { body_vs_average: round(a.body / avgBody, 2) } : {}),
+      reason: `Body is ${round(bodyPct, 0)}% of the range${avgBody ? ` and ${round(a.body / avgBody, 1)}x the recent average body` : ''}${shaved ? ', with effectively no wicks' : ''}. The ${dir === 'bullish' ? 'buyers' : 'sellers'} held control throughout.`,
+      meaning: 'Trade with it, not against it, unless something else says the move is exhausted.',
+    };
+  }
+
+  // Reaction: one wick dominates. The body's colour matters far less than which
+  // side got pushed back — that is the whole content of the bar.
+  const dominantWick = Math.max(upper, lower);
+  if (bodyPct <= 35 && dominantWick >= a.range * 0.55 && Math.min(upper, lower) <= a.range * 0.25) {
+    const rejectedFrom = upper > lower ? 'above' : 'below';
+    return {
+      family: 'reaction',
+      subtype: upper > lower ? 'upper_wick_rejection' : 'lower_wick_rejection',
+      direction: upper > lower ? 'bearish' : 'bullish',
+      wick_pct: round((dominantWick / a.range) * 100, 1),
+      body_pct: round(bodyPct, 1),
+      reason: `The ${rejectedFrom === 'above' ? 'upper' : 'lower'} wick is ${round((dominantWick / a.range) * 100, 0)}% of the range. Price was pushed ${rejectedFrom} and taken back before the close.`,
+      meaning: `An early reversal clue, and only that. It means something at a level price has already tested; in the middle of a range it is a bar with a long wick. The body colour matters much less than the wick.`,
+    };
+  }
+
+  // Indecision: everything left. Small body, wicks both sides.
+  const bothWicks = upper >= a.range * 0.2 && lower >= a.range * 0.2;
+  const wide = avgRange != null && a.range >= avgRange * 2;
+  // High wave is checked BEFORE doji. A near-zero body inside an unusually wide
+  // range with long wicks both sides is a high-wave candle, and calling it a
+  // plain doji throws away the part that matters — that the range was violent.
+  const subtype = wide && bothWicks
+    ? 'high_wave'
+    : a.body <= a.range * 0.05
+      ? 'doji'
+      : bothWicks
+        ? 'spinning_top'
+        : 'small_body';
+
+  return {
+    family: 'indecision',
+    subtype,
+    direction: dir,
+    body_pct: round(bodyPct, 1),
+    reason: subtype === 'doji'
+      ? 'Open and close are effectively the same price. Buying and selling attempts cancelled out exactly.'
+      : subtype === 'high_wave'
+        ? 'A small body inside an unusually wide range with long wicks both sides — violent movement that went nowhere.'
+        : subtype === 'spinning_top'
+          ? 'A small body with wicks on both sides. Neither side held control.'
+          // small_body is the leftover: too small to be momentum, too even to be
+          // a reaction, and without the two-sided wicks of a spinning top.
+          : `A ${round(bodyPct, 0)}% body, too small to show control and too even to be a rejection of either side.`,
+    meaning: 'Not tradeable alone. It matters for WHERE it appears — after a long run it is momentum stalling; inside a range it is nothing.',
+  };
+}
+
+/** Classify the last `count` candles, each against the bars before it. */
+export function classifyRecent(bars, { count = 5, context_bars = 10 } = {}) {
+  if (!Array.isArray(bars) || !bars.length) return { candles: [], note: 'No bars supplied.' };
+  const n = Math.min(count, bars.length);
+  const out = [];
+  for (let i = bars.length - n; i < bars.length; i++) {
+    const ctx = bars.slice(Math.max(0, i - context_bars), i);
+    out.push({ index: i, time: bars[i].time, bars_ago: bars.length - 1 - i, ...classifyCandle(bars[i], ctx) });
+  }
+  const tally = out.reduce((m, c) => ({ ...m, [c.family]: (m[c.family] || 0) + 1 }), {});
+  return {
+    candles: out.reverse(),
+    tally,
+    note: 'Every candle is one of three families — momentum, reaction, or indecision — whether or not it is also a named pattern. This answers "who is in control right now"; patterns_detect answers "is this a pattern with measured statistics behind it".',
+  };
+}
+
+/**
  * Direction of the bars leading into a candle.
  *
  * Candlestick reversal patterns only mean anything against a prior trend — a

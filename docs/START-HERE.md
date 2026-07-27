@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 137 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 144 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -46,6 +46,7 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "Write a Pine indicator" | [pine-develop](../skills/pine-develop/SKILL.md) skill |
 | "Which of these qualify?" / a rule with numbers in it | [strategy-scan](../skills/strategy-scan/SKILL.md) skill — `strategy_check`, `strategy_scan` |
 | "Does this strategy work?" / "backtest this" | [backtest-strategy](../skills/backtest-strategy/SKILL.md) skill — always report the benchmark |
+| "How much should I risk?" / "is this edge worth trading?" | [risk-sizing](../skills/risk-sizing/SKILL.md) skill — expectancy first, then whether the account survives it |
 | "Did this setup ever work?" | WRDS `wrds_backtest_signal` |
 | "Write this up" / "preview the earnings" / "screen for ideas" | An FSI plugin skill — see [plugins.md](plugins.md) first |
 | "Clean up the chart" | `draw_clear` — removes only what these tools drew |
@@ -94,7 +95,7 @@ wrds-mcp/      separate MCP server for historical research
 ```
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
-- [tools-reference.md](tools-reference.md) — all 137 tools by group
+- [tools-reference.md](tools-reference.md) — all 144 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data
