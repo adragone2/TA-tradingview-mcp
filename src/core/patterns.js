@@ -1030,6 +1030,61 @@ export function statsFor(pattern, { direction = null } = {}) {
   };
 }
 
+
+/**
+ * How often each structural pattern appears in PURE NOISE.
+ *
+ * Measured with src/core/synthetic.js over 40 seeded random walks of 200 bars
+ * each, at lookback 4 — the same settings detectPatterns uses by default.
+ *
+ * These are the numbers that decide whether a detection means anything. On a
+ * 200-bar random walk this detector reports 19 structural patterns, including
+ * roughly FIVE double bottoms and FIVE double tops. A chart showing three
+ * double bottoms is therefore not showing a signal; it is showing less than
+ * the noise floor.
+ *
+ * That is the failure mode the header of this file warns about — "see patterns
+ * where there aren't any" — and measuring it is the only way to keep the
+ * warning honest. The detectors are not retuned here; the baseline is reported
+ * so a reader can compare against it, exactly as fair_value_gaps reports
+ * total_found and zones_find reports its own frequency.
+ *
+ * Re-measure with `node --test tests/synthetic.test.js` after any change to
+ * detection thresholds.
+ */
+export const NOISE_BASELINE = {
+  bars: 200,
+  walks: 40,
+  detections_per_walk: 19.3,
+  walks_with_any_pattern_pct: 100,
+  per_walk: {
+    double_bottom: 5.15,
+    double_top: 5.13,
+    triple_top: 2.65,
+    triple_bottom: 2.38,
+    inverse_head_and_shoulders: 1.8,
+    head_and_shoulders: 1.6,
+  },
+  note: 'Measured on seeded random walks, not on real data. A count at or below the baseline is indistinguishable from noise.',
+};
+
+/** Compare a detection count against the noise floor for that pattern. */
+export function vsNoise(pattern, count, bars) {
+  const base = NOISE_BASELINE.per_walk[pattern];
+  if (base == null || !(bars > 0)) return null;
+  const expected = base * (bars / NOISE_BASELINE.bars);
+  return {
+    found: count,
+    expected_in_noise: Math.round(expected * 100) / 100,
+    above_noise: count > expected,
+    verdict: count > expected * 2
+      ? `${count} found against ~${Math.round(expected * 10) / 10} expected in pure noise over ${bars} bars — clearly above the noise floor.`
+      : count > expected
+        ? `${count} found against ~${Math.round(expected * 10) / 10} expected in pure noise over ${bars} bars — only marginally above the floor.`
+        : `${count} found against ~${Math.round(expected * 10) / 10} expected in PURE NOISE over ${bars} bars. This is at or below the noise floor and should not be read as a finding.`,
+  };
+}
+
 export const STRUCTURAL_PATTERNS = [
   'double_top', 'double_bottom', 'triple_top', 'triple_bottom',
   'head_and_shoulders', 'inverse_head_and_shoulders',
@@ -1126,9 +1181,18 @@ export function detectPatterns(bars, {
     if (s) p.measured = s;
   }
 
+  // Compare each pattern's count against how often it shows up in pure noise.
+  const counts = {};
+  for (const p of st) counts[p.pattern] = (counts[p.pattern] || 0) + 1;
+  const noise_check = Object.entries(counts)
+    .map(([pattern, n]) => ({ pattern, ...vsNoise(pattern, n, bars.length) }))
+    .filter((x) => x.verdict);
+
   return {
     candlestick: cs,
     structural: st,
+    noise_baseline: NOISE_BASELINE,
+    ...(noise_check.length ? { noise_check } : {}),
     swings_detected: swings.length,
     bars_analyzed: bars.length,
     candles_scanned: bars.length - start,

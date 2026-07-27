@@ -176,3 +176,23 @@ Also useful alongside: **`candle_read`** classifies any candle as momentum, reac
 For the engulfing pattern he requires a clearly definable trend, even a short-term one, and allows one exception to the opposite-colour rule — a doji engulfed by a very large body still counts.
 
 > Source: Nison, *Japanese Candlestick Charting Techniques*, 2nd ed., ch. 4.
+
+## The noise floor — read this before reporting any structural pattern
+
+Measured with `src/core/synthetic.js` over 40 seeded random walks of 200 bars:
+
+**This detector reports 19 structural patterns per 200 bars of PURE NOISE**, including ~5 double bottoms and ~5 double tops, with head-and-shoulders in 88% of walks. 100% of random walks produce at least one pattern.
+
+So a chart showing three double bottoms is not showing a signal. It is showing **less than the noise floor**.
+
+`patterns_detect` now returns `noise_check` alongside the detections. **Quote it.** A verdict of "at or below the noise floor" means exactly that — report it as no finding, not as a weak one.
+
+This does not mean the detectors are useless. It means a structural pattern is only worth reporting when:
+
+- the count is **clearly** above the floor (`noise_check` says so), **and**
+- `market_regime` is not choppy — a random walk is what chop *is*, and
+- the pattern is **confirmed**, not forming, and
+- something independent agrees (a tested level, a zone, divergence).
+
+**Flags are never detected at all** — 0% across every noise level. That is a broken detector, recorded in `tests/synthetic.test.js` with an assertion that goes red when it is fixed. Do not report the absence of a flag as meaningful.
+
