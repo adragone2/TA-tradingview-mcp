@@ -516,6 +516,34 @@ function candlesAt(bars, i, opts) {
   return out;
 }
 
+/**
+ * Bulkowski's measured statistics for the narrow-range patterns, from
+ * thepatternsite.com/nr7.html — 1,201 stocks, January 1990 to March 2013.
+ *
+ * These belong next to every squeeze call. A volatility contraction reads as a
+ * coiled spring and gets described that way; the measured up-breakout in a
+ * bull market fails to move 5% **46% of the time**, and the trading win rate
+ * is 57%. Neither number is visible from the chart, and an NR7 flagged without
+ * them invites a confidence the data does not support.
+ *
+ * Bulkowski's own note: "The failure rates may appear high, but that's typical
+ * for short-term patterns like the NR7."
+ */
+export const NARROW_RANGE_STATS = {
+  NR7: {
+    source: 'thepatternsite.com/nr7.html, 1201 stocks, Jan 1990 - Mar 2013, sampling one trade every 25',
+    bull_market: {
+      up_breakout: { failure_rate_pct: 46, average_move_pct: 7, measure_rule_success_pct: 43, win_rate_pct: 57, avg_hold_days: 31 },
+      down_breakout: { failure_rate_pct: 47, average_move_pct: -6, measure_rule_success_pct: 37, win_rate_pct: 45, avg_hold_days: 25 },
+    },
+    bear_market: {
+      up_breakout: { failure_rate_pct: 40, average_move_pct: 8, measure_rule_success_pct: 32 },
+      down_breakout: { failure_rate_pct: 27, average_move_pct: -12, measure_rule_success_pct: 39 },
+    },
+    authors_caveat: 'The failure rates may appear high, but that is typical for short-term patterns like the NR7.',
+  },
+};
+
 /** Narrow-range pattern: this bar's range is the smallest of the last N. */
 function narrowRangeAt(bars, i, n) {
   if (i < n - 1) return null;
@@ -524,12 +552,22 @@ function narrowRangeAt(bars, i, n) {
     if (bars[k].high - bars[k].low <= r) return null;
   }
   const window = bars.slice(i - n + 1, i + 1);
+  const stats = NARROW_RANGE_STATS[`NR${n}`];
   return {
     index: i, time: bars[i].time, pattern: `NR${n}`, bars: n, direction: 'neutral',
     prior_trend: priorTrend(bars, i),
     meaning: `narrowest range of the last ${n} bars — volatility compressed, and new trends often start here`,
     measurements: { range: round(r), widest_in_window: round(Math.max(...window.map((b) => b.high - b.low))) },
     breakout_levels: { above: round(bars[i].high), below: round(bars[i].low) },
+    ...(stats ? {
+      measured: stats,
+      base_rate_warning: `Measured on ${stats.source.split(',')[1].trim()}: an up breakout in a bull market fails to move 5% `
+        + `${stats.bull_market.up_breakout.failure_rate_pct}% of the time, with a ${stats.bull_market.up_breakout.win_rate_pct}% `
+        + `trading win rate and a ${stats.bull_market.up_breakout.average_move_pct}% average rise. A squeeze is a setup, not a direction.`,
+    } : {
+      base_rate_warning: `No measured statistics exist for NR${n} in this toolchain. NR7 is the variant Bulkowski measured; `
+        + `treat NR${n} as a description of volatility, not as a pattern with a known base rate.`,
+    }),
   };
 }
 

@@ -1,0 +1,121 @@
+import { z } from 'zod';
+import { jsonResult } from './_format.js';
+import * as data from '../core/data.js';
+import { normalizeBars } from '../core/structure.js';
+import * as momentum from '../core/momentum.js';
+import * as vcp from '../core/vcp.js';
+import * as kernel from '../core/kernel.js';
+import * as lmw from '../core/lmw_patterns.js';
+import * as validation from '../core/validation.js';
+
+const wrap = (fn) => async (args = {}) => {
+  try { return jsonResult(await fn(args)); }
+  catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+};
+
+/** Read bars and carry the series' own identity, so a result names its source. */
+async function loadBars(count) {
+  const series = await data.getOhlcv({ count, summary: false });
+  const bars = normalizeBars(series);
+  if (!bars.length) throw new Error('No price bars came back from the chart.');
+  return { bars, symbol: series.symbol, timeframe: series.resolution };
+}
+
+export function registerEvidenceTools(server) {
+  server.tool(
+    'momentum_read',
+    'Time-series momentum — the best-replicated effect in the technical literature, and the one this toolchain lacked. Moskowitz, Ooi & Pedersen found a 12-month lookback positive and significant for EVERY ONE of 58 futures over 25+ years (Sharpe 1.28 vs 0.38 buy-and-hold). Reads several horizons at once and says whether they AGREE — a name positive over 12 months and negative over 1 is in a pullback, not in momentum, and the mixed reading is the answer rather than a problem. Also reports the volatility scalar MOP used for sizing. Note the evidence is from DIVERSIFIED FUTURES: the signal transfers to a single equity, the Sharpe does not.',
+    {
+      count: z.coerce.number().optional().describe('Bars to load (default 500 — a 12-month lookback needs 253)'),
+      lookback: z.coerce.number().optional().describe('Single-horizon lookback in bars. Omit to read all horizons (1m/3m/6m/12m)'),
+    },
+    wrap(async ({ count = 500, lookback = null }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        ...(lookback
+          ? momentum.timeSeriesMomentum(bars, { lookback })
+          : momentum.momentumProfile(bars)),
+        persistence_baseline: momentum.persistenceBaseline(bars),
+      };
+    }),
+  );
+
+  server.tool(
+    'vcp_check',
+    'Minervini\'s volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior advance. Every clause is a number, and every check is reported with its value and requirement — so a near miss tells you WHICH clause failed instead of just "no". Measured selectivity: zero detections across 200 random walks, against 68% for our structural patterns and 43% for the Lo/Mamaysky/Wang definitions. A VCP is a SETUP, not a direction; nothing here forecasts the breakout.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      min_contractions: z.coerce.number().optional().describe('Minimum contractions required (default 3)'),
+      max_final_pullback_pct: z.coerce.number().optional().describe('How tight the last contraction must be (default 12%)'),
+      require_volume_dryup: z.coerce.boolean().optional().describe('Require declining volume through the contractions (default true)'),
+    },
+    wrap(async ({ count = 300, ...opts }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const clean = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        ...vcp.detectVCP(bars, clean),
+        noise_baseline: vcp.VCP_NOISE_BASELINE,
+      };
+    }),
+  );
+
+  server.tool(
+    'pivots_kernel',
+    'Locate swing pivots by kernel regression, then read each one from the ACTUAL bar high or low — the step from Lo, Mamaysky & Wang that keeps every reported price one that traded. Also returns the converging/diverging verdict measured BETWEEN REAL PIVOTS, which is the check that catches a detector describing its own fitted boundary lines instead of the price. On CSCO this reported diverging where the geometric detector reported converging; the pivots were right.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      bandwidth_multiplier: z.coerce.number().optional().describe('Multiple of the cross-validated bandwidth (default 1.0). LMW use 0.3; measured here, 0.3 finds 98.9 pivots per random walk against 73.9 at 1.0'),
+      window_bars: z.coerce.number().optional().describe('Only use the last N bars'),
+    },
+    wrap(async ({ count = 300, bandwidth_multiplier = 1.0, window_bars = null }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const seg = window_bars ? bars.slice(-window_bars) : bars;
+      const out = kernel.findKernelPivots(seg, { bandwidth_multiplier });
+      return {
+        success: true, symbol, timeframe, bars_analysed: seg.length,
+        ...out,
+        width: kernel.pivotWidth(out.pivots),
+      };
+    }),
+  );
+
+  server.tool(
+    'patterns_lmw',
+    'The Lo/Mamaysky/Wang pattern definitions verbatim (head-and-shoulders, broadening, triangle, rectangle, double top/bottom) as a SECOND OPINION on patterns_detect — different pivot detector, different rules, so disagreement is informative. Ships with two facts that decide how to read it: the original 2000 result did NOT reproduce out of sample (Nekrasov 2010, "not anymore reproducible", only rectangle surviving), and these definitions match 43.4% of five-pivot windows drawn from PURE RANDOM WALKS. Never use as a screen; use where it disagrees with a selective detector.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      window: z.coerce.number().optional().describe('Rolling window in bars (default 38, the paper\'s l=35 + d=3). Pass 0 to scan the whole series'),
+      bandwidth_multiplier: z.coerce.number().optional().describe('Kernel bandwidth multiple (default 1.0)'),
+    },
+    wrap(async ({ count = 300, window = 38, bandwidth_multiplier = 1.0 }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        ...lmw.detectLmwPatterns(bars, { window: window || null, bandwidth_multiplier }),
+      };
+    }),
+  );
+
+  server.tool(
+    'deflated_sharpe',
+    'Correct a Sharpe ratio for how hard you looked for it. A Sharpe is a random variable: search 200 strategies with NO edge and the best scores an annualised Sharpe of 2.19 with a probabilistic Sharpe of 0.985 — measured, in this repo\'s tests. The deflated Sharpe is 0.267. Pass every trial\'s Sharpe (strongly preferred, because their spread is what makes the correction meaningful) or a trial count with an explicit variance. Below 0.95 is not a discovery. This is the single check missing from every scan and backtest here until now.',
+    {
+      returns: z.array(z.coerce.number()).describe('The strategy\'s per-period returns (or per-trade profits)'),
+      trial_sharpes: z.array(z.coerce.number()).optional().describe('The Sharpe of EVERY variant you tested, including the losers. Strongly preferred'),
+      trials: z.coerce.number().optional().describe('Number of trials, if you cannot supply their Sharpes'),
+      sharpe_variance: z.coerce.number().optional().describe('Variance of the trial Sharpes — required when using `trials`'),
+    },
+    wrap(({ returns, trial_sharpes = null, trials = null, sharpe_variance = null }) => {
+      if (!Array.isArray(returns) || returns.length < 8) {
+        throw new Error(`Need at least 8 returns to say anything distributional; got ${returns?.length ?? 0}.`);
+      }
+      return {
+        success: true,
+        ...validation.deflatedSharpe(returns, { trial_sharpes, trials, sharpe_variance }),
+        track_record: validation.minTrackRecordLength(returns),
+      };
+    }),
+  );
+}
