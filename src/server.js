@@ -14,6 +14,7 @@ import { registerPatternTools } from "./tools/patterns.js";
 import { registerBreakoutTools } from "./tools/breakout.js";
 import { registerContextTools } from "./tools/context.js";
 import { registerWyckoffTools } from "./tools/wyckoff.js";
+import { registerLiquidityTools } from "./tools/liquidity.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -37,7 +38,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 131 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 134 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -137,6 +138,18 @@ Context — ask these BEFORE hunting for a setup:
   WEAK (it failed). Stops belong beyond strong swings; weak ones get run.
 - volume_profile → point of control, value area, high/low volume nodes,
   computed from the bars. An approximation, and it says so.
+
+Liquidity and VWAP:
+- anchored_vwap → VWAP from any bar (a swing low, an earnings gap) with
+  standard-deviation bands. Says who is in control and how extended price is.
+  Context, NOT a trigger — a flat VWAP gives the weakest signals of all.
+- fair_value_gaps → three-bar imbalances. These occur CONSTANTLY; the tool
+  reports how many existed before filtering so none looks rare.
+- liquidity_pools → equal highs/lows where stops cluster. More touches means
+  a deeper pool, which is why a thrice-tested level breaks harder.
+A "liquidity sweep" or "grab" is a failed break — use wyckoff_spring or
+breakout_check. A "liquidity run" is a real breakout — breakout_check scores
+it. Do not treat the vocabulary as new capability.
 
 Wyckoff — phases and the two setups the method actually trades:
 - wyckoff_phase → accumulation / markup / distribution / markdown, with the
@@ -250,6 +263,7 @@ registerPatternTools(server);
 registerBreakoutTools(server);
 registerContextTools(server);
 registerWyckoffTools(server);
+registerLiquidityTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

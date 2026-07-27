@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **131 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **134 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -263,6 +263,18 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### effort_* (1)
 
 - **`effort_vs_result`** — Wyckoff's third law as a measurement: volume is effort, price movement is result
+
+### anchored_* (1)
+
+- **`anchored_vwap`** — VWAP anchored to any bar, with standard-deviation bands
+
+### fair_* (1)
+
+- **`fair_value_gaps`** — Three-bar imbalances where bar 1 and bar 3 do not overlap — price moved so fast it left a band nothing traded in
+
+### liquidity_* (1)
+
+- **`liquidity_pools`** — Equal highs and equal lows — swing points stacked at effectively one price, where stop orders cluster
 
 ---
 
