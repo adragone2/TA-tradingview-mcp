@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **164 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **166 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -360,6 +360,14 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### deflated_* (1)
 
 - **`deflated_sharpe`** — Correct a Sharpe ratio for how hard you looked for it
+
+### horizon_* (1)
+
+- **`horizon_prior`** — THE structural problem underneath swing trading, and the one this toolchain was silent about
+
+### turnover_* (1)
+
+- **`turnover_cost`** — Whether a strategy can survive its own trading frequency — the arithmetic that eliminates most swing systems before any signal work begins
 
 ### stopping_* (1)
 

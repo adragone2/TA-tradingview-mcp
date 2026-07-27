@@ -9,6 +9,8 @@ import * as lmw from '../core/lmw_patterns.js';
 import * as validation from '../core/validation.js';
 import * as breadth from '../core/breadth.js';
 import * as stops from '../core/stops.js';
+import * as horizon from '../core/horizon.js';
+import * as costs from '../core/costs.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -121,6 +123,53 @@ export function registerEvidenceTools(server) {
       };
     }),
   );
+  server.tool(
+    'horizon_prior',
+    'THE structural problem underneath swing trading, and the one this toolchain was silent about. Below ~21 trading days the dominant documented effect in equities is REVERSAL (Jegadeesh 1990, Lehmann 1990); above ~63 days it is CONTINUATION (Jegadeesh & Titman 1993). The standard momentum construction skips the most recent month precisely because the sign changes inside it — and that boundary falls INSIDE the swing window. So breakouts, flags, triangles and VCP all place a continuation bet at the horizon where continuation is WEAKEST, while oversold bounces and pullback entries are aligned with the effect that is actually documented there. Almost every detector in this repo is continuation-flavoured, which is a systematic tilt into the weaker side. Returns a PRIOR ADJUSTMENT, never a forecast. Also reports Nagel-style conditioning: the payoff to mean reversion is concentrated in high-volatility states, because it is compensation for supplying liquidity.',
+    {
+      setup: z.string().describe('Setup name, e.g. "bull_flag", "double_bottom", "vcp", "breakout"'),
+      holding_days: z.coerce.number().optional().describe('Intended holding period in TRADING days (default 10)'),
+      count: z.coerce.number().optional().describe('Bars to load for the volatility conditioning (default 500)'),
+    },
+    wrap(async ({ setup, holding_days = 10, count = 500 }) => {
+      const prior = horizon.horizonPrior(setup, { holding_days });
+      let conditioning = null;
+      try {
+        const { bars } = await loadBars(count);
+        conditioning = horizon.reversalConditioning(bars);
+      } catch { /* the prior stands without a chart */ }
+      return { success: true, ...prior, ...(conditioning ? { volatility_conditioning: conditioning } : {}) };
+    }),
+  );
+
+  server.tool(
+    'turnover_cost',
+    'Whether a strategy can survive its own trading frequency — the arithmetic that eliminates most swing systems before any signal work begins. Cost sensitivity scales with the INVERSE of holding period: a 5-day hold is ~50 round trips a year, and at 20bps each that consumes ~10% annually before any edge exists. Also computes the hysteresis exit from De Groot/Huij/Zhou, which more than halved turnover and costs while INCREASING net returns simply by waiting until a name crossed to the opposite half of the ranking instead of selling the moment it stopped qualifying — close to free, and almost no discretionary system does it. And measures signal-to-fill slippage from the actual bars, the systematically adverse gap between a close-based signal and the next open, which is separate from spread and commission.',
+    {
+      holding_days: z.coerce.number().optional().describe('Average holding period in trading days (default 5)'),
+      round_trip_bps: z.coerce.number().optional().describe('Round-trip cost in basis points (default 20)'),
+      entry_rank_pct: z.coerce.number().optional().describe('For hysteresis: percentile to enter at (default 20)'),
+      exit_rank_pct: z.coerce.number().optional().describe('For hysteresis: percentile to exit at (default 50). Equal to entry = the naive max-turnover rule'),
+      measure_slippage: z.coerce.boolean().optional().describe('Also measure close-to-next-open slippage from the loaded chart (default true)'),
+      direction: z.enum(['long', 'short']).optional().describe('Direction for the slippage measurement (default long)'),
+    },
+    wrap(async ({ holding_days = 5, round_trip_bps = 20, entry_rank_pct = 20, exit_rank_pct = 50, measure_slippage = true, direction = 'long' }) => {
+      const out = {
+        success: true,
+        drag: costs.turnoverDrag({ holding_days, round_trip_bps }),
+        hysteresis: costs.hysteresisExit({ entry_rank_pct, exit_rank_pct, round_trip_bps, holding_days }),
+      };
+      if (measure_slippage) {
+        try {
+          const { bars, symbol, timeframe } = await loadBars(400);
+          out.symbol = symbol; out.timeframe = timeframe;
+          out.signal_to_fill_slippage = costs.signalToFillSlippage(bars, { direction });
+        } catch (e) { out.slippage_note = `Could not measure from the chart: ${e.message}`; }
+      }
+      return out;
+    }),
+  );
+
   server.tool(
     'stopping_premium',
     'Does a stop-loss ADD expected return on this chart, or just cost you? Kaminski & Lo (2014) prove the stopping premium is ALWAYS NEGATIVE under a random walk — a stop then only forces you out of higher-yielding assets, and in their words "stop-loss rules never stop losses". It turns positive under momentum, directly proportional to return persistence. This measures autocorrelation at several lags with a significance band and reports which case the chart is in: persistent, no measurable persistence, mean-reverting (the worst case for a stop), or mixed. IMPORTANT: this is about expected return, NOT risk of ruin — a negative premium is a price, and bounding a loss is usually worth paying it. Use it to say WHICH reason a stop is being used for. Optionally backtests a specific stop threshold against buy-and-hold on the same bars.',

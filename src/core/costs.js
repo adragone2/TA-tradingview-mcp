@@ -254,3 +254,137 @@ export function gapRisk(bars, { stop_distance_pct = 2 } = {}) {
     caveat: 'Backtests here fill at the stop price exactly. A stop is a market order once touched, so a gap fills at the open instead — every backtest in this toolchain understates its worst losses by roughly this much. This measures the exposure; it does not correct it.',
   };
 }
+
+/**
+ * Cost drag as a function of holding period — the arithmetic that decides
+ * whether a swing strategy can exist at all.
+ *
+ * Cost sensitivity scales roughly with the inverse of holding period. At a
+ * five-day hold a strategy trades about fifty times a year, and a 20bp
+ * round-trip consumes ~10% annually. Very few of the documented effects in
+ * this literature are large enough to absorb that.
+ *
+ * Two numbers, and it should be run before designing anything at swing horizon
+ * rather than after.
+ */
+export function turnoverDrag({ holding_days = 5, round_trip_bps = 20, trading_days_per_year = 252 } = {}) {
+  if (!(holding_days > 0)) throw new Error('holding_days must be positive.');
+  if (!(round_trip_bps >= 0)) throw new Error('round_trip_bps must be non-negative.');
+
+  const tradesPerYear = trading_days_per_year / holding_days;
+  const annualDragPct = (tradesPerYear * round_trip_bps) / 100;
+
+  return {
+    holding_days,
+    round_trip_bps,
+    trades_per_year: round(tradesPerYear, 1),
+    annual_cost_drag_pct: round(annualDragPct, 2),
+    what_it_means: `A ${holding_days}-day holding period is roughly ${Math.round(tradesPerYear)} round trips a year. `
+      + `At ${round_trip_bps}bps each, costs consume ${round(annualDragPct, 2)}% annually before any edge exists. `
+      + 'Each trade must beat the round-trip cost; the annual figure is what the strategy must out-earn to break even.',
+    verdict: annualDragPct >= 10
+      ? 'SEVERE. Very few documented effects are large enough to absorb this. Lengthen the hold, cut the cost, or abandon it.'
+      : annualDragPct >= 5
+        ? 'HEAVY. Needs an unusually strong edge to survive.'
+        : 'Manageable, provided the edge is real.',
+    source: 'Bajgrowicz & Scaillet (2012): rules selected before costs trade too frequently to be viable. The failure '
+      + 'is economic, not statistical — they genuinely outperform on gross returns.',
+  };
+}
+
+/**
+ * Hysteresis exits — the cheapest turnover reduction in this literature.
+ *
+ * Most systems exit the moment the entry condition is negated. That is the
+ * MAXIMUM-turnover choice available. De Groot, Huij & Zhou (2012) showed that
+ * waiting until a name crosses to the opposite half of the ranking, instead of
+ * selling the instant it stops qualifying, more than halved turnover and
+ * trading costs while INCREASING net returns — 30-50bps per week after costs
+ * in large-cap universes, for a strategy widely believed to be destroyed by
+ * costs.
+ *
+ * It is close to free, and almost no discretionary swing system does it.
+ *
+ * Setting `exit_rank_pct` equal to `entry_rank_pct` reproduces the naive rule,
+ * which is what this function exists to argue against.
+ */
+export function hysteresisExit({ entry_rank_pct = 20, exit_rank_pct = 50, round_trip_bps = 20, holding_days = 5 } = {}) {
+  if (!(entry_rank_pct > 0 && entry_rank_pct < 100)) throw new Error('entry_rank_pct must be between 0 and 100.');
+  if (!(exit_rank_pct > 0 && exit_rank_pct <= 100)) throw new Error('exit_rank_pct must be between 0 and 100.');
+  if (exit_rank_pct < entry_rank_pct) {
+    throw new Error(`exit_rank_pct (${exit_rank_pct}) is tighter than entry_rank_pct (${entry_rank_pct}) — that is the `
+      + 'opposite of hysteresis and raises turnover rather than cutting it.');
+  }
+
+  const band = exit_rank_pct - entry_rank_pct;
+  const naive = turnoverDrag({ holding_days, round_trip_bps });
+  // Widening the band holds names through noise around the entry boundary, so
+  // the effective holding period lengthens roughly in proportion to it.
+  const stretch = 1 + band / entry_rank_pct;
+  const withHyst = turnoverDrag({ holding_days: holding_days * stretch, round_trip_bps });
+
+  return {
+    entry_rank_pct,
+    exit_rank_pct,
+    hysteresis_band_pct: band,
+    is_hysteresis: band > 0,
+    naive_exit: { trades_per_year: naive.trades_per_year, annual_cost_drag_pct: naive.annual_cost_drag_pct },
+    with_hysteresis: {
+      implied_holding_days: round(holding_days * stretch, 1),
+      trades_per_year: withHyst.trades_per_year,
+      annual_cost_drag_pct: withHyst.annual_cost_drag_pct,
+    },
+    cost_saved_pct_per_year: round(naive.annual_cost_drag_pct - withHyst.annual_cost_drag_pct, 2),
+    ...(band === 0
+      ? { warning: 'Entry and exit thresholds are identical — this IS the naive maximum-turnover rule. Widening the exit '
+          + 'threshold is the cheapest turnover reduction available.' }
+      : {}),
+    source: 'De Groot, Huij & Zhou (2012), Journal of Banking & Finance 36(2).',
+    caveat: 'A first-order approximation from the width of the band, not a simulation. Measure it on real rankings '
+      + 'before relying on the figure.',
+  };
+}
+
+/**
+ * The delay between a close-based signal and the fill that follows it.
+ *
+ * Zakamulin documents systematically ADVERSE slippage from this gap. For any
+ * system that signals on the close and executes at or after the next open it
+ * is a real, negative, estimable component of return — not a rounding error to
+ * be assumed away.
+ *
+ * Measured from the actual bars: the signed close-to-next-open move, in the
+ * direction the trade would have taken.
+ */
+export function signalToFillSlippage(bars, { direction = 'long', lookback = 250 } = {}) {
+  if (!Array.isArray(bars) || bars.length < 20) {
+    return { available: false, note: `Need at least 20 bars, have ${bars?.length ?? 0}.` };
+  }
+  const seg = bars.slice(-Math.min(lookback, bars.length));
+  const gaps = [];
+  for (let i = 1; i < seg.length; i++) {
+    const g = ((seg[i].open - seg[i - 1].close) / seg[i - 1].close) * 100;
+    gaps.push(direction === 'long' ? g : -g);   // a long pays an up-gap, a short pays a down-gap
+  }
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const adverse = gaps.filter((g) => g > 0).length;
+  const adversePct = (adverse / gaps.length) * 100;
+
+  return {
+    available: true,
+    direction,
+    bars_measured: gaps.length,
+    mean_slippage_pct: round(mean, 4),
+    median_slippage_pct: round(median, 4),
+    adverse_share_pct: round(adversePct, 1),
+    worst_pct: round(sorted[sorted.length - 1], 2),
+    what_it_means: `Signalling on the close and filling at the next open cost an average of ${round(mean, 4)}% per entry `
+      + `on these bars, with ${round(adversePct, 1)}% of gaps moving against the trade. This is SEPARATE from spread and `
+      + 'commission and must be added to them.',
+    source: 'Zakamulin documents systematically adverse slippage between a close-based signal and the actual execution.',
+    caveat: 'Measures the OVERNIGHT gap only. Intraday slippage between decision and fill is additional and cannot be '
+      + 'measured from daily bars.',
+  };
+}

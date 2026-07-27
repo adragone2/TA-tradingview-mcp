@@ -13,6 +13,18 @@ patterns_detect count=600           → deeper history for big formations
 patterns_detect include=["double_top","head_and_shoulders"]
 ```
 
+## Before any of this: which way is the setup betting, and over what horizon?
+
+```
+horizon_prior setup=<pattern> holding_days=<intended hold>
+```
+
+Below **~21 trading days** the documented effect in equities is **reversal**; above **~63 days** it is **continuation**. Momentum's skip-month exists because the sign changes in between — and that boundary sits inside the swing window.
+
+**Nearly every pattern in this skill is a continuation bet**: flags, triangles, wedges, rectangles, breakouts. Held for a swing, they are placing that bet at the horizon where continuation is weakest and the opposing effect strongest. The tops-and-bottoms family (double top/bottom, H&S, broadening) is the reversal side, and at 2–20 days it is the one running *with* the evidence.
+
+Take the continuation trade if the chart justifies it — but **do not present it as a neutral-prior setup**, and say which side of the boundary it sits on.
+
 ## Three rules, in order of how often they are broken
 
 ### 1. A forming pattern is not a signal

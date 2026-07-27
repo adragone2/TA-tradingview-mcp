@@ -88,6 +88,10 @@ Each of these exists because it has already gone wrong here.
 
 **Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 
+**Swing trading sits on top of a sign change.** Below ~21 trading days the documented effect is REVERSAL; above ~63 it is CONTINUATION, and momentum's skip-month exists because the boundary falls inside the swing window. Nearly every structural detector here — flags, triangles, wedges, VCP, breakouts — is a CONTINUATION bet placed at the horizon where continuation is weakest. Run `horizon_prior` before hunting a setup and say which side of the boundary it is on. See [docs/swing-evidence-review.md](docs/swing-evidence-review.md).
+
+**Turnover decides whether a swing strategy can exist.** A 5-day hold is ~50 round trips a year; at 20bps each that is ~10% annually before any edge. `turnover_cost` does the arithmetic, and computes the hysteresis exit that halved turnover while raising net returns.
+
 **A stop-loss is a bet on persistence, not free insurance.** Kaminski & Lo prove the stopping premium is ALWAYS NEGATIVE under a random walk — a stop in a no-persistence market lowers expected return without benefit. It turns positive under momentum, proportional to persistence. Run `stopping_premium` before claiming a stop helps; it may still be right as a solvency constraint, but say which reason applies.
 
 **Candlesticks failed two independent academic tests.** Marshall/Young/Rose (2006, DJIA, random-OHLC bootstrap) and Marshall/Young/Cahan (2008, Tokyo 1975-2004) both found no value — in any sub-period, bull or bear. Report a candle as a description of what the bar did, never as a signal.

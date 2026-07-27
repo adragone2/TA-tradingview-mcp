@@ -42,6 +42,29 @@ Defaults, unless the user says otherwise:
 
 Always state the timeframe and the span it covers ("300 daily bars, 438 days"). A bar count means nothing without it.
 
+## Step 1.5 — Which side of the horizon boundary is this setup on?
+
+```
+horizon_prior setup=<pattern> holding_days=<intended hold>
+```
+
+**Read this before hunting for a setup, not after finding one.**
+
+Below **~21 trading days** the dominant documented effect in equities is **reversal** (Jegadeesh 1990, Lehmann 1990). Above **~63 days** it is **continuation** (Jegadeesh & Titman 1993). Standard momentum skips the most recent month precisely because the sign changes inside it — **and that boundary falls inside the swing window.**
+
+The consequence is uncomfortable and applies to most of what this toolchain detects:
+
+| Setup family | Our detectors | At 2–20 days |
+|---|---|---|
+| **Continuation** | flags, triangles, wedges, rectangles, VCP, breakouts | **fighting** the documented effect |
+| **Reversal** | double tops/bottoms, H&S, springs, divergence | **aligned** with it |
+
+**Almost every structural detector here is continuation-flavoured.** That is a systematic tilt into the weaker side of the boundary, and it was invisible until now.
+
+This does not forbid continuation trades — several well-evidenced effects are continuation-flavoured. It means **the prior on a bull flag held ten days is materially lower than the same logic held six months**, and a report that treats the two as equivalent is wrong. Say which side you are on.
+
+`horizon_prior` also returns Nagel's conditioning: the payoff to mean reversion is **concentrated in high-volatility states**, because it is compensation for supplying liquidity — a business with a capital requirement, not a free anomaly. A reversal setup in a calm tape is the muted case.
+
 ## Step 2 — Is this market worth reading at all?
 
 ```
