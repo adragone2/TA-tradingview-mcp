@@ -105,3 +105,18 @@ For a properly out-of-sample check across many names and years, the WRDS layer (
 - Report what the tools returned, including warnings. A partial result is not a success.
 - Never present a backtest as a prediction. It is a measurement of the past under stated assumptions.
 - Nothing here is trade advice. It is arithmetic on the user's own rules and drawings.
+
+## Costs — a backtest without them flatters itself
+
+`resolveTrade` fills at the exact stop or target price. There is no spread, slippage, commission or borrow in that number, and those are not free.
+
+```
+trade_cost preset=ibkr_pro_fixed entry=.. stop=.. shares=.. atr=..
+costs_vs_edge expectancy_r=<from backtest_evaluate> cost_in_r=<from trade_cost>
+gap_risk stop_distance_pct=..
+```
+
+- Report **net** expectancy alongside gross. An edge smaller than its costs is a losing strategy however good the equity curve looked.
+- Costs scale with **turnover**. Pass `trades_per_year` — the same per-trade cost hurts a 200-trade strategy a hundred times more than a 2-trade one.
+- The IBKR preset's **$1.00 per-order minimum** is the part that matters for small size: a 100-share order pays double the per-share rate, a 50-share order quadruple.
+- **`gap_risk` measures what the cost model cannot fix.** A stop is a market order once touched, so a gap fills at the open, not at the stop. Every backtest here understates its worst losses by roughly that much. State the figure; do not pretend it is corrected.

@@ -98,3 +98,9 @@ A strategy that has never been measured is a hypothesis. Once the criteria are w
 - **A hit is a snapshot**, true at that moment on that timeframe. It is not a signal and it does not persist.
 - **These are the user's own criteria being checked.** Report a hit as "your specification currently matches", never as a recommendation.
 - Pre-market values are not available unless extended-hours data is loaded on the chart.
+
+## Operands added since this skill was written
+
+- **Crosses are EVENTS**: `ema(8) crosses_above ema(20)`, `rsi(14) crosses_below 70`. `rsi > 50` is a *state* and fires on every bar of a trend. Using the state where the rule means the event is how a scan quietly stops meaning what it says — if the user says "crosses", write the cross.
+- **Slope**: `sma_slope(20)`, `ema_slope(50)`, `rsi_slope(14)`, in percent per bar. A moving average's level says nothing about whether it is rising; "SMA20 sloping, not flat" needs this.
+- **Structural values**, supplied by `levels_find` / `zones_find` rather than recomputed: `pullback_pct`, `nearest_level_tests`, `nearest_level_distance_pct`, `in_demand_zone`, `in_supply_zone`, `nearest_zone_distance_pct`. Absent that context they resolve to UNKNOWN, which is correct — a second implementation here would drift from the tools that draw the levels.

@@ -84,3 +84,20 @@ Lead with expectancy and the break-even win rate together — neither means anyt
 State the sample size the numbers rest on. If it is small or unknown, say the Kelly figures are unusable and recommend 1–2%.
 
 Everything here is arithmetic on numbers the user supplied. It is not advice, and it places no orders.
+
+## Portfolio level — the unit that actually ends accounts
+
+Per-trade sizing is not the whole risk. Six positions risking 1% each is not 1% if they move together.
+
+```
+portfolio_heat positions=[...] account_size=..
+position_correlation returns={"AAPL":[...], "MSFT":[...]}
+position_concentration positions=[...] key="sector"
+```
+
+- **`effective_positions`** is the number to lead with: six positions at an average correlation of 0.8 are about 1.4 independent bets, and the per-trade sizing that looked conservative never was.
+- Pairs without enough data come back **UNKNOWN, never zero.** Assuming independence is the error this measures.
+- Concentration is by **risk**, not notional — two equally sized positions with different stop distances carry different risk.
+- Correlations rise in a selloff, which is exactly when the diversification is being relied on. Say so.
+
+And before sizing anything, price the round trip: `trade_cost` then `costs_vs_edge`.

@@ -100,3 +100,10 @@ Then report: the trend, the nearest level either side **with its reason**, and a
 - The scoring is a heuristic for ranking, not a probability. A score of 13 is not "13% likely to hold".
 - Levels describe where price has reacted before. They do not say it will react again.
 - Nothing here is advice. It is arithmetic on the user's chart.
+
+## Also available now
+
+- **`legs_classify`** — each leg between swings as an impulse or a pullback, from three measurements (body share, colour agreement, closes near the extreme), plus whether a pullback is simple or complex. It is the unit the trend is built from, and it flags a "pullback" larger than the impulse before it — which is a trend change, not a retracement.
+  **Always read `since_last_leg`.** The last confirmed leg ends some way back because swings need bars to their right; when price has run since, the warning says so. Never describe the last leg as what price is doing now.
+- **`divergence_survey`** — price against RSI, MACD, OBV and MFI, reporting where they agree.
+- **`zones_find`** — where price DEPARTED from, which is a different question from where it reversed. Use both.

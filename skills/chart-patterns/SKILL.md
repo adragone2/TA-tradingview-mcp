@@ -153,3 +153,14 @@ Confluence is worth stating when it is real: a double top whose completion level
 - Report what the tool returned, including `forming`, `excluded_old` and any caveat.
 - Never invent a level. Completion levels and targets come from the tool.
 - Nothing here is trade advice. It is geometry on the user's chart, plus published statistics about how that geometry has behaved.
+
+## Measured statistics are attached
+
+Confirmed structural patterns now carry Bulkowski's measurements in a `measured` block: `break_even_failure_pct`, `average_move_pct`, `meeting_target_pct`, `throwback_pullback_pct` and his performance rank — split by breakout direction and by bull/bear market.
+
+- **Quote `meeting_target_pct` next to any target you report.** A measured move that is reached 55% of the time is a different claim from one reached 84% of the time.
+- **Only confirmed patterns have them.** He measures from the breakout onward, so a forming shape gets a `stats_note` explaining why the numbers do not apply.
+- **Pass `market`.** The bull/bear difference is often large and is the part folklore omits — a rising wedge breaking down fails 24% of the time in a bull market against 8% for the upward break.
+- Some patterns carry a `_range` instead of a figure, because Bulkowski measured sub-variants this detector cannot tell apart. Report the range; the average is a number he never measured.
+
+Also useful alongside: **`candle_read`** classifies any candle as momentum, reaction or indecision — it always answers, where `patterns_detect` answers only for named patterns.
