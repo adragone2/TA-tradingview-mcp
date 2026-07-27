@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **144 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **147 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -300,6 +300,15 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`elliott_count`** — Every rule-valid five-wave Elliott count in the bars — not "the" count
 - **`elliott_survey`** — Run the Elliott enumeration at several swing sensitivities and report whether they agree
+
+### divergence_* (2)
+
+- **`divergence_find`** — Divergence between price and one indicator — RSI, MACD, OBV, MFI or raw volume
+- **`divergence_survey`** — Run divergence across RSI, MACD histogram, OBV and MFI at once and report where they AGREE
+
+### legs_* (1)
+
+- **`legs_classify`** — Classify each leg between swings as an IMPULSE or a PULLBACK, with the measurements behind it — body share, colour agreement, and where bars closed in
 
 ---
 

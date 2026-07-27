@@ -169,6 +169,143 @@ export function classifyStructure(alt) {
 }
 
 /**
+ * Classify each leg between swings as an IMPULSE or a PULLBACK.
+ *
+ * `classifyCandle` in patterns.js answers this for a single bar. This answers it
+ * for a leg, which is the unit the fundamental trend pattern is built from —
+ * impulse, pullback, impulse — and which underlies flags, pennants, wedges,
+ * Elliott waves and every pullback entry.
+ *
+ * Three measurements per leg, each reported:
+ *
+ *   1. body share — how much of each bar's range was real body. An impulse is
+ *      made of decisive bars; a pullback of indecisive ones.
+ *   2. colour agreement — what fraction of bars moved with the leg. An impulse
+ *      is mostly one colour; a pullback is mixed.
+ *   3. close position — where bars closed inside their range. An impulse closes
+ *      near its extreme; a pullback closes anywhere.
+ *
+ * A leg is an impulse when at least two of the three agree, and the verdict
+ * always carries which ones did. Two of three rather than all three because
+ * real impulses routinely contain one contrary bar, and requiring unanimity
+ * classifies almost everything as a pullback.
+ */
+export function classifyLegs(bars, swings, { min_bars = 2 } = {}) {
+  const legs = [];
+  for (let i = 1; i < swings.length; i++) {
+    const a = swings[i - 1], b = swings[i];
+    const slice = bars.slice(a.index + 1, b.index + 1);
+    if (slice.length < min_bars) continue;
+
+    const up = b.price > a.price;
+    let bodySum = 0, rangeSum = 0, withTrend = 0, closeNearExtreme = 0;
+
+    for (const bar of slice) {
+      const range = bar.high - bar.low;
+      const body = Math.abs(bar.close - bar.open);
+      bodySum += body;
+      rangeSum += range;
+      if (up ? bar.close > bar.open : bar.close < bar.open) withTrend++;
+      if (range > 0) {
+        // How far through its own range the bar closed, oriented to the leg.
+        const pos = up ? (bar.close - bar.low) / range : (bar.high - bar.close) / range;
+        if (pos >= 0.65) closeNearExtreme++;
+      }
+    }
+
+    const bodyShare = rangeSum > 0 ? bodySum / rangeSum : 0;
+    const colourAgreement = withTrend / slice.length;
+    const closeQuality = closeNearExtreme / slice.length;
+
+    const tests = {
+      decisive_bodies: bodyShare >= 0.5,
+      one_colour: colourAgreement >= 0.65,
+      closes_near_extreme: closeQuality >= 0.5,
+    };
+    const passed = Object.entries(tests).filter(([, v]) => v).map(([k]) => k);
+    const isImpulse = passed.length >= 2;
+
+    legs.push({
+      kind: isImpulse ? 'impulse' : 'pullback',
+      direction: up ? 'up' : 'down',
+      from: { price: round(a.price, 6), time: a.time, index: a.index },
+      to: { price: round(b.price, 6), time: b.time, index: b.index },
+      move_pct: round(((b.price - a.price) / Math.abs(a.price)) * 100, 2),
+      bars: slice.length,
+      body_share: round(bodyShare, 3),
+      colour_agreement: round(colourAgreement, 3),
+      close_quality: round(closeQuality, 3),
+      tests,
+      tests_passed: passed,
+      evidence: `${passed.length} of 3 impulse tests passed${passed.length ? ` (${passed.join(', ')})` : ''}.`,
+    });
+  }
+
+  // A pullback containing more than one counter-trend leg of its own is what
+  // the material calls COMPLEX — flags and pennants are the common shapes. The
+  // distinction matters because a complex pullback looks like a reversal while
+  // it is forming, and gets abandoned for that reason.
+  for (let i = 0; i < legs.length; i++) {
+    if (legs[i].kind !== 'pullback') continue;
+    let run = 1;
+    while (i + run < legs.length && legs[i + run].kind === 'pullback') run++;
+    const complexity = run > 1 ? 'complex' : 'simple';
+    for (let j = 0; j < run; j++) {
+      legs[i + j].pullback_shape = complexity;
+      legs[i + j].shape_note = complexity === 'complex'
+        ? 'Part of a multi-leg pullback. Complex pullbacks look like reversals while forming, which is why they get abandoned early.'
+        : 'A single-leg pullback.';
+    }
+    i += run - 1;
+  }
+
+  // A "pullback" bigger than the impulse it follows is a contradiction in
+  // terms, and it is the shape a trend change makes. The tests measure
+  // decisiveness, not size, so without this a 27% move with messy bars gets
+  // reported as a pullback and read as a minor retracement.
+  for (let i = 1; i < legs.length; i++) {
+    if (legs[i].kind !== 'pullback') continue;
+    const prior = legs[i - 1];
+    if (prior.kind !== 'impulse') continue;
+    const size = Math.abs(legs[i].to.price - legs[i].from.price);
+    const priorSize = Math.abs(prior.to.price - prior.from.price);
+    if (size > priorSize) {
+      legs[i].larger_than_prior_impulse = true;
+      legs[i].size_warning = `This leg moved ${round((size / priorSize), 2)}x further than the impulse before it. It failed the impulse tests on bar quality, not on size — a retracement this large is usually a change of trend rather than a pullback within one.`;
+    }
+  }
+
+  const impulses = legs.filter((l) => l.kind === 'impulse');
+  const last = legs[legs.length - 1] || null;
+
+  // Swings need bars to their right before they confirm, so the last leg always
+  // ends some way back. When price has since travelled a long way, reporting
+  // `last_leg` without saying so describes a chart that no longer exists.
+  let staleness = null;
+  if (last && bars.length) {
+    const now = bars[bars.length - 1].close;
+    const since = bars.length - 1 - last.to.index;
+    const movePct = ((now - last.to.price) / Math.abs(last.to.price)) * 100;
+    staleness = {
+      bars_since_last_leg: since,
+      price_now: round(now, 6),
+      price_move_since_pct: round(movePct, 2),
+      ...(Math.abs(movePct) >= 3
+        ? { warning: `Price has moved ${round(movePct, 1)}% in the ${since} bars since the last confirmed leg ended at ${round(last.to.price, 6)}. That move is not represented in any leg yet — do not describe the last leg as what price is doing now.` }
+        : {}),
+    };
+  }
+
+  return {
+    legs,
+    counts: { impulse: impulses.length, pullback: legs.length - impulses.length },
+    last_leg: last,
+    ...(staleness ? { since_last_leg: staleness } : {}),
+    method: 'A leg is an impulse when at least two of three measurements agree: decisive bodies, one dominant colour, closes near the leg\'s extreme. Two of three rather than three because real impulses routinely contain a contrary bar. The tests measure decisiveness, not size.',
+  };
+}
+
+/**
  * Is `price` sitting on a psychologically round number, and how significant is
  * the roundness? Step scales with magnitude — 100 is round for a $95 stock and
  * unremarkable for Bitcoin.

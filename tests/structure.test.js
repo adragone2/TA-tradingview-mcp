@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 
 import {
   normalizeBars, findSwings, alternateSwings, classifyStructure,
-  roundNumberNear, countTests, findKeyLevels, labelFor,
+  roundNumberNear, countTests, findKeyLevels, labelFor, classifyLegs,
 } from '../src/core/structure.js';
 
 /** Build bars from closes, with highs/lows a fixed fraction either side. */
@@ -403,5 +403,245 @@ describe('labelFor', () => {
     const label = labelFor(bare, 'compact');
     assert.equal(label, '100 · 2 tests');
     assert.ok(!/vol|round|flipped/.test(label));
+  });
+});
+
+describe('classifyLegs — impulse vs pullback', () => {
+  let t = 1_700_000_000;
+  const mk = (o, h, l, c) => ({ time: (t += 86400), open: o, high: h, low: l, close: c, volume: 1000 });
+  const reset = () => { t = 1_700_000_000; };
+
+  /** Decisive bars marching one way: big bodies, one colour, closes at the extreme. */
+  function impulseBars(n, from, step) {
+    return Array.from({ length: n }, (_, i) => {
+      const o = from + i * step;
+      const c = o + step;
+      return step > 0 ? mk(o, c, o, c) : mk(o, o, c, c);
+    });
+  }
+  /** Indecisive bars drifting: tiny bodies, mixed colours, long wicks both sides. */
+  function chopBars(n, from, step) {
+    return Array.from({ length: n }, (_, i) => {
+      const base = from + i * step;
+      const up = i % 2 === 0;
+      return mk(base, base + 3, base - 3, base + (up ? 0.2 : -0.2));
+    });
+  }
+
+  it('calls decisive one-colour bars closing at the extreme an IMPULSE', () => {
+    reset();
+    const bars = impulseBars(10, 100, 2);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    const leg = classifyLegs(bars, swings).legs[0];
+    assert.equal(leg.kind, 'impulse');
+    assert.equal(leg.direction, 'up');
+    assert.equal(leg.tests_passed.length, 3, `expected all three tests, got ${leg.evidence}`);
+  });
+
+  it('calls small mixed-colour bars with long wicks a PULLBACK', () => {
+    reset();
+    const bars = chopBars(10, 100, 0.3);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 103, time: bars[9].time, kind: 'high' },
+    ];
+    const leg = classifyLegs(bars, swings).legs[0];
+    assert.equal(leg.kind, 'pullback');
+    assert.ok(leg.body_share < 0.5, `body share should be low, got ${leg.body_share}`);
+    assert.ok(leg.colour_agreement < 0.65);
+  });
+
+  it('needs only two of three tests, so one contrary bar does not disqualify an impulse', () => {
+    reset();
+    const bars = impulseBars(9, 100, 2);
+    bars.push(mk(118, 119, 117, 117.5));   // one red bar at the end
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 119, time: bars[9].time, kind: 'high' },
+    ];
+    assert.equal(classifyLegs(bars, swings).legs[0].kind, 'impulse');
+  });
+
+  it('reports the three measurements behind every verdict', () => {
+    reset();
+    const bars = impulseBars(10, 100, 2);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    const leg = classifyLegs(bars, swings).legs[0];
+    for (const k of ['decisive_bodies', 'one_colour', 'closes_near_extreme']) {
+      assert.ok(k in leg.tests, `missing test ${k}`);
+    }
+    for (const k of ['body_share', 'colour_agreement', 'close_quality']) {
+      assert.ok(Number.isFinite(leg[k]), `missing measurement ${k}`);
+    }
+    assert.match(leg.evidence, /of 3 impulse tests/);
+  });
+
+  it('marks consecutive pullback legs as a COMPLEX pullback', () => {
+    reset();
+    // impulse up, then two chop legs, then impulse up again.
+    const a = impulseBars(8, 100, 2);
+    const b = chopBars(8, 116, -0.2);
+    const c = chopBars(8, 114, 0.2);
+    const d = impulseBars(8, 116, 2);
+    const bars = [...a, ...b, ...c, ...d];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 7, price: 116, time: bars[7].time, kind: 'high' },
+      { index: 15, price: 114, time: bars[15].time, kind: 'low' },
+      { index: 23, price: 116, time: bars[23].time, kind: 'high' },
+      { index: 31, price: 132, time: bars[31].time, kind: 'high' },
+    ];
+    const r = classifyLegs(bars, swings);
+    const pullbacks = r.legs.filter((l) => l.kind === 'pullback');
+    if (pullbacks.length > 1) {
+      assert.ok(pullbacks.some((l) => l.pullback_shape === 'complex'),
+        'consecutive pullback legs must be marked complex');
+      assert.match(pullbacks.find((l) => l.pullback_shape === 'complex').shape_note, /look like reversals/i);
+    }
+  });
+
+  it('marks a lone pullback leg as simple', () => {
+    reset();
+    const bars = [...impulseBars(8, 100, 2), ...chopBars(8, 116, -0.2), ...impulseBars(8, 114, 2)];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 7, price: 116, time: bars[7].time, kind: 'high' },
+      { index: 15, price: 114, time: bars[15].time, kind: 'low' },
+      { index: 23, price: 130, time: bars[23].time, kind: 'high' },
+    ];
+    const r = classifyLegs(bars, swings);
+    const pb = r.legs.filter((l) => l.kind === 'pullback');
+    for (const l of pb) assert.ok(['simple', 'complex'].includes(l.pullback_shape));
+  });
+
+  it('counts impulses and pullbacks, and names the last leg', () => {
+    reset();
+    const bars = [...impulseBars(8, 100, 2), ...chopBars(8, 116, -0.2)];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 7, price: 116, time: bars[7].time, kind: 'high' },
+      { index: 15, price: 114, time: bars[15].time, kind: 'low' },
+    ];
+    const r = classifyLegs(bars, swings);
+    assert.equal(r.counts.impulse + r.counts.pullback, r.legs.length);
+    assert.equal(r.last_leg, r.legs[r.legs.length - 1]);
+  });
+
+  it('skips legs too short to measure rather than judging them', () => {
+    reset();
+    const bars = impulseBars(4, 100, 2);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 1, price: 102, time: bars[1].time, kind: 'high' },
+    ];
+    assert.equal(classifyLegs(bars, swings, { min_bars: 3 }).legs.length, 0);
+  });
+
+  it('states why two of three rather than three', () => {
+    reset();
+    const bars = impulseBars(10, 100, 2);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    assert.match(classifyLegs(bars, swings).method, /contrary bar/i);
+  });
+});
+
+describe('classifyLegs — the two defects the live chart exposed', () => {
+  let t = 1_700_000_000;
+  const mk = (o, h, l, c) => ({ time: (t += 86400), open: o, high: h, low: l, close: c, volume: 1000 });
+  const reset = () => { t = 1_700_000_000; };
+  function impulseBars(n, from, step) {
+    return Array.from({ length: n }, (_, i) => {
+      const o = from + i * step, c = o + step;
+      return step > 0 ? mk(o, c, o, c) : mk(o, o, c, c);
+    });
+  }
+  /** Bars that travel a long way but with messy internals — big wicks, poor closes. */
+  function messyRun(n, from, step) {
+    return Array.from({ length: n }, (_, i) => {
+      const base = from + i * step;
+      return mk(base, base + step * 2, base - step, base + step * 0.35);
+    });
+  }
+
+  it('flags a "pullback" that moved further than the impulse before it', () => {
+    reset();
+    const a = impulseBars(6, 100, 1);            // small clean impulse up: 100 -> 106
+    const b = messyRun(12, 106, 4);              // large messy run: 106 -> ~154
+    const bars = [...a, ...b];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 5, price: 106, time: bars[5].time, kind: 'high' },
+      { index: 17, price: 154, time: bars[17].time, kind: 'high' },
+    ];
+    const legs = classifyLegs(bars, swings).legs;
+    const second = legs[1];
+    if (second.kind === 'pullback') {
+      assert.equal(second.larger_than_prior_impulse, true,
+        'a pullback larger than the impulse it follows must be flagged');
+      assert.match(second.size_warning, /change of trend/i);
+    }
+  });
+
+  it('does not flag an ordinary pullback smaller than its impulse', () => {
+    reset();
+    const bars = [...impulseBars(10, 100, 3), ...Array.from({ length: 6 }, (_, i) => {
+      const base = 130 - i * 0.5;
+      return mk(base, base + 2, base - 2, base + (i % 2 ? 0.1 : -0.1));
+    })];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 130, time: bars[9].time, kind: 'high' },
+      { index: 15, price: 127, time: bars[15].time, kind: 'low' },
+    ];
+    for (const l of classifyLegs(bars, swings).legs) {
+      assert.notEqual(l.larger_than_prior_impulse, true);
+    }
+  });
+
+  it('warns when price has run away from the last confirmed leg', () => {
+    // Found live: the last leg ended at 686 while price was 595, and nothing
+    // said so. A session reading last_leg would describe a chart that is gone.
+    reset();
+    const bars = [...impulseBars(10, 100, 2), ...impulseBars(8, 120, -3)];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    const r = classifyLegs(bars, swings);
+    assert.ok(r.since_last_leg, 'staleness must always be reported');
+    assert.ok(r.since_last_leg.bars_since_last_leg > 0);
+    assert.ok(Math.abs(r.since_last_leg.price_move_since_pct) > 3);
+    assert.match(r.since_last_leg.warning, /not represented in any leg yet/i);
+  });
+
+  it('stays quiet when price has barely moved since the last leg', () => {
+    reset();
+    const bars = [...impulseBars(10, 100, 2), mk(120, 120.3, 119.8, 120.1)];
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    const r = classifyLegs(bars, swings);
+    assert.ok(r.since_last_leg);
+    assert.equal(r.since_last_leg.warning, undefined, 'no warning when the drift is immaterial');
+  });
+
+  it('says the tests measure decisiveness rather than size', () => {
+    reset();
+    const bars = impulseBars(10, 100, 2);
+    const swings = [
+      { index: 0, price: 100, time: bars[0].time, kind: 'low' },
+      { index: 9, price: 120, time: bars[9].time, kind: 'high' },
+    ];
+    assert.match(classifyLegs(bars, swings).method, /decisiveness, not size/i);
   });
 });

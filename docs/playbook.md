@@ -80,13 +80,15 @@ Being explicit about this matters: a strategy silently missing its key condition
 
 **Since built**, and now available as `strategy_check` operands: `vwap`, `rvol`, `opening_range_high(N)` / `opening_range_low(N)`, `time_et`, `minutes_since_open`. Each returns null — and so UNKNOWN — on a chart whose bars are sessions rather than intraday. Anchored VWAP with standard-deviation bands is a separate tool (`anchored_vwap`), not an operand.
 
+Also since built: **divergence** between price and RSI / MACD / OBV / MFI / volume (`divergence_find`, `divergence_survey`) — it remains a tool rather than a `strategy_check` operand.
+
 Still missing:
 
 | Missing primitive | Which setups need it |
 |---|---|
 | **Indicator crosses** | RSI 50 cross, 9/20 × 50 SMA. Note `rsi > 50` is a *state*; a **cross** is an event, and using the state fires on every bar of a trend |
 | **MA slope** | "SMA20 sloping, not flat" |
-| **Divergence** (price vs indicator swings) | RSI divergence |
+
 | **Wave position** | "buy wave 3" — `elliott_count` enumerates counts, but wave position is not an operand, and the count is subjective anyway |
 | **Pullback depth %** | ABCD's 40–70% retracement |
 | **Zone proximity** | "price returning to a demand zone" — `zones_find` computes zones, but zone membership is not an operand |

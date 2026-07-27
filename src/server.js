@@ -18,6 +18,7 @@ import { registerLiquidityTools } from "./tools/liquidity.js";
 import { registerZoneTools } from "./tools/zones.js";
 import { registerRiskTools } from "./tools/risk.js";
 import { registerElliottTools } from "./tools/elliott.js";
+import { registerDivergenceTools } from "./tools/divergence.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -41,7 +42,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 144 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 147 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -156,6 +157,24 @@ here depends on it. What is measured is that price left fast, how far it got,
 and whether it has reacted there since. Zones are common — the count before
 filtering always comes back. "Fresh beats tested" is convention, not a
 measurement made here.
+
+Divergence — the most over-claimed signal in TA:
+- divergence_survey → runs RSI, MACD histogram, OBV and MFI and reports where
+  they AGREE. Prefer this over divergence_find: one indicator diverging out of
+  four is far weaker than a reader shown only that one would assume.
+- divergence_find → one indicator, with hidden (continuation) divergences too.
+In a STRONG TREND divergence is normal, not a warning — a bounded oscillator
+cannot keep making higher highs while price does. It can persist for months and
+is not a timing tool. total_found always comes back so none looks rare.
+
+Legs — the unit a trend is built from:
+- legs_classify → each leg between swings as IMPULSE or PULLBACK, from three
+  measurements: body share, colour agreement, closes near the extreme. Also
+  marks a pullback simple or complex, and flags a "pullback" that moved further
+  than the impulse before it — that shape is a trend change, not a retracement.
+- ALWAYS read since_last_leg. Swings need bars to their right to confirm, so
+  the last leg ends some way back; when price has run since, the warning says
+  so. Never describe the last leg as what price is doing now.
 
 Risk — ask these BEFORE sizing anything:
 - risk_expectancy → expectancy, BREAK-EVEN win rate, and Kelly, from a win rate
@@ -314,6 +333,7 @@ registerLiquidityTools(server);
 registerZoneTools(server);
 registerRiskTools(server);
 registerElliottTools(server);
+registerDivergenceTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
