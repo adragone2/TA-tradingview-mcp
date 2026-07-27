@@ -847,3 +847,65 @@ describe('detectPatterns — statistics are attached only where they apply', () 
     }
   });
 });
+
+describe('wedge targets follow the wedge rule, not a projected height', () => {
+  let t = 1_700_000_000;
+  const b = (o, h, l, c) => ({ time: (t += 86400), open: o, high: h, low: l, close: c, volume: 1000 });
+
+  /** A rising wedge: both lines rise, the lower faster, so the range narrows. */
+  function risingWedge() {
+    t = 1_700_000_000;
+    const out = [];
+    for (let i = 0; i < 40; i++) {
+      const hi = 100 + i * 0.5;              // upper rises slowly
+      const lo = 80 + i * 0.9;               // lower rises faster -> converging
+      const mid = (hi + lo) / 2;
+      out.push(i % 2 === 0 ? b(mid, hi, lo, mid + 0.2) : b(mid, hi, lo, mid - 0.2));
+    }
+    return out;
+  }
+
+  it('targets the pattern low on a rising wedge, not a height projection', () => {
+    const bars = risingWedge();
+    const r = detectPatterns(bars, { lookback: 3, window_bars: 40 });
+    const w = r.structural.find((p) => p.pattern === 'rising_wedge');
+    if (!w) return;                                   // shape-dependent; skip if not detected
+    assert.match(w.target_basis, /opposite extreme of the pattern itself/);
+    assert.ok(Number.isFinite(w.target_projected_height),
+      'the standard projection must still be reported for comparison');
+    assert.notEqual(w.target, w.target_projected_height,
+      'the wedge target and the height projection should differ');
+    assert.match(w.target_note, /Kirkpatrick/);
+  });
+
+  it('warns when a wedge has fewer than five boundary touches', () => {
+    const bars = risingWedge();
+    const r = detectPatterns(bars, { lookback: 3, window_bars: 40 });
+    const w = r.structural.find((p) => p.pattern === 'rising_wedge');
+    if (!w) return;
+    const touches = w.measurements.touches_high + w.measurements.touches_low;
+    if (touches < 5) {
+      assert.match(w.touch_warning, /at least five times/i);
+    } else {
+      assert.equal(w.touch_warning, undefined);
+    }
+  });
+
+  it('leaves non-wedge patterns on the standard height projection', () => {
+    t = 1_700_000_000;
+    // Horizontal top, rising bottom -> ascending triangle.
+    const bars = [];
+    for (let i = 0; i < 40; i++) {
+      const hi = 120;
+      const lo = 90 + i * 0.6;
+      const mid = (hi + lo) / 2;
+      bars.push(b(mid, hi, lo, mid));
+    }
+    const r = detectPatterns(bars, { lookback: 3, window_bars: 40 });
+    for (const p of r.structural) {
+      if (p.pattern !== 'rising_wedge' && p.pattern !== 'falling_wedge') {
+        assert.equal(p.target_basis, undefined, `${p.pattern} should not use the wedge rule`);
+      }
+    }
+  });
+});

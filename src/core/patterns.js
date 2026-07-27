@@ -774,19 +774,47 @@ function trendlinePatterns(bars, swings, {
   const status = (upBreak || downBreak) ? 'confirmed' : 'forming';
   const brokeUp = upBreak;
 
+  const isWedge = pattern === 'rising_wedge' || pattern === 'falling_wedge';
+  const patternHigh = Math.max(...highs.map((h) => h.price));
+  const patternLow = Math.min(...lows.map((l) => l.price));
+  const touchTotal = highs.length + lows.length;
+
   return [{
     pattern, direction,
     ...(type ? { type } : {}),
     status,
     ...(avoid ? { avoid } : {}),
+    ...(isWedge && touchTotal < 5
+      ? { touch_warning: `A wedge needs price to touch its boundaries at least five times (three on one line, two on the other) before a breakout. This one has ${touchTotal}. Under-touched wedges are frequently just a channel.` }
+      : {}),
     ...(status === 'confirmed' ? { broke: brokeUp ? 'up' : 'down' } : {}),
     bars: spanBars,
     bars_ago: 0,
     completion_level: round(completion),
-    // Measure rule: the pattern's height projected from the breakout level.
-    target: status === 'confirmed'
-      ? round(brokeUp ? resistance + height : support - height)
-      : round(direction === 'bearish' ? support - height : resistance + height),
+    // Measure rule: the pattern's height projected from the breakout level —
+    // EXCEPT for wedges, which are measured differently and where the standard
+    // projection is materially too optimistic.
+    //
+    // Two independent sources agree on the wedge construction: the minimum
+    // objective is to take out the pattern's OWN opposite extreme (its first
+    // reversal point), not to project its height. A falling wedge aims to take
+    // out the highest point in the pattern; a rising wedge, the lowest. That is
+    // usually a much nearer target, and it matters here because the measured
+    // data already says wedges are weak — a rising wedge breaking down fails
+    // 24% of the time in a bull market and reaches its target only 46% of the
+    // time. A too-generous target compounds that.
+    ...(isWedge
+      ? {
+          target: round(direction === 'bearish' ? patternLow : patternHigh),
+          target_basis: 'wedge rule: the opposite extreme of the pattern itself, not a projected height',
+          target_projected_height: round(brokeUp ? resistance + height : support - height),
+          target_note: 'The standard height projection is reported as target_projected_height for comparison. Both Kirkpatrick/Dahlquist and the price-pattern material define the wedge objective as taking out the opposite extreme of the pattern itself, which is the nearer and better-supported number.',
+        }
+      : {
+          target: status === 'confirmed'
+            ? round(brokeUp ? resistance + height : support - height)
+            : round(direction === 'bearish' ? support - height : resistance + height),
+        }),
     measurements: {
       resistance_now: round(resistance), support_now: round(support),
       upper_slope_pct_per_bar: round(hSlope, 4), lower_slope_pct_per_bar: round(lSlope, 4),
