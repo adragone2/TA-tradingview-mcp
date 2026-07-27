@@ -26,6 +26,24 @@
     ]
   },
 
+  "//strategies": "Criteria as DATA, not prose. bias_criteria above are sentences a model grades by judgement — two sessions can grade them differently and they cannot be backtested. These can be checked with strategy_check, scanned across symbols with strategy_scan, and reproduced exactly. Operands: price, open, high, low, close, volume, prev_day_open/high/low/close, high_of_day, low_of_day, session_volume, pct_change_today, sma(N), ema(N), rsi(N), atr(N), and any of those followed by * / + - a number.",
+
+  "strategies": {
+    "swing-breakout-long": {
+      "description": "EXAMPLE ONLY — a daily-chart swing setup transcribed from a public tutorial. It has NOT been backtested here. Run backtest_drawn or backtest_strategy before trusting it, and read the caveat below: the breakout condition it depends on is not expressible in these criteria.",
+      "direction": "long",
+      "timeframe": "D",
+      "criteria": [
+        { "id": "above_200sma", "left": "price", "op": ">", "right": "sma(200)", "note": "Long-term trend filter — the setup skips anything under its 200 SMA" },
+        { "id": "trend_up", "left": "ema(8)", "op": ">", "right": "sma(200)", "note": "Short-term momentum aligned with the long-term trend" },
+        { "id": "near_or_above_8ema", "left": "price", "op": ">", "right": "ema(8) * 0.97", "note": "Entry is meant to be close to the 8 EMA, not extended away from it" },
+        { "id": "not_extended", "left": "price", "op": "<", "right": "ema(8) * 1.08", "note": "Too far above the 8 EMA is where this setup takes profit, not where it enters" }
+      ],
+      "//not_expressible": "The setup's core condition — a breakout above a resistance level that was TESTED two or three times — cannot be written as a comparison, because it needs level detection rather than a value. Use levels_find for that and check its `tests` count; these criteria are the mechanical filter, not the whole setup.",
+      "//sizing": "Exits (quarters into extension, stop on a close below the 8 EMA) are trade management, not entry criteria, so they are not here."
+    }
+  },
+
   "risk_rules": [
     "Only take trades where R:R is at least 1:2",
     "No trading in the first 15 minutes of the NY session open",

@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **118 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **121 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -220,6 +220,12 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`backtest_drawn`** — Backtest the trades the user DREW on the chart
 - **`backtest_benchmark`** — Buy-and-hold return and max drawdown for the bars on the chart
 - **`backtest_evaluate`** — Win rate, payoff, expectancy, profit factor and streaks for a list of trades you supply — the way to score trades taken manually in Bar Replay, or imp
+
+### strategy_* (3)
+
+- **`strategy_list`** — List the machine-evaluable strategies defined in rules.json, with their criteria and any validation errors
+- **`strategy_check`** — Evaluate a strategy against the symbol on the chart, criterion by criterion, showing the ACTUAL value on each side of every comparison
+- **`strategy_scan`** — Check a strategy across several symbols and return the ones where every criterion passes
 
 ---
 

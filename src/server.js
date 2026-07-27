@@ -9,6 +9,7 @@ import { registerTaDecisionTools } from "./tools/ta_decisions.js";
 import { registerPositionToolTools } from "./tools/position_tool.js";
 import { registerStructureTools } from "./tools/structure.js";
 import { registerBacktestTools } from "./tools/backtest.js";
+import { registerStrategyTools } from "./tools/strategy.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -32,7 +33,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 118 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 121 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -102,6 +103,17 @@ Marking up a trade:
   Levels are stored as tick offsets, so they are unreadable without this.
 - position_size → how much to buy for a given account and risk, from the
   levels already on the chart.
+
+Strategies — criteria as DATA, so they can be scanned and tested:
+- strategy_list → what is defined in rules.json, and whether it validates
+- strategy_check → evaluate one against the chart, showing the ACTUAL value
+  on each side of every comparison
+- strategy_scan → check it across symbols; restores the chart afterwards
+rules.json's bias_criteria are PROSE a model grades by judgement — fine for a
+brief, but not reproducible and not backtestable. A strategy block is. When the
+user states a rule with numbers in it, offer to write it there.
+An unresolvable criterion is UNKNOWN, never a fail. Report unresolved symbols
+as "not checked", not "did not qualify".
 
 Backtesting — three methods, one rule:
 - backtest_strategy → the Pine strategy on the chart: win rate, payoff,
@@ -189,6 +201,7 @@ registerTaDecisionTools(server);
 registerPositionToolTools(server);
 registerStructureTools(server);
 registerBacktestTools(server);
+registerStrategyTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
