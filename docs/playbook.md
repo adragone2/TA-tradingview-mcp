@@ -235,3 +235,46 @@ Never opened before this pass. Four setups, all 1H, all targeting 1.5-2x R:R. Ev
 
 Its "common mistakes" list is worth keeping: trading with a flat SMA20, entering without confirmation, ignoring stop discipline. The first is exactly why `sma_slope` was needed — a moving average's level says nothing about whether it is rising.
 
+## thepatternsite.com — Bulkowski's own site, and it CONTRADICTS the book extraction
+
+The site is fetchable and carries current data with far larger samples than the 2005 2nd edition I parsed. **`STRUCTURAL_STATS` in `src/core/patterns.js` is materially wrong and needs rebuilding from these pages.**
+
+### The discrepancy
+
+| Pattern (bull market) | My table (2nd ed., parsed) | Site (current) |
+|---|---|---|
+| H&S top | rank **1/21**, fail **4%**, decline 22%, target 55% | rank **9/36**, fail **19%**, decline 16%, target 51% |
+| H&S bottom | rank 7/23, fail 3%, rise 38%, target 74% | rank 13/39, fail 11%, rise 45%, target 71% |
+| Ascending triangle, up | rank 17/23, fail 13%, rise 35%, target 75% | rank 16/39, fail 17%, rise 43%, target 70% |
+| Descending triangle, up | rank **5/23**, fail **7%**, rise 47%, target **84%** | rank **33/39**, fail **22%**, rise 38%, target 64% |
+| Symmetrical triangle, up | rank 16/23, fail 9%, rise 31%, target 66% | rank 36/39, fail 25%, rise 34%, target 58% |
+| Rising wedge, down | rank 20/21, fail **24%**, decline 14%, target 46% | rank **36/36 (last)**, fail **51%**, decline 9%, target 32% |
+| Falling wedge, up | rank 20/23, fail 11%, rise 32%, target 70% | rank 31/39, fail 26%, rise 38%, target 62% |
+
+Three things are going on and they compound:
+
+1. **Different edition.** Denominators moved from 23/21 patterns to 39/36. Ranks are not comparable across editions at all.
+2. **Much larger samples.** The site quotes 1,400-3,197 perfect trades per pattern.
+3. **Possible parse error in my extraction.** Descending-triangle-upward at 5/23 with an 84% target rate was the best figure in my whole table, and the site puts the same pattern at 33/39 with 64%. That gap is large enough to suspect the up/down block labelling in my PDF parse, independent of the edition change.
+
+**The site figures are bull-market only** — it does not publish the bear split the book does. A rebuild trades the bull/bear dimension for currency and sample size. Worth it, and the loss should be stated in the output.
+
+### Confirmed: the wedge measure rule
+
+Bulkowski states it directly, which makes three independent sources in agreement and validates the fix already shipped:
+
+- Rising wedge: *"For downward breakouts, the lowest valley in the pattern (A) is the price target."*
+- Falling wedge: *"For upward breakouts, the highest peak in the pattern (A) is the price target."*
+
+He also gives a **second, better construction worth adopting generally**: take the pattern height, **multiply it by the percentage-meeting-price-target**, then add or subtract from the breakout price. That discounts the projection by how often it is actually reached, which turns an optimistic target into a realistic one. Nothing here does that yet.
+
+### The methodology caveat that applies to every one of these numbers
+
+From the top-10 page: *"The average rise and decline are for hundreds of 'perfect trades' without commissions or fees deducted."* Measurement runs from the open the day after the breakout to the ultimate high or low before a 20% reversal.
+
+So **every `average_move_pct` figure is a perfect trade, gross of costs**, measured to a peak you could not have known at the time. Quote them next to `trade_cost` and `costs_vs_edge`, never alone.
+
+### Pages identified for the rebuild
+
+`hst` `hsb` `aadt` `aedt` `eadt` `eedt` `aadb` `aedb` `eadb` `eedb` `tt` `tb` `at` `dt` `st` `recttops` `rectbots` `risewedge` `fallwedge` `bt` `broadb` `flags` — plus **`htf` (high tight flag)**, the pattern identified as missing from the BBT/price-pattern exhibits and still not detected.
+
