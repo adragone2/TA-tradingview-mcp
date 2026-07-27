@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-124 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+137 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 124 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 137 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
@@ -42,6 +42,8 @@
 | "What's the regime?" | `ta_regime` — also carries position sizing |
 | "Write a Pine script" | `pine-develop` skill |
 | "What's the trend?" / "key levels?" | `market-structure` skill — `structure_analyze`, `levels_find`. Quote each level's evidence |
+| "Supply/demand zones?" / "order blocks?" / "SMC" | `supply-demand-setup` skill — `zones_find`. A zone is where price DEPARTED from, not where it reversed |
+| "Where does this move project to?" | `fib_targets` — extensions find exits; `fib_levels` finds entries. They get confused constantly |
 | "Any patterns?" / "analyse this chart" | `chart-patterns` skill — a *forming* pattern is not a signal |
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
 | "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed |

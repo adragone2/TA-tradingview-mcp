@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **134 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **137 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -243,9 +243,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`market_regime`** — Is this market trending cleanly or is it chop? Returns an efficiency ratio — net distance travelled divided by the total path walked
 
-### fib_* (1)
+### fib_* (2)
 
 - **`fib_levels`** — Fibonacci retracement levels for the most recent impulse, with where price currently sits in them and whether it is in the 38.2-61.8% golden zone
+- **`fib_targets`** — Fibonacci EXTENSION targets — where a move projects to, not where a pullback might end
 
 ### swing_* (1)
 
@@ -275,6 +276,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### liquidity_* (1)
 
 - **`liquidity_pools`** — Equal highs and equal lows — swing points stacked at effectively one price, where stop orders cluster
+
+### zones_* (2)
+
+- **`zones_find`** — Supply and demand zones — the base a move DEPARTED from, which is a different question from levels_find (where price repeatedly reversed)
+- **`zones_draw`** — Draw supply and demand zones on the chart as shaded rectangles, grouped so they clear in one call without touching your own drawings
 
 ---
 

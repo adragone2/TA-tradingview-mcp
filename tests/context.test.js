@@ -11,7 +11,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fibLevels, classifySwings, regime, volumeProfile, FIB_RATIOS } from '../src/core/context.js';
+import { fibLevels, fibTargets, classifySwings, regime, volumeProfile, FIB_RATIOS } from '../src/core/context.js';
 
 const DAY = 86400;
 let t = 1_700_000_000;
@@ -188,5 +188,70 @@ describe('volumeProfile', () => {
     reset();
     const bars = Array.from({ length: 20 }, () => bar(100, 101, 99, 100, 0));
     assert.equal(volumeProfile(bars).available, false);
+  });
+});
+
+describe('fibTargets — extensions, which answer the opposite question to retracements', () => {
+  it('projects the impulse height forward from the pullback', () => {
+    // Up 100 -> 200 (height 100), pullback to 150. Measured move = 250.
+    const bars = zig([140, 100, 200, 150, 170]);
+    const r = fibTargets(bars, { lookback: 3 });
+    assert.equal(r.available, true);
+    assert.equal(r.direction, 'up');
+    const one = r.levels.find((l) => l.ratio === 1);
+    assert.ok(Math.abs(one.price - 250) < 12, `measured move was ${one.price}`);
+    assert.equal(one.name, 'measured move');
+  });
+
+  it('projects downward for a down impulse', () => {
+    const bars = zig([160, 200, 100, 150, 130]);
+    const r = fibTargets(bars, { lookback: 3 });
+    assert.equal(r.direction, 'down');
+    assert.ok(r.measured_move < r.anchors.pullback_end.price, 'a down target must sit below the pullback');
+  });
+
+  it('orders the levels outward and flags the ones already reached', () => {
+    const bars = zig([140, 100, 200, 150, 170]);
+    const r = fibTargets(bars, { lookback: 3 });
+    assert.deepEqual(r.levels.map((l) => l.ratio), [0.618, 1, 1.618, 2.618]);
+    for (let i = 1; i < r.levels.length; i++) {
+      assert.ok(r.levels[i].price > r.levels[i - 1].price, 'up targets must increase');
+    }
+    assert.ok(r.next_target, 'something ahead of price should remain');
+    assert.equal(r.next_target.reached, false);
+  });
+
+  it('refuses to project when the pullback gave back the whole impulse', () => {
+    // 100 -> 200 -> 98: there is no impulse left, and projecting from it would
+    // put "targets" behind the move.
+    const bars = zig([140, 100, 200, 98, 105]);
+    const r = fibTargets(bars, { lookback: 3 });
+    assert.equal(r.available, false);
+    assert.match(r.note, /given back/i);
+  });
+
+  it('declines with fewer than three swings', () => {
+    const bars = zig([100, 200]);
+    assert.equal(fibTargets(bars, { lookback: 3 }).available, false);
+  });
+
+  it('states that no success rate has been measured', () => {
+    const r = fibTargets(zig([140, 100, 200, 150, 170]), { lookback: 3 });
+    assert.match(r.caveat, /no success rate/i);
+    assert.match(r.method, /geometry rather than Fibonacci|geometry, not Fibonacci/i);
+  });
+});
+
+describe('fibLevels — the named zones', () => {
+  it('separates the shallow zone from the golden zone', () => {
+    const r = fibLevels(zig([100, 50, 150, 100]), { lookback: 3 });
+    assert.ok(r.shallow_zone.high > r.shallow_zone.low);
+    assert.ok(r.golden_zone.low < r.shallow_zone.low, 'the golden zone must run deeper than the shallow one');
+  });
+
+  it('says plainly that 0.65 in the golden pocket has no derivation', () => {
+    const r = fibLevels(zig([100, 50, 150, 100]), { lookback: 3 });
+    assert.ok(r.golden_pocket.low < r.golden_pocket.high);
+    assert.match(r.golden_pocket.caveat, /0\.65 is not/);
   });
 });

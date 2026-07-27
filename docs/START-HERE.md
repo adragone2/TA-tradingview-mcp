@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 124 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 137 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -33,6 +33,7 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | [chart-analysis](../skills/chart-analysis/SKILL.md) skill |
 | "What's the trend?" / "where's the structure?" | [market-structure](../skills/market-structure/SKILL.md) skill — `structure_analyze`, never read off a screenshot |
+| "Supply/demand zones?" / "order blocks?" / "SMC" | [supply-demand-setup](../skills/supply-demand-setup/SKILL.md) skill — `zones_find` asks where price left fast, `levels_find` asks where it reversed |
 | "Any patterns here?" / "is this a double top?" | [chart-patterns](../skills/chart-patterns/SKILL.md) skill — check `status`: forming is NOT a signal |
 | "Was that breakout real?" | `breakout_check`, `level_pressure` — measurements, not adjectives |
 | "Where are support and resistance?" | `levels_find` → `levels_draw`. Quote each level's `reason` |
@@ -93,7 +94,7 @@ wrds-mcp/      separate MCP server for historical research
 ```
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
-- [tools-reference.md](tools-reference.md) — all 124 tools by group
+- [tools-reference.md](tools-reference.md) — all 137 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data

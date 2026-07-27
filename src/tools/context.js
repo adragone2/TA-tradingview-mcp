@@ -43,6 +43,19 @@ export function registerContextTools(server) {
   );
 
   server.tool(
+    'fib_targets',
+    'Fibonacci EXTENSION targets — where a move projects to, not where a pullback might end. Needs three anchors (impulse start, impulse end, pullback end) and projects the impulse height forward. The 1.0 level is the measured move objective: the second leg travelling as far as the first, which is geometry rather than Fibonacci. Use fib_levels for entries and this for exits; they are constantly confused.',
+    {
+      count: z.coerce.number().optional().describe('Bars to load (default 300)'),
+      lookback: z.coerce.number().optional().describe('Swing sensitivity (default 5)'),
+    },
+    wrap(async ({ count = 300, lookback }) => {
+      const bars = await loadBars(count);
+      return { success: true, ...core.fibTargets(bars, { lookback }) };
+    }),
+  );
+
+  server.tool(
     'swing_strength',
     'Classify each swing high and low as strong, weak or unproven. A swing is STRONG when the move originating from it went on to break structure — the market proved it mattered. WEAK swings are the ones that get taken out. This is where stops belong, and "the low" is usually treated as one undifferentiated thing when it is not.',
     {

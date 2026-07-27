@@ -78,16 +78,17 @@ Both come straight from the source material, which lists *"see patterns where th
 
 Being explicit about this matters: a strategy silently missing its key condition becomes a much looser strategy that appears to work.
 
+**Since built**, and now available as `strategy_check` operands: `vwap`, `rvol`, `opening_range_high(N)` / `opening_range_low(N)`, `time_et`, `minutes_since_open`. Each returns null — and so UNKNOWN — on a chart whose bars are sessions rather than intraday. Anchored VWAP with standard-deviation bands is a separate tool (`anchored_vwap`), not an operand.
+
+Still missing:
+
 | Missing primitive | Which setups need it |
 |---|---|
-| **VWAP** (session-anchored) | ORB, Lightning Bolt, Extreme Reversal, Mountain Pass, Fallen Angel — most intraday setups |
-| **Relative volume (RVOL)** | Lightning Bolt, Mountain Pass, the volume confirmation on Breakout |
-| **Opening range** (first 5-min high/low) | 5-min ORB |
-| **Time of day** | Every intraday setup has a time window |
 | **Indicator crosses** | RSI 50 cross, 9/20 × 50 SMA. Note `rsi > 50` is a *state*; a **cross** is an event, and using the state fires on every bar of a trend |
 | **MA slope** | "SMA20 sloping, not flat" |
 | **Divergence** (price vs indicator swings) | RSI divergence |
 | **Pullback depth %** | ABCD's 40–70% retracement |
+| **Zone proximity** | "price returning to a demand zone" — `zones_find` computes zones, but zone membership is not an operand |
 | **Level-test counts inside criteria** | "resistance tested 2–3 times" — `levels_find` computes it, but it is not an operand |
 | **Float, catalyst, market cap** | Screening conditions. These are **TA's** job, not this layer's |
 

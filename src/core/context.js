@@ -66,6 +66,18 @@ export function fibLevels(bars, { lookback = 5 } = {}) {
     retraced_pct: round(retraced * 100, 1),
     in_golden_zone: inGolden,
     golden_zone: { high: round(to - span * 0.382, 6), low: round(to - span * 0.618, 6) },
+    // Two zones get named in the material and they are not the same zone.
+    // 38.2-50% is where pullbacks in a steep trend tend to end; 50-61.8% is the
+    // one usually called "golden". Which applies depends on how clean the trend
+    // is — call market_regime rather than assuming.
+    shallow_zone: { high: round(to - span * 0.382, 6), low: round(to - span * 0.5, 6) },
+    // Named because sessions will be asked about it, and the honest answer is
+    // the interesting part.
+    golden_pocket: {
+      high: round(to - span * 0.618, 6),
+      low: round(to - span * 0.65, 6),
+      caveat: '0.618 is derived from the Fibonacci sequence. 0.65 is not — it has no geometric or sequence derivation and appears to be convention alone. Treat the pocket with more caution than the 0.618 line it starts at.',
+    },
     interpretation: retraced < 0
       ? 'Price has extended beyond the impulse — this is not a pullback, it is continuation.'
       : retraced > 1
@@ -76,6 +88,81 @@ export function fibLevels(bars, { lookback = 5 } = {}) {
             ? 'Shallow pullback. Common in steep trends and not a weakness on its own.'
             : 'Deep pullback, past 61.8%. The move is on shakier ground the further it goes.',
     caveat: 'Retracement levels are arithmetic on the last impulse, not support. They matter when they coincide with a level that price has actually tested.',
+  };
+}
+
+/** Extension ratios in common use. 1.0 is the measured move — the only one with a plain meaning. */
+export const FIB_EXTENSIONS = [0.618, 1, 1.618, 2.618];
+
+/**
+ * Fibonacci extension targets: where a move projects to, rather than where a
+ * pullback might end.
+ *
+ * Retracement and extension answer opposite questions and get confused
+ * constantly. Retracement needs two anchors and finds entries. Extension needs
+ * THREE — impulse start (A), impulse end (B), pullback end (C) — and finds
+ * targets, by projecting the height of A→B forward from C.
+ *
+ * The 1.0 level is the measured move objective: the second leg travels as far
+ * as the first. That is geometry, not Fibonacci, and it is the level most worth
+ * knowing. 1.618 is the next commonly watched one.
+ *
+ * No success rate is attached to any of these because none has been measured
+ * here. A target is a place to plan an exit, not a prediction that price arrives.
+ */
+export function fibTargets(bars, { lookback = 5, ratios = FIB_EXTENSIONS } = {}) {
+  const swings = alternateSwings(findSwings(bars, { lookback }));
+  if (swings.length < 3) {
+    return { available: false, note: 'Fewer than three confirmed swings — an extension needs an impulse and a pullback to project from.' };
+  }
+
+  const c = swings[swings.length - 1];
+  const b = swings[swings.length - 2];
+  const a = swings[swings.length - 3];
+
+  const direction = b.kind === 'high' ? 'up' : 'down';
+  const height = b.price - a.price;
+  if (height === 0) return { available: false, note: 'The impulse leg has zero height.' };
+
+  // Pullback that gave back the whole impulse is not a pullback, and projecting
+  // from it produces targets behind the move.
+  const retraced = Math.abs(c.price - b.price) / Math.abs(height);
+  if (retraced >= 1) {
+    return {
+      available: false,
+      note: `The pullback retraced ${round(retraced * 100, 0)}% of the impulse — the whole leg is given back. There is no impulse left to project.`,
+    };
+  }
+
+  const last = bars[bars.length - 1].close;
+  const levels = ratios.map((r) => {
+    const price = c.price + height * r;
+    const reached = direction === 'up' ? last >= price : last <= price;
+    return {
+      ratio: r,
+      price: round(price, 6),
+      distance_pct: round(((price - last) / last) * 100, 2),
+      reached,
+      ...(r === 1 ? { name: 'measured move' } : {}),
+    };
+  });
+
+  return {
+    available: true,
+    direction,
+    anchors: {
+      impulse_start: { price: round(a.price, 6), time: a.time },
+      impulse_end: { price: round(b.price, 6), time: b.time },
+      pullback_end: { price: round(c.price, 6), time: c.time },
+    },
+    impulse_height: round(Math.abs(height), 6),
+    retraced_pct: round(retraced * 100, 1),
+    current_price: round(last, 6),
+    levels,
+    measured_move: round(c.price + height, 6),
+    next_target: levels.find((l) => !l.reached) || null,
+    method: 'Targets project the height of the impulse leg forward from the end of the pullback. The 1.0 level is the measured move — the second leg travelling as far as the first — which is geometry, not Fibonacci.',
+    caveat: 'No success rate is attached to any of these levels because none has been measured on this symbol. They are places to plan an exit, not predictions that price arrives. Run backtest_evaluate if you want a number.',
   };
 }
 

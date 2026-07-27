@@ -15,6 +15,7 @@ import { registerBreakoutTools } from "./tools/breakout.js";
 import { registerContextTools } from "./tools/context.js";
 import { registerWyckoffTools } from "./tools/wyckoff.js";
 import { registerLiquidityTools } from "./tools/liquidity.js";
+import { registerZoneTools } from "./tools/zones.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -38,7 +39,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 134 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 137 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -138,6 +139,21 @@ Context — ask these BEFORE hunting for a setup:
   WEAK (it failed). Stops belong beyond strong swings; weak ones get run.
 - volume_profile → point of control, value area, high/low volume nodes,
   computed from the bars. An approximation, and it says so.
+- fib_targets → Fibonacci EXTENSIONS. Retracements find entries, extensions
+  find EXITS, and the two get confused constantly. The 1.0 level is the
+  measured move — geometry, not Fibonacci. No success rate is attached
+  because none has been measured; run backtest_evaluate if you want one.
+
+Supply and demand zones — a DIFFERENT question from levels_find:
+- levels_find asks where price REVERSED repeatedly. Evidence is the tests.
+- zones_find asks where price DEPARTED from, fast. Evidence is the departure.
+  A chart usually answers the two at different prices; use both.
+- zones_draw → the same zones as shaded rectangles, grouped for clearing.
+The unfilled-institutional-orders story is NOT observable in OHLCV and nothing
+here depends on it. What is measured is that price left fast, how far it got,
+and whether it has reacted there since. Zones are common — the count before
+filtering always comes back. "Fresh beats tested" is convention, not a
+measurement made here.
 
 Liquidity and VWAP:
 - anchored_vwap → VWAP from any bar (a swing low, an earnings gap) with
@@ -264,6 +280,7 @@ registerBreakoutTools(server);
 registerContextTools(server);
 registerWyckoffTools(server);
 registerLiquidityTools(server);
+registerZoneTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
