@@ -966,6 +966,23 @@ function trendlinePatterns(bars, swings, {
   const status = (upBreak || downBreak) ? 'confirmed' : 'forming';
   const brokeUp = upBreak;
 
+  // Which way the height projection points. Once price has actually broken out
+  // the break decides; while the pattern is still FORMING there is no break to
+  // read, so the projection has to follow the direction the pattern is expected
+  // to resolve. Bilateral patterns have no expected direction and keep the
+  // upward default they have always had.
+  //
+  // This was keyed on `brokeUp` alone, which is false for everything unbroken,
+  // so every forming pattern projected DOWNWARD — a bullish falling wedge
+  // reported an upward `target` next to a `target_projected_height` below
+  // price. Caught on CSCO 1D, where a third-party TradingView indicator
+  // independently produced the same 84.69 while labelling the shape a bearish
+  // rising wedge. The agreement looked like corroboration and was coincidence:
+  // both had arrived at `support - height` by different routes. A wrong-side
+  // projection that happens to match another tool is a trap, not a check.
+  const projectUp = status === 'confirmed' ? brokeUp : direction !== 'bearish';
+  const projectedHeight = round(projectUp ? resistance + height : support - height);
+
   const isWedge = pattern === 'rising_wedge' || pattern === 'falling_wedge';
   const patternHigh = Math.max(...highs.map((h) => h.price));
   const patternLow = Math.min(...lows.map((l) => l.price));
@@ -999,14 +1016,10 @@ function trendlinePatterns(bars, swings, {
       ? {
           target: round(direction === 'bearish' ? patternLow : patternHigh),
           target_basis: 'wedge rule: the opposite extreme of the pattern itself, not a projected height',
-          target_projected_height: round(brokeUp ? resistance + height : support - height),
+          target_projected_height: projectedHeight,
           target_note: 'The standard height projection is reported as target_projected_height for comparison. Both Kirkpatrick/Dahlquist and the price-pattern material define the wedge objective as taking out the opposite extreme of the pattern itself, which is the nearer and better-supported number.',
         }
-      : {
-          target: status === 'confirmed'
-            ? round(brokeUp ? resistance + height : support - height)
-            : round(direction === 'bearish' ? support - height : resistance + height),
-        }),
+      : { target: projectedHeight }),
     measurements: {
       resistance_now: round(resistance), support_now: round(support),
       upper_slope_pct_per_bar: round(hSlope, 4), lower_slope_pct_per_bar: round(lSlope, 4),

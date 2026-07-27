@@ -905,6 +905,53 @@ describe('wedge targets follow the wedge rule, not a projected height', () => {
     }
   });
 
+  /**
+   * A wedge zig-zagging between its own boundaries, so pivots land ON the
+   * lines and the fitted slopes are the ones the construction asked for.
+   * Both are left FORMING — the last close sits between the lines.
+   */
+  function formingWedge({ hi0, hiSlope, lo0, loSlope, n = 40 }) {
+    t = 1_700_000_000;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const hi = hi0 + hiSlope * i, lo = lo0 + loSlope * i, mid = (hi + lo) / 2;
+      out.push(i % 2 === 0
+        ? b(mid, hi, mid - 0.3, hi - 0.3)     // touches the upper line
+        : b(mid, mid + 0.3, lo, lo + 0.3));   // touches the lower line
+    }
+    return out;
+  }
+
+  // The height projection used to be keyed on the actual breakout direction
+  // alone, which is "down" for everything that has not broken out — so every
+  // forming pattern projected downward regardless of its direction. These two
+  // pin the projection to the side price is expected to leave from.
+  it('projects a forming bullish falling wedge ABOVE price', () => {
+    const bars = formingWedge({ hi0: 140, hiSlope: -0.9, lo0: 120, loSlope: -0.5 });
+    const r = detectPatterns(bars, { lookback: 1, window_bars: 40, max_age_bars: 1000 });
+    const w = r.structural.find((p) => p.pattern === 'falling_wedge');
+    assert.ok(w, 'expected a falling wedge');
+    assert.equal(w.direction, 'bullish');
+    assert.equal(w.status, 'forming');
+    const price = bars.at(-1).close;
+    assert.ok(w.target > price, `bullish target ${w.target} must be above price ${price}`);
+    assert.ok(w.target_projected_height > price,
+      `a bullish pattern cannot project ${w.target_projected_height} below price ${price}`);
+  });
+
+  it('projects a forming bearish rising wedge BELOW price', () => {
+    const bars = formingWedge({ hi0: 100, hiSlope: 0.5, lo0: 80, loSlope: 0.9 });
+    const r = detectPatterns(bars, { lookback: 1, window_bars: 40, max_age_bars: 1000 });
+    const w = r.structural.find((p) => p.pattern === 'rising_wedge');
+    assert.ok(w, 'expected a rising wedge');
+    assert.equal(w.direction, 'bearish');
+    assert.equal(w.status, 'forming');
+    const price = bars.at(-1).close;
+    assert.ok(w.target < price, `bearish target ${w.target} must be below price ${price}`);
+    assert.ok(w.target_projected_height < price,
+      `a bearish pattern cannot project ${w.target_projected_height} above price ${price}`);
+  });
+
   it('leaves non-wedge patterns on the standard height projection', () => {
     t = 1_700_000_000;
     // Horizontal top, rising bottom -> ascending triangle.
