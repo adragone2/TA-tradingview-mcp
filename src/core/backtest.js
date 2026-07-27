@@ -22,6 +22,7 @@
 import * as data from './data.js';
 import { normalizeBars } from './structure.js';
 import { readPosition } from './position_tool.js';
+import { probabilisticSharpe, deflatedSharpe, minTrackRecordLength, sharpeRatio } from './validation.js';
 
 const num = (v) => {
   if (v === null || v === undefined || v === '') return null;
@@ -85,7 +86,7 @@ export function normalizeTrades(raw) {
  * 80% one can bleed — win rate alone cannot tell you which, because it says
  * nothing about the size of the wins relative to the losses.
  */
-export function evaluateTrades(trades, { risk_per_trade = null } = {}) {
+export function evaluateTrades(trades, { risk_per_trade = null, trials = null, trial_sharpes = null } = {}) {
   const usable = (trades || []).filter((t) => t && Number.isFinite(t.profit));
   if (!usable.length) {
     return { trade_count: 0, note: 'No trades with a readable profit. Nothing to evaluate.' };
@@ -151,7 +152,67 @@ export function evaluateTrades(trades, { risk_per_trade = null } = {}) {
     interpretation: expectancy > 0
       ? `Each trade was worth ${round(expectancy)} on average over this sample.`
       : `Each trade LOST ${round(Math.abs(expectancy))} on average over this sample.`,
+    ...significance(usable.map((t) => t.profit), { trials, trial_sharpes }),
   };
+}
+
+/**
+ * How much of this result is the search rather than the strategy?
+ *
+ * A Sharpe ratio is a random variable. Run 200 strategies with no edge at all
+ * on random returns and the best of them lands around an annualised Sharpe of
+ * 2.2, with a probabilistic Sharpe of 0.98 — measured, in tests/validation.
+ * That number is indistinguishable from a real discovery unless you divide it
+ * by how hard you looked.
+ *
+ * So: PSR and the minimum track record are always reported, because they need
+ * nothing but the returns. The deflated Sharpe needs the trial count, and when
+ * that is missing this says so rather than quietly reporting the uncorrected
+ * number as if it were the answer.
+ */
+function significance(profits, { trials = null, trial_sharpes = null } = {}) {
+  if (profits.length < 8) {
+    return { significance: { note: `Only ${profits.length} trades — too few for any distributional statistic to mean anything.` } };
+  }
+  let psr, mtrl, sr;
+  try {
+    sr = sharpeRatio(profits);
+    psr = probabilisticSharpe(profits);
+    mtrl = minTrackRecordLength(profits);
+  } catch (e) {
+    return { significance: { note: `Could not compute: ${e.message}` } };
+  }
+
+  const block = {
+    sharpe_per_trade: round(sr, 4),
+    probabilistic_sharpe: round(psr.psr, 4),
+    skewness: round(psr.skewness, 3),
+    kurtosis: round(psr.kurtosis, 3),
+    min_track_record_trades: mtrl.required_observations,
+    have_trades: profits.length,
+    track_record_sufficient: mtrl.sufficient ?? null,
+  };
+
+  const haveTrials = (Array.isArray(trial_sharpes) && trial_sharpes.length > 1) || (trials && trials > 1);
+  if (haveTrials) {
+    try {
+      const d = deflatedSharpe(profits, { trials, trial_sharpes });
+      block.trials = d.trials;
+      block.expected_max_sharpe_from_search = round(d.expected_max_sharpe_from_search, 4);
+      block.deflated_sharpe = round(d.deflated_sharpe, 4);
+      block.verdict = d.verdict;
+      block.caveat = d.caveat;
+    } catch (e) {
+      block.deflated_sharpe = null;
+      block.verdict = `Could not deflate: ${e.message}`;
+    }
+  } else {
+    block.deflated_sharpe = null;
+    block.verdict = 'NOT CORRECTED FOR SEARCH. Pass trial_sharpes (every variant you tested) or trials to get a deflated Sharpe. '
+      + 'Without it, probabilistic_sharpe above is the number you get from the single run you chose to report — '
+      + 'and the best of 200 no-edge strategies scores 0.98 on it.';
+  }
+  return { significance: block };
 }
 
 /**

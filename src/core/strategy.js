@@ -601,6 +601,9 @@ export async function scanStrategy({ strategy, symbols, timeframe = null, count 
     }
   }
 
+  const evaluated = hits.length + misses.length;
+  const criteria = (strategy.criteria || []).length;
+
   return {
     success: true,
     strategy: strategy.name || null,
@@ -610,6 +613,48 @@ export async function scanStrategy({ strategy, symbols, timeframe = null, count 
     misses,
     ...(unresolved.length ? { unresolved, unresolved_note: 'These could not be evaluated — treat as "not checked", not as "did not qualify".' } : {}),
     restored_to: originalSymbol,
+    selection_bias: selectionBias(evaluated, criteria, hits.length),
     note: 'A hit means every criterion passed at this moment on this timeframe. It is the user\'s own specification being checked, not a recommendation.',
+  };
+}
+
+/**
+ * The arithmetic of having looked at many symbols.
+ *
+ * A scan is a multiple-testing procedure. Checking 100 symbols against a
+ * 4-criterion rule is 400 individual tests, and the symbols that come back are
+ * the extremes of that search — which is exactly the setup White's Reality
+ * Check was written to invalidate. Applied to technical trading rules, it
+ * turned a best rule earning ~32% a year into a statistically insignificant
+ * result once the size of the search was counted.
+ *
+ * This cannot compute a p-value: the criteria are not independent, their
+ * marginal pass rates are unknown, and there are no returns here to test. What
+ * it CAN do is refuse to let the hit count be read as if the search were free,
+ * and give the one honest reference point available — how many hits a rule of
+ * the same shape would produce on coin flips.
+ */
+function selectionBias(evaluated, criteria, hitCount) {
+  if (!evaluated) return { note: 'Nothing was evaluated.' };
+  const tests = evaluated * Math.max(criteria, 1);
+  const chanceRate = criteria > 0 ? 0.5 ** criteria : null;
+  const expectedByChance = chanceRate == null ? null : Math.round(evaluated * chanceRate * 100) / 100;
+
+  return {
+    symbols_evaluated: evaluated,
+    criteria_per_symbol: criteria,
+    individual_tests: tests,
+    hits: hitCount,
+    hit_rate_pct: Math.round((hitCount / evaluated) * 1000) / 10,
+    ...(expectedByChance != null ? {
+      expected_hits_if_criteria_were_coin_flips: expectedByChance,
+      ratio_to_chance: expectedByChance > 0 ? Math.round((hitCount / expectedByChance) * 100) / 100 : null,
+    } : {}),
+    warning: `This scan ran ${tests} individual criterion tests across ${evaluated} symbols. The names returned are the `
+      + 'extremes of that search. A hit is NOT evidence the rule works — it is evidence the rule matched, which is a '
+      + 'different claim and one you get for free by looking at enough symbols.',
+    what_would_be_evidence: 'Backtest the rule and report a DEFLATED Sharpe with the trial count, via backtest_evaluate. '
+      + 'The coin-flip figure here is a floor for intuition, not a significance test: the criteria are not independent '
+      + 'and their real pass rates are unknown.',
   };
 }
