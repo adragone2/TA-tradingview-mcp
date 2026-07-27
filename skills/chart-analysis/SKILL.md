@@ -20,12 +20,27 @@ Do you already own it? Does it report earnings this week? A perfect technical re
 ## Step 1 — Set up, and read the chart you were given
 
 ```
-chart_set_symbol / chart_set_timeframe   → only if the user named one
-chart_get_state                          → symbol, timeframe, indicators, entity IDs
+chart_get_state                          → symbol, TIMEFRAME, indicators, entity IDs
+chart_set_symbol / chart_set_timeframe   → set both to what the analysis needs
 quote_get                                → live price
 ```
 
-If the user did not specify a timeframe, **analyse the one already loaded** and say which it is. Do not silently switch.
+**Read the resolution before anything else, and set it to what the question needs.** Do not passively accept whatever was loaded.
+
+This is not optional bookkeeping — it changed a conclusion. A MELI read left on the loaded 4H chart covered **110 days** and reported the stock 4.8% off its high in a downtrend. The same symbol on the daily covered **438 days** and showed it **30.7% off its high** with the daily in an uptrend against a weekly downtrend. Different stock, effectively.
+
+Defaults, unless the user says otherwise:
+
+| Question | Structure timeframe |
+|---|---|
+| "check X" / "analyse X", no style given | **1D**, with 1W context |
+| swing trade | 1D structure, 1W context, 1H trigger |
+| day trade | 1H structure, 1D context, 15m trigger |
+| position / long-term | 1W structure, 1M context |
+
+**4H is a poor structure timeframe for US equities** — a 6.5-hour session makes it only 1.6x a daily, which `checkSpacing` flags as too close to be a separate screen. It is a 24-hour-market convention.
+
+Always state the timeframe and the span it covers ("300 daily bars, 438 days"). A bar count means nothing without it.
 
 ## Step 2 — Is this market worth reading at all?
 
