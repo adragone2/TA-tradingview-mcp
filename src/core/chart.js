@@ -29,28 +29,64 @@ export async function getState() {
 }
 
 export async function setSymbol({ symbol }) {
+  if (!symbol || typeof symbol !== 'string' || !symbol.trim()) {
+    throw new Error('A symbol is required, e.g. "CSCO" or "NASDAQ:CSCO".');
+  }
+  const requested = symbol.trim();
   await evaluateAsync(`
     (function() {
       var chart = ${CHART_API};
       return new Promise(function(resolve) {
-        chart.setSymbol('${symbol.replace(/'/g, "\\'")}', {});
+        chart.setSymbol('${requested.replace(/'/g, "\\'")}', {});
         setTimeout(resolve, 500);
       });
     })()
   `);
-  const ready = await waitForChartReady(symbol);
-  return { success: true, symbol, chart_ready: ready };
+  const ready = await waitForChartReady(requested);
+  // Report what the chart actually loaded, not what was asked for. TradingView
+  // resolves a bare ticker to an exchange-qualified symbol, and silently keeps
+  // the previous one when it cannot — echoing the input hides both.
+  const resolved = await evaluate(`${CHART_API}.symbol()`);
+  return { success: true, symbol: requested, resolved_symbol: resolved || null, chart_ready: ready };
+}
+
+/**
+ * Normalise a TradingView resolution, or return null if it is not one.
+ *
+ * Resolutions are minutes as a bare number ("5", "240"), or a count plus a
+ * unit — S(econd), D(ay), W(eek), M(onth), T(ick), R(ange). The count may be
+ * omitted for a single unit, so "D" and "1D" are both a daily chart.
+ */
+export function parseResolution(timeframe) {
+  const raw = String(timeframe ?? '').trim();
+  const m = raw.match(/^(\d+)$|^(\d*)([SDWMTR])$/i);
+  if (!m) return null;
+  const count = m[1] ?? m[2];
+  // "0" and "0D" are not resolutions. A bare unit means one of it.
+  if (count !== '' && Number(count) < 1) return null;
+  return m[1] !== undefined ? raw : `${m[2]}${m[3].toUpperCase()}`;
 }
 
 export async function setTimeframe({ timeframe }) {
+  // Without this an unrecognised argument went straight to setResolution, which
+  // fails silently — the chart kept its old timeframe while the call reported
+  // success on the one that was asked for.
+  const resolution = parseResolution(timeframe);
+  if (!resolution) {
+    throw new Error(
+      `Invalid timeframe "${timeframe}". Use minutes ("5", "60", "240"), or a count and unit: ` +
+      '"30S", "D", "1D", "3W", "M", "1T", "10R".',
+    );
+  }
   await evaluate(`
     (function() {
       var chart = ${CHART_API};
-      chart.setResolution('${timeframe.replace(/'/g, "\\'")}', {});
+      chart.setResolution('${resolution.replace(/'/g, "\\'")}', {});
     })()
   `);
-  const ready = await waitForChartReady(null, timeframe);
-  return { success: true, timeframe, chart_ready: ready };
+  const ready = await waitForChartReady(null, resolution);
+  const actual = await evaluate(`${CHART_API}.resolution()`);
+  return { success: true, timeframe: resolution, resolved_resolution: actual ?? null, chart_ready: ready };
 }
 
 export async function setType({ chart_type }) {

@@ -114,6 +114,11 @@ export async function setLayout({ layout }) {
  */
 export async function focus({ index }) {
   const idx = Number(index);
+  // A non-numeric index used to become NaN, sail past the range check and
+  // blow up on `all[NaN]` inside the page.
+  if (!Number.isInteger(idx) || idx < 0) {
+    throw new Error(`Pane index must be a non-negative integer, got ${JSON.stringify(index)}.`);
+  }
   const result = await evaluate(`
     (function() {
       var cwc = ${CWC};
@@ -136,7 +141,10 @@ export async function focus({ index }) {
  */
 export async function setSymbol({ index, symbol }) {
   const idx = Number(index);
-  const escaped = symbol.replace(/'/g, "\\'");
+  if (!symbol || typeof symbol !== 'string' || !symbol.trim()) {
+    throw new Error('A symbol is required, e.g. "tv pane symbol 1 ES1!".');
+  }
+  const escaped = symbol.trim().replace(/'/g, "\\'");
 
   // Focus the target pane first
   await focus({ index: idx });

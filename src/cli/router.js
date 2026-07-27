@@ -35,7 +35,8 @@ function printCommandHelp(name, cmd) {
     console.log(`Usage: tv ${name} <subcommand> [options]\n`);
     console.log('Subcommands:');
     for (const [sub, subConf] of cmd.subcommands) {
-      console.log(`  ${sub.padEnd(12)}${subConf.description}`);
+      const marker = sub === cmd.defaultSubcommand ? '  (default)' : '';
+      console.log(`  ${sub.padEnd(12)}${subConf.description}${marker}`);
     }
   } else {
     console.log(`Usage: tv ${name} [options]\n`);
@@ -48,6 +49,31 @@ function printCommandHelp(name, cmd) {
       const flag = v.short ? `-${v.short}, --${k}` : `    --${k}`;
       console.log(`  ${flag.padEnd(20)}${v.description || ''}`);
     }
+  }
+}
+
+/**
+ * Reject flags the command never declared.
+ *
+ * parseArgs runs with `strict: false` so that negative numbers survive
+ * (`--price -5.5` is an error under strict parsing). The cost is that an
+ * unknown flag is accepted silently: `--targts 110` becomes `{targts: true}`
+ * plus a stray positional, and the command runs on with targets missing. On a
+ * CLI that mutates a live chart a swallowed typo is a wrong action, not a
+ * no-op, so every parsed key has to be one the command asked for.
+ */
+function assertKnownOptions(values, options, usage) {
+  const known = new Set(['help', 'h']);
+  for (const [name, conf] of Object.entries(options)) {
+    known.add(name);
+    if (conf.short) known.add(conf.short);
+  }
+  const unknown = Object.keys(values).filter((k) => !known.has(k));
+  if (unknown.length > 0) {
+    const flags = unknown.map((u) => (u.length === 1 ? `-${u}` : `--${u}`)).join(', ');
+    throw new Error(
+      `Unknown option${unknown.length > 1 ? 's' : ''}: ${flags}. Run "tv ${usage} --help" for the accepted options.`,
+    );
   }
 }
 
@@ -71,11 +97,27 @@ export async function run(argv) {
   // Handle subcommands (e.g., tv pine get)
   let handler, options;
   if (cmd.subcommands) {
-    const subName = args[1];
-    if (!subName || subName === '--help' || subName === '-h') {
+    let subName = args[1];
+    let subArgs = args.slice(2);
+
+    if (subName === '--help' || subName === '-h') {
       printCommandHelp(cmdName, cmd);
       return finish(0);
     }
+
+    // A command may nominate a read-only default so that the bare verb still
+    // reports state (`tv symbol` -> `tv symbol get`). Only a declared default
+    // is ever run implicitly — a mutating subcommand must always be typed.
+    if (subName === undefined || subName.startsWith('-')) {
+      if (!cmd.defaultSubcommand) {
+        if (subName !== undefined) console.error(`${cmdName} needs a subcommand before ${subName}.`);
+        printCommandHelp(cmdName, cmd);
+        return finish(subName === undefined ? 0 : 1);
+      }
+      subArgs = args.slice(1);
+      subName = cmd.defaultSubcommand;
+    }
+
     const sub = cmd.subcommands.get(subName);
     if (!sub) {
       console.error(`Unknown subcommand: ${cmdName} ${subName}`);
@@ -87,7 +129,7 @@ export async function run(argv) {
     // Parse remaining args after command + subcommand
     try {
       const { values, positionals } = parseArgs({
-        args: args.slice(2),
+        args: subArgs,
         options: { help: { type: 'boolean', short: 'h' }, ...options },
         allowPositionals: true,
         strict: false,
@@ -104,6 +146,7 @@ export async function run(argv) {
         }
         return finish(0);
       }
+      assertKnownOptions(values, options, `${cmdName} ${subName}`);
       await execute(handler, values, positionals);
     } catch (err) {
       await handleError(err);
@@ -122,6 +165,7 @@ export async function run(argv) {
         printCommandHelp(cmdName, cmd);
         return finish(0);
       }
+      assertKnownOptions(values, options, cmdName);
       await execute(handler, values, positionals);
     } catch (err) {
       await handleError(err);

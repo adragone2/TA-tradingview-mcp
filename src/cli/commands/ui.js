@@ -10,7 +10,10 @@ register('ui', {
         by: { type: 'string', short: 'b', description: 'Selector: aria-label, data-name, text, class-contains' },
         value: { type: 'string', short: 'v', description: 'Value to match' },
       },
-      handler: (opts) => core.click({ by: opts.by || 'text', value: opts.value }),
+      handler: (opts) => {
+        if (!opts.value) throw new Error('--value is required. Usage: tv ui click -v "Indicators"');
+        return core.click({ by: opts.by || 'text', value: opts.value });
+      },
     }],
     ['keyboard', {
       description: 'Press a keyboard key or shortcut',
@@ -36,7 +39,10 @@ register('ui', {
         by: { type: 'string', short: 'b', description: 'Selector: aria-label, data-name, text, class-contains' },
         value: { type: 'string', short: 'v', description: 'Value to match' },
       },
-      handler: (opts) => core.hover({ by: opts.by || 'text', value: opts.value }),
+      handler: (opts) => {
+        if (!opts.value) throw new Error('--value is required. Usage: tv ui hover -v "Indicators"');
+        return core.hover({ by: opts.by || 'text', value: opts.value });
+      },
     }],
     ['scroll', {
       description: 'Scroll the chart',
@@ -73,9 +79,12 @@ register('ui', {
       },
     }],
     ['panel', {
-      description: 'Open/close/toggle a panel',
+      description: 'Open/close/toggle a panel (pine-editor, strategy-tester, watchlist, alerts, trading)',
       handler: (opts, positionals) => {
         if (!positionals[0]) throw new Error('Usage: tv ui panel pine-editor open');
+        if (positionals.length > 2) {
+          throw new Error(`Expected "tv ui panel <panel> [open|close|toggle]", got: ${positionals.join(' ')}`);
+        }
         return core.openPanel({ panel: positionals[0], action: positionals[1] || 'toggle' });
       },
     }],
