@@ -470,3 +470,118 @@ describe('intraday operands in context', () => {
     assert.match(r.reason, /intraday/i);
   });
 });
+
+describe('operands added for crosses, slope and structure', () => {
+  let t = 1_700_000_000;
+  const bar = (c) => ({ time: (t += 86400), open: c, high: c + 1, low: c - 1, close: c, volume: 1000 });
+  const reset = () => { t = 1_700_000_000; };
+
+  it('a CROSS fires on the bar it happens, and not before', () => {
+    // The distinction the operand exists for: `rsi > 50` is true on every bar
+    // of a trend; `crosses_above` is true only on the bar it crossed.
+    reset();
+    // A FALLING series, so close sits below its own lagging SMA. In a rising
+    // series close is already above the SMA and there is nothing to cross.
+    const falling = Array.from({ length: 40 }, (_, i) => bar(200 - i));
+    const crossed = [...falling, bar(500)];
+
+    const before = resolveOperand('close crosses_above sma(20)', buildContext(falling));
+    const after = resolveOperand('close crosses_above sma(20)', buildContext(crossed));
+    assert.equal(before.ok, true);
+    assert.equal(after.ok, true);
+    assert.equal(after.value, 1, 'the cross must fire on the bar it happened');
+    assert.equal(before.value, 0, 'and not on a bar where nothing crossed');
+  });
+
+  it('crosses_below is the mirror', () => {
+    reset();
+    const rising = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    const dropped = [...rising, bar(10)];
+    assert.equal(resolveOperand('close crosses_below sma(20)', buildContext(dropped)).value, 1);
+  });
+
+  it('does not fire a cross when the relationship never changed', () => {
+    reset();
+    const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    assert.equal(resolveOperand('close crosses_above sma(20)', buildContext(bars)).value, 0);
+    assert.equal(resolveOperand('close crosses_below sma(20)', buildContext(bars)).value, 0);
+  });
+
+  it('reports which side of a cross could not be resolved', () => {
+    reset();
+    const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    const r = resolveOperand('close crosses_above sma(9999)', buildContext(bars));
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /right side of the cross/i);
+  });
+
+  it('measures MA slope as percent per bar, signed with direction', () => {
+    reset();
+    const up = Array.from({ length: 60 }, (_, i) => bar(100 + i));
+    reset();
+    const down = Array.from({ length: 60 }, (_, i) => bar(160 - i));
+    const upSlope = resolveOperand('sma_slope(20)', buildContext(up));
+    const downSlope = resolveOperand('sma_slope(20)', buildContext(down));
+    assert.ok(upSlope.value > 0, `rising SMA must have positive slope, got ${upSlope.value}`);
+    assert.ok(downSlope.value < 0);
+  });
+
+  it('reads a flat market as a slope near zero', () => {
+    reset();
+    const flat = Array.from({ length: 60 }, () => bar(100));
+    const r = resolveOperand('sma_slope(20)', buildContext(flat));
+    assert.ok(Math.abs(r.value) < 0.01, `flat should be ~0, got ${r.value}`);
+  });
+
+  it('supports ema and rsi slope too', () => {
+    reset();
+    const up = Array.from({ length: 60 }, (_, i) => bar(100 + i));
+    const ctx = buildContext(up);
+    assert.equal(resolveOperand('ema_slope(20)', ctx).ok, true);
+    assert.equal(resolveOperand('rsi_slope(14)', ctx).ok, true);
+  });
+
+  it('says UNKNOWN when there are not enough bars for a slope', () => {
+    reset();
+    const few = Array.from({ length: 25 }, (_, i) => bar(100 + i));
+    const r = resolveOperand('sma_slope(20)', buildContext(few));
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /not enough bars/i);
+  });
+
+  it('makes structural operands UNKNOWN rather than deriving a second opinion', () => {
+    // strategy.js must not grow its own level or zone detection — two
+    // implementations would drift and criteria would disagree with levels_find.
+    reset();
+    const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    for (const k of ['pullback_pct', 'nearest_level_tests', 'in_demand_zone', 'nearest_zone_distance_pct']) {
+      const r = resolveOperand(k, buildContext(bars));
+      assert.equal(r.ok, false, `${k} should be UNKNOWN without structure context`);
+      assert.match(r.reason, /passed in, not derived here/);
+    }
+  });
+
+  it('resolves structural operands when structure IS supplied', () => {
+    reset();
+    const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    const ctx = buildContext(bars, { structure: { pullback_pct: 42, nearest_level_tests: 3 } });
+    assert.equal(resolveOperand('pullback_pct', ctx).value, 42);
+    assert.equal(resolveOperand('nearest_level_tests', ctx).value, 3);
+  });
+
+  it('lists the new operands so an unknown token names them', () => {
+    reset();
+    const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i));
+    const r = resolveOperand('not_an_operand', buildContext(bars));
+    assert.match(r.reason, /sma_slope\(N\)/);
+    assert.match(r.reason, /crosses_above/);
+  });
+
+  it('does not recurse without bound building the previous context', () => {
+    reset();
+    const bars = Array.from({ length: 200 }, (_, i) => bar(100 + i));
+    const ctx = buildContext(bars);
+    assert.ok(ctx.previous, 'one step back must exist');
+    assert.equal(ctx.previous.previous, null, 'and only one step — deeper would recurse per bar');
+  });
+});

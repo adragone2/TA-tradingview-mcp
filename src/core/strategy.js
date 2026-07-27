@@ -205,7 +205,9 @@ export function relativeVolume(sessions, lookback = 20) {
 
 /* ------------------------------ operands ---------------------------- */
 
-const FUNC = /^(sma|ema|rsi|atr|opening_range_high|opening_range_low)\((\d+)\)$/i;
+const FUNC = /^(sma|ema|rsi|atr|opening_range_high|opening_range_low|sma_slope|ema_slope|rsi_slope)\((\d+)\)$/i;
+/** Cross operands: `ema(8) crosses_above ema(20)` is an EVENT, not a state. */
+const CROSS = /^(.+?)\s+(crosses_above|crosses_below)\s+(.+)$/i;
 // A trailing "<operator> <number>", e.g. "ema(8) * 0.98". Anchored on a numeric
 // tail, so "sma(200)" — which ends in a paren — is never mistaken for one.
 const ARITH = /^(.+?)\s*([*/+-])\s*(-?\d+(?:\.\d+)?)$/;
@@ -219,6 +221,13 @@ export const OPERANDS = [
   // Intraday only — each is null (and so UNKNOWN) on a chart whose bars are sessions.
   'vwap', 'time_et', 'minutes_since_open', 'rvol',
   'opening_range_high(MINUTES)', 'opening_range_low(MINUTES)',
+  // Slope in percent per bar — a level says nothing about direction.
+  'sma_slope(N)', 'ema_slope(N)', 'rsi_slope(N)',
+  // Structure, computed elsewhere and exposed here so criteria can use them.
+  'pullback_pct', 'nearest_level_tests', 'nearest_level_distance_pct',
+  'in_demand_zone', 'in_supply_zone', 'nearest_zone_distance_pct',
+  // Events, not states. `<a> crosses_above <b>` / `<a> crosses_below <b>`.
+  '<any> crosses_above <any>', '<any> crosses_below <any>',
   '<any of the above> <* / + -> <number>, e.g. "ema(8) * 0.98"',
 ];
 
@@ -239,6 +248,31 @@ export function resolveOperand(token, ctx) {
 
   const asNumber = Number(raw);
   if (raw !== '' && Number.isFinite(asNumber)) return { value: asNumber, ok: true };
+
+  // A CROSS is an event, not a state. `rsi(14) > 50` fires on every bar of a
+  // trend; `rsi(14) crosses_above 50` fires on the bar it actually happened.
+  // Using the state where the rule means the event is the single commonest way
+  // a scan quietly stops meaning what it says.
+  const cross = raw.match(CROSS);
+  if (cross) {
+    const [, leftTok, op, rightTok] = cross;
+    const prevCtx = ctx.previous;
+    if (!prevCtx) {
+      return { value: null, ok: false, reason: 'a cross needs the previous bar values, which this context does not carry' };
+    }
+    const nowL = resolveOperand(leftTok.trim(), ctx);
+    const nowR = resolveOperand(rightTok.trim(), ctx);
+    const wasL = resolveOperand(leftTok.trim(), prevCtx);
+    const wasR = resolveOperand(rightTok.trim(), prevCtx);
+    for (const [r, which] of [[nowL, 'left'], [nowR, 'right'], [wasL, 'previous left'], [wasR, 'previous right']]) {
+      if (!r.ok) return { value: null, ok: false, reason: `${which} side of the cross: ${r.reason}` };
+    }
+    const above = op.toLowerCase() === 'crosses_above';
+    const happened = above
+      ? wasL.value <= wasR.value && nowL.value > nowR.value
+      : wasL.value >= wasR.value && nowL.value < nowR.value;
+    return { value: happened ? 1 : 0, ok: true, boolean: true };
+  }
 
   // "ema(8) * 0.98" — enough arithmetic to express "within 2% of the 8 EMA"
   // or "above yesterday's high by a tick", without inventing an expression
@@ -275,6 +309,20 @@ export function resolveOperand(token, ctx) {
       return { value: name === 'opening_range_high' ? or.high : or.low, ok: true };
     }
 
+    // Slope: the current value against the value `len` bars ago, normalized to
+    // percent per bar. "SMA20 sloping, not flat" needs this — the level of a
+    // moving average says nothing about whether it is rising.
+    if (name.endsWith('_slope')) {
+      const base = name.replace('_slope', '');
+      const fnOf = (arr) => (base === 'sma' ? sma(arr, len) : base === 'ema' ? ema(arr, len) : rsi(arr, len));
+      const now = fnOf(closes);
+      const back = closes.length > len ? fnOf(closes.slice(0, -len)) : null;
+      if (now == null || back == null || !(Math.abs(back) > 0)) {
+        return { value: null, ok: false, reason: `not enough bars to measure ${name}(${len}) — need at least ${len * 2 + 1}` };
+      }
+      return { value: ((now - back) / Math.abs(back)) * 100 / len, ok: true };
+    }
+
     let v = null;
     if (name === 'sma') v = sma(closes, len);
     else if (name === 'ema') v = ema(closes, len);
@@ -296,6 +344,9 @@ export function resolveOperand(token, ctx) {
       }
       if (key === 'rvol') return { value: null, ok: false, reason: 'rvol needs prior sessions with volume to compare against' };
       if (key === 'vwap') return { value: null, ok: false, reason: 'vwap needs intraday bars carrying volume' };
+      if (STRUCTURE_KEYS.has(key)) {
+        return { value: null, ok: false, reason: `${key} needs structure context — it is computed by levels_find/zones_find and passed in, not derived here` };
+      }
       return { value: null, ok: false, reason: `${key} is not available on this chart` };
     }
     return { value: v, ok: true };
@@ -399,9 +450,15 @@ export function evaluateCriteria(spec, ctx) {
 /* --------------------------- chart-facing --------------------------- */
 
 /** Build the value context for a symbol from its bars. */
-export const INTRADAY_ONLY = new Set(['vwap', 'time_et', 'minutes_since_open', 'rvol']);
+export /** Values supplied by other modules rather than computed here. */
+const STRUCTURE_KEYS = new Set([
+  'pullback_pct', 'nearest_level_tests', 'nearest_level_distance_pct',
+  'in_demand_zone', 'in_supply_zone', 'nearest_zone_distance_pct',
+]);
 
-export function buildContext(bars, { rvol_lookback = 20 } = {}) {
+const INTRADAY_ONLY = new Set(['vwap', 'time_et', 'minutes_since_open', 'rvol']);
+
+export function buildContext(bars, { rvol_lookback = 20, structure = null, _depth = 0 } = {}) {
   const closes = bars.map((b) => b.close);
   const sessions = groupSessions(bars);
   const today = sessions[sessions.length - 1] || null;
@@ -415,12 +472,31 @@ export function buildContext(bars, { rvol_lookback = 20 } = {}) {
   const intraday = maxBarsInSession > 1;
   const todayBars = today?.bars || [];
 
+  // A cross needs yesterday's answer as well as today's, so the context carries
+  // one built from the bars up to the previous one. Depth-limited to a single
+  // step: a cross of a cross is not a thing, and without the guard this recurses
+  // once per bar and takes the process with it.
+  const previous = _depth === 0 && bars.length > 1
+    ? buildContext(bars.slice(0, -1), { rvol_lookback, structure, _depth: 1 })
+    : null;
+
   return {
     bars, closes,
     sessions: sessions.length,
     intraday,
     today_bars: todayBars,
+    previous,
     values: {
+      // Structural values are computed by other modules and passed in, because
+      // strategy.js must not grow its own copy of level or zone detection —
+      // two implementations would drift and criteria would silently disagree
+      // with levels_find. Absent structure they are null, and so UNKNOWN.
+      pullback_pct: structure?.pullback_pct ?? null,
+      nearest_level_tests: structure?.nearest_level_tests ?? null,
+      nearest_level_distance_pct: structure?.nearest_level_distance_pct ?? null,
+      in_demand_zone: structure?.in_demand_zone ?? null,
+      in_supply_zone: structure?.in_supply_zone ?? null,
+      nearest_zone_distance_pct: structure?.nearest_zone_distance_pct ?? null,
       vwap: intraday ? sessionVwap(todayBars) : null,
       time_et: intraday ? etTimeHHMM(last?.time) : null,
       minutes_since_open: intraday && todayBars.length

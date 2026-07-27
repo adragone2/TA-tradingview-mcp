@@ -82,16 +82,13 @@ Being explicit about this matters: a strategy silently missing its key condition
 
 Also since built: **divergence** between price and RSI / MACD / OBV / MFI / volume (`divergence_find`, `divergence_survey`) — it remains a tool rather than a `strategy_check` operand.
 
+Also since built, as `strategy_check` operands: `sma_slope(N)` / `ema_slope(N)` / `rsi_slope(N)`, `<a> crosses_above <b>` / `<a> crosses_below <b>` (an EVENT, not a state), and the structural values `pullback_pct`, `nearest_level_tests`, `nearest_level_distance_pct`, `in_demand_zone`, `in_supply_zone`, `nearest_zone_distance_pct` — which are computed by levels_find/zones_find and PASSED IN rather than recomputed, so criteria cannot drift from what those tools report.
+
 Still missing:
 
 | Missing primitive | Which setups need it |
 |---|---|
-| **Indicator crosses** | RSI 50 cross, 9/20 × 50 SMA. Note `rsi > 50` is a *state*; a **cross** is an event, and using the state fires on every bar of a trend |
-| **MA slope** | "SMA20 sloping, not flat" |
 | **Wave position** | "buy wave 3" — `elliott_count` enumerates counts, but wave position is not an operand, and the count is subjective anyway |
-| **Pullback depth %** | ABCD's 40–70% retracement |
-| **Zone proximity** | "price returning to a demand zone" — `zones_find` computes zones, but zone membership is not an operand |
-| **Level-test counts inside criteria** | "resistance tested 2–3 times" — `levels_find` computes it, but it is not an operand |
 | **Float, catalyst, market cap** | Screening conditions. These are **TA's** job, not this layer's |
 
 `strategy_check` returns **UNKNOWN** rather than a fail for anything it cannot evaluate — so a strategy referencing a missing primitive will say so instead of quietly passing.

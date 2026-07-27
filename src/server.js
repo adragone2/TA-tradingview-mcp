@@ -19,6 +19,7 @@ import { registerZoneTools } from "./tools/zones.js";
 import { registerRiskTools } from "./tools/risk.js";
 import { registerElliottTools } from "./tools/elliott.js";
 import { registerDivergenceTools } from "./tools/divergence.js";
+import { registerCostTools } from "./tools/costs.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -42,7 +43,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 147 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 153 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -175,6 +176,28 @@ Legs — the unit a trend is built from:
 - ALWAYS read since_last_leg. Swings need bars to their right to confirm, so
   the last leg ends some way back; when price has run since, the warning says
   so. Never describe the last leg as what price is doing now.
+
+Costs — a backtest without them flatters itself exactly as one without a
+benchmark does, and resolveTrade fills at the exact stop price:
+- trade_cost → commission, spread, slippage, borrow, in currency AND in R.
+  Preset "ibkr_pro_fixed" is the real schedule: $0.005/share, $1.00 MINIMUM
+  per order, 1% cap. The minimum is the point — a 100-share order pays double
+  the per-share rate and a 50-share order quadruple.
+- costs_vs_edge → what fraction of the edge the costs consume. An edge smaller
+  than its costs is a losing strategy however good the backtest looked.
+- gap_risk → how often price GAPPED past a stop distance. Backtests here fill
+  at the stop price; a stop is a market order once touched, so every backtest
+  in this toolchain understates its worst losses. This measures that, it does
+  not fix it.
+
+Portfolio — per-trade sizing is the wrong unit for what ends accounts:
+- portfolio_heat → total risk if every stop is hit at once
+- position_correlation → six positions at r=0.8 are about 1.4 independent
+  bets. Pairs without data are UNKNOWN, never zero.
+- position_concentration → open risk by sector or any tag, measured by RISK
+  rather than notional
+Six positions risking 1% each is not 1% of risk. Correlations also rise in a
+selloff, which is when the diversification is being relied on.
 
 Risk — ask these BEFORE sizing anything:
 - risk_expectancy → expectancy, BREAK-EVEN win rate, and Kelly, from a win rate
@@ -334,6 +357,7 @@ registerZoneTools(server);
 registerRiskTools(server);
 registerElliottTools(server);
 registerDivergenceTools(server);
+registerCostTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);

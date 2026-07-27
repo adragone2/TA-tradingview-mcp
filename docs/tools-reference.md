@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **147 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **153 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -199,12 +199,14 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`ui_find_element`** — Find UI elements by text, aria-label, or CSS selector and return their positions
 - **`ui_evaluate`** — Execute JavaScript code in the TradingView page context for advanced automation
 
-### position_* (4)
+### position_* (6)
 
 - **`position_draw`** — Draw TradingView's native Long/Short Position tool — shaded risk and reward boxes with entry, stop and target, and a size TradingView computes from ac
 - **`position_read`** — Read Long/Short Position tools off the chart as plain prices — entry, stop, target, R:R and quantity
 - **`position_size`** — Position size for a trade already drawn on the chart, given an account size and risk percent
 - **`position_size_atr`** — Position size from volatility instead of from a fixed price stop
+- **`position_correlation`** — How much open positions actually move together, from their return series
+- **`position_concentration`** — How open RISK is distributed across a bucket — sector, direction, or any tag on the positions
 
 ### structure_* (1)
 
@@ -309,6 +311,22 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### legs_* (1)
 
 - **`legs_classify`** — Classify each leg between swings as an IMPULSE or a PULLBACK, with the measurements behind it — body share, colour agreement, and where bars closed in
+
+### trade_* (1)
+
+- **`trade_cost`** — The round-trip cost of a trade — commission, spread, slippage and borrow — in currency and in R
+
+### costs_* (1)
+
+- **`costs_vs_edge`** — What transaction costs do to a stated edge
+
+### gap_* (1)
+
+- **`gap_risk`** — How often price GAPPED past a given stop distance on this chart
+
+### portfolio_* (1)
+
+- **`portfolio_heat`** — Total open risk across positions if every stop is hit at once
 
 ---
 
