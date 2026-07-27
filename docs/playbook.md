@@ -189,3 +189,49 @@ The slides that read as just "Example" in the text layer *are* the chart. Read a
 
 > **An internal contradiction, left unresolved.** The wedge text calls wedges *continuation* patterns. Both wedge exhibits in the same deck label them **"(reversal)"** — rising wedge on Anntaylor, falling wedge on Freeport McMoRan. The deck disagrees with itself. Bulkowski's measured data is the tiebreaker this repo already carries: a rising wedge breaking **down** fails 24% of the time in a bull market against 8% for the upward break, which is why `STRUCTURAL_STATS` reports wedges by breakout direction rather than assigning them a single meaning.
 
+## What the IMAGES in the books folder add
+
+Rescanned the whole folder. Inventory, and whether the images have been looked at:
+
+| File | Pages | Kind | Images read |
+|---|---|---|---|
+| Technical-analysis-Price-patterns.pdf | 58 | text + 199 charts | yes — see the exhibits section above |
+| BBT_Tradebook_strategies_cheatsheet | 13 | text + 15 charts | yes |
+| Idenitfying-Chart-Patterns.pdf | 49 | text + 24 charts | partly — pattern slides pending |
+| Full_Trading_Playbook.pdf | 3 | text only | n/a |
+| Encyclopedia of Chart Patterns (Bulkowski) | 1035 | text + 326 charts | statistics extracted; chart exhibits not read |
+| Japanese Candlestick (Nison) | 298 | **pure scan** | ch. 4 rules read as images |
+| Technical Analysis Explained (Pring) | 329 | **pure scan** | preface only |
+
+### The only measured expectancy in any of these sources — and it is in an image
+
+The BearBull **Lightning Bolt** diagram carries success rates and expectancy that appear nowhere in the text:
+
+| | 3rd Touch Method | Double Confirmation Method |
+|---|---|---|
+| Success probability | 60% | 70% |
+| — small winner | 30% at 0.5R | 35% at 0.5R |
+| — large winner | 30% at 8R+ | 35% at 6R+ |
+| Failure rate | 40% at −1R | 33% at −1R |
+| **Stated average return** | **~1.6R** | **~1.9R** |
+
+**Checked with `risk_expectancy`-style arithmetic, and one does not reconcile:**
+
+- Double Confirmation: 0.35(0.5) + 0.35(6) + 0.33(−1) = **1.94R** — matches the stated 1.9R. Note the probabilities sum to 103%, a rounding slip that does not change the result materially.
+- 3rd Touch: 0.30(0.5) + 0.30(8) + 0.40(−1) = **2.15R**, not the stated 1.6R. To reach 1.6R the large-winner bucket has to average **6.17R**, not 8R. So either "8R+" is a maximum rather than a mean, or the stated average is conservative. **Quote 1.6R, not the 8R figure** — and say the arithmetic behind it does not close.
+
+This is the only source in the folder that states an expectancy, which makes it the only one that can be checked, and it is worth more than any number of pattern definitions.
+
+### Full_Trading_Playbook — four strategies, all now expressible
+
+Never opened before this pass. Four setups, all 1H, all targeting 1.5-2x R:R. Every one is now writable as a `rules.json` strategy block using operands added this session:
+
+| Strategy | Expressible as |
+|---|---|
+| RSI 50 Cross + SMA20 Trend | `rsi(14) crosses_above 50` AND `sma_slope(20) > 0` |
+| Breakout | `nearest_level_distance_pct`, `rvol`, close beyond level |
+| RSI Divergence | `divergence_find indicator=rsi` |
+| Pullback to MA | `sma_slope(20)` steep, price near `sma(20)` |
+
+Its "common mistakes" list is worth keeping: trading with a flat SMA20, entering without confirmation, ignoring stop discipline. The first is exactly why `sma_slope` was needed — a moving average's level says nothing about whether it is rising.
+
