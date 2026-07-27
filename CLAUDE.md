@@ -25,6 +25,7 @@
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
 | [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
+| [docs/research-evidence.md](docs/research-evidence.md) | What the academic evidence supports, what didn't replicate, and what to build next |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
 | `skills/` | Step-by-step procedures, invoked by name |
 
