@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **128 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **131 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -254,6 +254,15 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### volume_* (1)
 
 - **`volume_profile`** — Where volume actually traded, by price: point of control, value area, and high/low volume nodes
+
+### wyckoff_* (2)
+
+- **`wyckoff_phase`** — Classify the chart into a Wyckoff phase — accumulation, markup, distribution, markdown, or a plain range — with the measurements behind the label
+- **`wyckoff_spring`** — Find springs and upthrusts — false breaks of a range boundary that get reclaimed
+
+### effort_* (1)
+
+- **`effort_vs_result`** — Wyckoff's third law as a measurement: volume is effort, price movement is result
 
 ---
 

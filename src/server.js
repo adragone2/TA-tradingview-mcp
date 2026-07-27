@@ -13,6 +13,7 @@ import { registerStrategyTools } from "./tools/strategy.js";
 import { registerPatternTools } from "./tools/patterns.js";
 import { registerBreakoutTools } from "./tools/breakout.js";
 import { registerContextTools } from "./tools/context.js";
+import { registerWyckoffTools } from "./tools/wyckoff.js";
 import { registerChartTools } from "./tools/chart.js";
 import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
@@ -36,7 +37,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 128 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 131 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -137,6 +138,19 @@ Context — ask these BEFORE hunting for a setup:
 - volume_profile → point of control, value area, high/low volume nodes,
   computed from the bars. An approximation, and it says so.
 
+Wyckoff — phases and the two setups the method actually trades:
+- wyckoff_phase → accumulation / markup / distribution / markdown, with the
+  measurements behind the label. Accumulation and distribution differ ONLY by
+  what preceded the range. Returns "unclear" freely.
+- wyckoff_spring → springs and upthrusts. A spring needs price to trade BELOW
+  support and CLOSE back inside. A wick below with a close still below is a
+  breakdown, and buying it is how people buy into a decline. Unconfirmed
+  candidates come back in their own list.
+- effort_vs_result → volume is effort, price is result. Price up on FALLING
+  volume is a rally nobody is backing.
+Wyckoff has NO measured performance data of the Bulkowski kind. Report it as
+interpretive, not as statistics.
+
 Breakouts — score them, do not eyeball them:
 - breakout_check → scores a break of a level on five measurements: momentum,
   how far beyond it CLOSED, volume, how established the level was, and
@@ -235,6 +249,7 @@ registerStrategyTools(server);
 registerPatternTools(server);
 registerBreakoutTools(server);
 registerContextTools(server);
+registerWyckoffTools(server);
 registerChartTools(server);
 registerPineTools(server);
 registerDataTools(server);
