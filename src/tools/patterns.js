@@ -12,7 +12,7 @@ const wrap = (fn) => async (args = {}) => {
 export function registerPatternTools(server) {
   server.tool(
     'patterns_detect',
-    'Detect candlestick and chart patterns on the chart from the bars themselves. CONFIRMED structural patterns carry Bulkowski's measured statistics — break-even failure rate, average move, how often the measured-move target is reached — split by breakout direction and bull/bear market. Every structural pattern reports status "forming" or "confirmed" — a pattern is NOT complete until price closes through the level that completes it, and reporting a forming pattern as a signal is the classic error. Each detection carries the measurements behind it and, where defined, the measured-move target.',
+    'Detect candlestick and chart patterns on the chart from the bars themselves. CONFIRMED structural patterns carry Bulkowski\'s measured statistics — break-even failure rate, average move, how often the measured-move target is reached — split by breakout direction and bull/bear market. Every structural pattern reports status "forming" or "confirmed" — a pattern is NOT complete until price closes through the level that completes it, and reporting a forming pattern as a signal is the classic error. Each detection carries the measurements behind it and, where defined, the measured-move target.',
     {
       count: z.coerce.number().optional().describe('Bars to analyze (default 300)'),
       recent_bars: z.coerce.number().optional().describe('How many recent bars to scan for candlestick patterns (default 10 — a doji 300 bars ago is noise)'),

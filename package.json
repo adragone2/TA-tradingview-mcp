@@ -16,7 +16,7 @@
     "tv": "node src/cli/index.js",
     "test": "node --test tests/e2e.test.js tests/pine_analyze.test.js",
     "test:e2e": "node --test tests/e2e.test.js",
-    "test:unit": "node --test tests/pine_analyze.test.js tests/cli.test.js tests/doctor.test.js tests/drawing.test.js tests/watchlist_sync.test.js tests/structure.test.js tests/backtest.test.js tests/strategy.test.js tests/patterns.test.js tests/breakout.test.js tests/context.test.js tests/wyckoff.test.js tests/liquidity.test.js tests/zones.test.js tests/risk.test.js tests/elliott.test.js tests/divergence.test.js",
+    "test:unit": "node --test tests/modules.test.js tests/pine_analyze.test.js tests/cli.test.js tests/doctor.test.js tests/drawing.test.js tests/watchlist_sync.test.js tests/structure.test.js tests/backtest.test.js tests/strategy.test.js tests/patterns.test.js tests/breakout.test.js tests/context.test.js tests/wyckoff.test.js tests/liquidity.test.js tests/zones.test.js tests/risk.test.js tests/elliott.test.js tests/divergence.test.js",
     "test:cli": "node --test tests/cli.test.js",
     "test:doctor": "node --test tests/doctor.test.js",
     "test:drawing": "node --test tests/drawing.test.js",
