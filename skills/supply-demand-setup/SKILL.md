@@ -45,6 +45,8 @@ Every zone comes back with an `evidence` string assembled from exactly those. Qu
 
 ## The workflow
 
+**Zones are found on 99.5% of random walks, 4.4 per walk.** A zone alone carries almost no information — the confluence with structure, a level and a reaction is the evidence. This is the measurement behind "a zone with no structural backing is a rectangle".
+
 Run it in this order. Steps 1 and 2 are what separate a zone worth trading from a rectangle drawn around a big candle.
 
 ### 1. Is this market worth trading at all?

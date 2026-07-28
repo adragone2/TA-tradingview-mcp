@@ -308,3 +308,33 @@ export function causeAndEffect(bars, { range_window = 40, lookback = 3 } = {}) {
     caveat: 'Unlike classical chart patterns, this projection has NO measured success rate behind it. Treat it as a hypothesis about scale, not a target.',
   };
 }
+
+/**
+ * Wyckoff on data with no accumulation or distribution in it.
+ *
+ * Measured by scripts/detector-noise.js over 200 random walks of 200 bars:
+ *
+ *   classifyPhase returned a confident (non-undetermined) phase   100%
+ *   findSpringsUpthrusts fired                                      0%
+ *
+ * The contrast is the finding, and the two must be read differently.
+ *
+ * classifyPhase ALWAYS names a phase. It never abstains, so a returned phase
+ * is a description of the shape of the range, not evidence that accumulation
+ * or distribution occurred. It is a labeller, not a detector.
+ *
+ * findSpringsUpthrusts fired on none of 200 walks — as selective as VCP and
+ * pennants. A spring is a specific event (a break of support that is reclaimed)
+ * and noise does not manufacture it. That one is worth acting on.
+ */
+export const WYCKOFF_NOISE_BASELINE = {
+  measured: true,
+  script: 'scripts/detector-noise.js',
+  walks: 200,
+  bars_per_walk: 200,
+  phase_confident_pct: 100,
+  springs_upthrusts_pct: 0,
+  note: 'classifyPhase never abstains — a phase on a random walk is returned 100% of the time, so the '
+    + 'phase alone is descriptive, not evidence. Springs and upthrusts fired on 0 of 200 walks and are '
+    + 'as selective as VCP.',
+};

@@ -86,6 +86,8 @@ Each of these exists because it has already gone wrong here.
 
 **Tools, strategies and workflows are different things.** Tools are capabilities (`src/tools/`), strategies are testable rules (`rules.json`, Pine), workflows are procedures (`skills/`). A tool must not encode a strategy; a strategy must not live in a skill's prose. See [docs/START-HERE.md](docs/START-HERE.md).
 
+**Every detector carries its noise floor, and five of them are humbling.** Measured over 200 random walks: supply/demand **zones 99.5%**, a single **divergence 99%** (7 per walk) but **two or more agreeing only 13.5%**, rule-valid **Elliott counts 70.5%**, **breakouts of a prior high 32.5%** (17.5% passing 3+ checks), Wyckoff **classifyPhase 100%** — it never abstains, so a phase is descriptive, not evidence. Against that: **springs/upthrusts 0%**, **VCP 0%**, **pennants 0%**. Quote the agreement count, never a lone divergence; quote confluence, never a lone zone. `node scripts/detector-noise.js` re-measures.
+
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
 **A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.

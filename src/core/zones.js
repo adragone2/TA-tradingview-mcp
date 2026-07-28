@@ -217,3 +217,33 @@ export function nearestZones(zones, currentPrice) {
     above: above ? { ...above, distance_pct: round(((above.bottom - currentPrice) / currentPrice) * 100, 2) } : null,
   };
 }
+
+/**
+ * How often supply/demand zones appear in PURE NOISE.
+ *
+ * Measured by scripts/detector-noise.js over 200 seeded random walks of 200
+ * bars. This detector shipped without the number for a long time, and the
+ * number is not kind:
+ *
+ *   zones found on 99.5% of random walks, 4.4 zones per walk
+ *
+ * A shape present on essentially every random walk carries no information ON
+ * ITS OWN. That does not make zones useless — it makes the CONFLUENCE the
+ * evidence. A zone matters when structure, a level and a reaction agree with
+ * it, and the zone alone is close to a coin flip about where price paused.
+ *
+ * Read alongside the supply-demand-setup skill, which already insists a zone
+ * without structural backing "is a rectangle, and should be reported as one".
+ * This is the measurement behind that sentence.
+ */
+export const ZONE_NOISE_BASELINE = {
+  measured: true,
+  script: 'scripts/detector-noise.js',
+  walks: 200,
+  bars_per_walk: 200,
+  walks_with_any_zone_pct: 99.5,
+  zones_per_walk: 4.4,
+  note: 'A zone is found on almost every random walk. Never quote one as evidence by itself — the '
+    + 'confluence with structure and a reaction is what carries the information.',
+  context: { structural_patterns_pct: 68, channels_pct: 33.5, vcp_pct: 0, pennants_pct: 0 },
+};

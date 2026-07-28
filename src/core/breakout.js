@@ -193,3 +193,28 @@ export function approachPressure(bars, { level, side, lookback = 40, swing_lookb
     note: 'This describes pressure on the level, not a forecast. Levels break and hold for reasons price action cannot see.',
   };
 }
+
+/**
+ * Breakouts of a prior high on data with no trend in it.
+ *
+ * Measured by scripts/detector-noise.js over 200 random walks of 200 bars,
+ * taking the highest high of the first 150 bars as the level:
+ *
+ *   any close beyond the level        32.5% of walks
+ *   passing 3 or more of the checks    17.5%
+ *
+ * A third of random walks break their own prior high, and half of those breaks
+ * pass most of the quality checks. The checks are doing real work — they halve
+ * the rate — but a break that passes them is still something noise produces
+ * about one time in six.
+ */
+export const BREAKOUT_NOISE_BASELINE = {
+  measured: true,
+  script: 'scripts/detector-noise.js',
+  walks: 200,
+  bars_per_walk: 200,
+  any_break_pct: 32.5,
+  passing_3_of_5_checks_pct: 17.5,
+  note: 'Noise breaks its own prior high on a third of walks, and 17.5% of walks produce a break that '
+    + 'passes 3+ checks. The checks halve the rate rather than eliminating it.',
+};

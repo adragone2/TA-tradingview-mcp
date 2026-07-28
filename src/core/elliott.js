@@ -259,3 +259,30 @@ export const ELLIOTT_CAVEAT = {
   hindsight: 'Counting is far easier after the fact than in real time. The last swing needs bars to its right before it confirms, so the most recent wave is always the least certain — which is exactly the one a trade would depend on.',
   use: 'Best used as a road map that confirms an idea reached another way, not as a signal on its own. Combine it with structure, a level that has actually been tested, and a confirmation at the entry.',
 };
+
+/**
+ * Rule-valid Elliott counts on data with no waves in it.
+ *
+ * Measured by scripts/detector-noise.js over 200 random walks of 200 bars:
+ *
+ *   at least one rule-valid count   70.5% of walks
+ *   counts per walk                 1.74
+ *
+ * Seven walks in ten admit a count that satisfies every Elliott rule. The rules
+ * are permissive enough that noise passes them, which is precisely why
+ * surveyCounts returns EVERY valid count rather than one, and why the
+ * disagreement across sensitivities is reported as the finding.
+ *
+ * A single count is not a reading of the market. It is one of several the same
+ * bars support, on data that need not contain waves at all.
+ */
+export const ELLIOTT_NOISE_BASELINE = {
+  measured: true,
+  script: 'scripts/detector-noise.js',
+  walks: 200,
+  bars_per_walk: 200,
+  walks_with_valid_count_pct: 70.5,
+  counts_per_walk: 1.74,
+  note: 'A rule-valid count exists on 70.5% of random walks. Never present one count as THE count — '
+    + 'the survey returns all of them because the rules do not discriminate against noise.',
+};
