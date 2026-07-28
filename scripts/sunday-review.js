@@ -69,6 +69,9 @@ const ONLY = (argVal('--tickers', '') || '').split(',').map((s) => s.trim().toUp
 const INCLUDE_HOLDINGS = args.includes('--holdings');
 const DRAW = !args.includes('--no-draw');
 const OUT_DIR = argVal('--out-dir', 'reports');
+// Below this, the structural detectors have nothing to work with — swing
+// detection alone needs a multiple of its lookback.
+const MIN_BARS = 60;
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -95,6 +98,26 @@ async function loadSymbol(ticker) {
   const series = await data.getOhlcv({ count: 400, summary: false });
   const bars = S.normalizeBars(series);
   if (!bars.length) throw new Error('no bars returned');
+
+  // NOT EVERY SYMBOL IS A CHART.
+  //
+  // VIIIX is a NAV-priced institutional fund: 20 bars, open == high == low ==
+  // close on every one, volume 0. It crashed the run with "Cannot read
+  // properties of undefined (reading 'high')" from somewhere deep in a
+  // detector — a cryptic message for a symbol that never had a chart to
+  // analyse in the first place.
+  //
+  // Refusing it up front, with the reason, is both more honest and more useful
+  // than a stack trace: a skipped fund is a fact about the instrument, not a
+  // failure of the review.
+  if (bars.length < MIN_BARS) {
+    throw new Error(`only ${bars.length} bars available (need ${MIN_BARS}) — too short to assess`);
+  }
+  const ranged = bars.filter((b) => b.high > b.low).length;
+  if (ranged / bars.length < 0.5) {
+    throw new Error(`${bars.length - ranged}/${bars.length} bars have no intraday range `
+      + '(open == high == low == close) — NAV-priced fund or a non-traded series, not a chart');
+  }
   const got = String(series.symbol || '').replace(/^.*:/, '').toUpperCase();
   const want = String(ticker).replace(/^.*:/, '').toUpperCase();
   if (got !== want) throw new Error(`chart returned ${series.symbol}, expected ${ticker}`);
@@ -514,7 +537,19 @@ function validateTa(a, ours, { side, taRow }) {
     : conflicts.length && !supports.length ? 'DISPUTED'
     : supports.length && conflicts.length ? 'MIXED' : 'NO_SIGNAL';
 
-  return { agreement, supports, conflicts, contradictions, catalyst_evidence };
+  // TA's own suggestion, echoed back beside the verdict on it.
+  //
+  // These were absent from the returned object while the schema advertised
+  // them, so every one of 51 rows carried ta_action: null while
+  // ta_suggestion.action said TRIM. A consumer joining on this field got
+  // nothing, silently.
+  return {
+    ta_side: side,
+    ta_action: taRow.action ?? null,
+    ta_urgency: taRow.urgency ?? null,
+    ta_conviction: taRow.conviction ?? null,
+    agreement, supports, conflicts, contradictions, catalyst_evidence,
+  };
 }
 
 /**
@@ -799,6 +834,25 @@ let queue = [
   ...entries.map((r) => ({ side: 'entry', taRow: r })),
   ...holdings.map((r) => ({ side: 'holding', taRow: r })),
 ];
+
+// A ticker can appear on more than one TA list — MRVL, DTCR and EUFN each came
+// back as an exit AND an entry. Analysing it twice doubles the work and, worse,
+// draws the whole finding set onto the chart twice: MRVL carried 23 shapes then
+// 22 more. Keep the first occurrence and record the other sides on it, because
+// "TA wants both out of and into this name" is itself worth seeing.
+{
+  const bySymbol = new Map();
+  for (const q of queue) {
+    const key = String(q.taRow.ticker).replace(/^.*:/, '').toUpperCase();
+    const seen = bySymbol.get(key);
+    if (!seen) { bySymbol.set(key, q); continue; }
+    (seen.also_listed_as ||= []).push({ side: q.side, action: q.taRow.action ?? null, urgency: q.taRow.urgency ?? null });
+  }
+  const deduped = [...bySymbol.values()];
+  const dropped = queue.length - deduped.length;
+  if (dropped) log(`  ${dropped} duplicate ticker(s) collapsed — TA listed them on more than one side`);
+  queue = deduped;
+}
 if (ONLY.length) {
   const found = queue.filter((q) => ONLY.includes(String(q.taRow.ticker).replace(/^.*:/, '').toUpperCase()));
   const missing = ONLY.filter((t) => !found.some((q) => String(q.taRow.ticker).replace(/^.*:/, '').toUpperCase() === t));
@@ -843,6 +897,7 @@ for (const item of queue) {
     const rawChannel = a._raw_channel; delete a._raw_channel;
     row.assessment = a; row.our_view = ours;
     row.ta_validation = validateTa(a, ours, { side: item.side, taRow: item.taRow });
+    if (item.also_listed_as) row.ta_validation.also_listed_as = item.also_listed_as;
     if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars, rawChannel);
     log(`${ours.bias}/${row.ta_validation.agreement}${row.drawings ? ` (${row.drawings.shapes} drawn)` : ''}`);
   } catch (e) {

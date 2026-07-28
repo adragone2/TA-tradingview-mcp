@@ -150,13 +150,26 @@ Computed **before** TA is consulted, so the validation is not circular.
 
 ```jsonc
 {
+  "ta_side":     "exit" | "entry" | "holding",
+  "ta_action":   "TRIM",       // TA's own suggestion, echoed beside the verdict
+  "ta_urgency":  "MODERATE",
+  "ta_conviction": "HIGH",
   "agreement": "CONFIRMED" | "MIXED" | "DISPUTED" | "CONTRADICTED" | "NO_SIGNAL",
   "supports":        [ "..." ],
   "conflicts":       [ "..." ],
   "contradictions":  [ "..." ],   // incompatible claims, not differences of degree
-  "catalyst_evidence": [ { "catalyst", "evidence_tier", "note" } ]
+  "catalyst_evidence": [ { "catalyst", "evidence_tier", "note" } ],
+
+  // Present ONLY when TA listed this ticker on more than one side. The ticker
+  // is analysed once; the other listings are recorded here rather than
+  // producing a second row and a second set of drawings.
+  "also_listed_as": [ { "side": "entry", "action": "BUY_ADD", "urgency": null } ]
 }
 ```
+
+**`also_listed_as` is a finding, not bookkeeping.** MRVL came back as both an
+exit (`REVIEW`) and an entry (`BUY_ADD`) in the same run — TA wanting both out
+of and into a name is worth surfacing.
 
 | Value | Meaning |
 |---|---|
