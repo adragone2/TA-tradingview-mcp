@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 157 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 167 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -50,6 +50,7 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "Did this setup ever work?" | WRDS `wrds_backtest_signal` |
 | "Write this up" / "preview the earnings" / "screen for ideas" | An FSI plugin skill — see [plugins.md](plugins.md) first |
 | "Clean up the chart" | `draw_clear` — removes only what these tools drew |
+| Drawings that refuse to clear | `node scripts/clear-orphans.js` — entity IDs die with the TradingView session; this finds old drawings by their label text instead |
 
 Full inventory: [tools-reference.md](tools-reference.md). Where data comes from and how stale it can be: [data-sources.md](data-sources.md).
 
@@ -63,7 +64,7 @@ These exist because each one has already gone wrong here.
 
 **A 200 is not freshness.** TA stamps `age_hours` on its responses from the source file's mtime. Walls more than ~30h old on a trading day mean TA's scan didn't run — the levels describe positioning that may be gone. Say the age out loud.
 
-**These tools touch a live account.** `draw_clear` defaults to removing only MCP drawings — never pass `scope: "all"` without asking. `alert_create` makes a real alert that can fire and notify; check the price is on the correct side of spot first. `alert_delete` needs explicit ids.
+**These tools touch a live account.** `draw_clear` defaults to removing only MCP drawings — never pass `scope: "all"` without asking, and prefer `scripts/clear-orphans.js`, which reaches drawings from previous sessions without touching hand-drawn work. `alert_create` makes a real alert that can fire and notify; check the price is on the correct side of spot first. `alert_delete` needs explicit ids.
 
 **The chart is the user's workspace.** Scanning drives it through symbols and restores it afterwards. Don't leave them somewhere unexpected, and don't run long sweeps without saying how long it will take.
 
@@ -95,7 +96,7 @@ wrds-mcp/      separate MCP server for historical research
 ```
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
-- [tools-reference.md](tools-reference.md) — all 157 tools by group
+- [tools-reference.md](tools-reference.md) — all 167 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data

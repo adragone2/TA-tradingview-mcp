@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-157 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+167 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 157 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 167 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
@@ -68,6 +68,7 @@
 | "Is this backtest real?" | `deflated_sharpe` — the best of 200 no-edge strategies scores 2.19 annualised. Below 0.95 is not a discovery |
 | "Did this ever work?" | `wrds_backtest_signal` |
 | "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
+| "Old drawings won't clear" | `node scripts/clear-orphans.js` — TradingView entity IDs are SESSION-scoped, so anything drawn before the app last restarted is invisible to `draw_clear`. Finds them by label text. Dry run by default; `--apply` to delete |
 
 ## Rules
 
@@ -89,7 +90,7 @@ Each of these exists because it has already gone wrong here.
 
 **A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.
 
-**Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
+**Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. It is also rarely what you want: `clear-orphans` recovers drawings lost to a session restart WITHOUT touching anything hand-drawn, and on 2026-07-28 removed 545 stale shapes across 45 symbols while preserving 7 of the user's own. If you add or change a drawing label, append its format to `MCP_TEXT_SIGNATURES` — a label with no signature leaks an orphan that can never be cleaned up. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 
 **Swing trading sits on top of a sign change.** Below ~21 trading days the documented effect is REVERSAL; above ~63 it is CONTINUATION, and momentum's skip-month exists because the boundary falls inside the swing window. Nearly every structural detector here — flags, triangles, wedges, VCP, breakouts — is a CONTINUATION bet placed at the horizon where continuation is weakest. Run `horizon_prior` before hunting a setup and say which side of the boundary it is on. See [docs/swing-evidence-review.md](docs/swing-evidence-review.md).
 

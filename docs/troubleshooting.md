@@ -53,3 +53,36 @@ Verified against a live install. These are platform limits, not bugs to retry th
 ## The meta-lesson
 
 Eight tools in this codebase have been found reporting `success: true` while doing nothing — because a test existed that asserted something which could not fail. If a tool claims success but the chart or account didn't change, **believe the chart**. Verify state independently before reporting a result.
+
+## Drawings that will not clear
+
+**Symptom:** `draw_clear` reports `removed: 0` while the chart is visibly
+covered in old lines — often the same set of levels stacked several times over.
+
+**Cause:** TradingView entity IDs are **session-scoped**. When the desktop app
+restarts, every ID in the drawing registry stops matching a live shape,
+`prune` correctly drops it, and the drawings themselves stay on the chart with
+nothing left to identify them by. `draw_clear scope:"mcp"` cannot see them, and
+`scope:"all"` would take the user's own drawings too.
+
+**Fix:**
+
+```bash
+node scripts/clear-orphans.js
+```
+
+Dry run by default. It identifies our drawings by their **label text** rather
+than by ID, and removes only shapes whose text matches a format this toolchain
+generates — anything unrecognised, including every unlabelled hand-drawn shape,
+is left alone. Add `--apply` to delete, `--tickers A,B` to limit the sweep.
+
+Measured on 2026-07-28: 670 shapes across 48 charts, 69 still trackable. It
+removed 545 and preserved 7 hand-drawn shapes.
+
+**If you add or change a drawn label, append its format to
+`MCP_TEXT_SIGNATURES` in `src/core/orphans.js`.** A label with no signature
+leaks a drawing that can never be cleaned up. Signatures are **append-only** —
+retired formats must stay, because an orphan was by definition written by older
+code. `tests/orphans.test.js` lifts every label template out of the review
+source and asserts the matcher recognises it.
+

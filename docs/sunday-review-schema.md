@@ -76,8 +76,60 @@ Each maps to a skill in this repo.
 | `risk` | risk-sizing | `atr_14`, `stopping_premium_verdict`, `stop_adds_expected_return`, `stop_guidance` |
 | `costs` | risk-sizing | `slippage_mean_pct`, `turnover_drag_10d_20bps_pct` |
 | `level_pressure` | market-structure | `on_resistance`, `on_support` with readings |
+| `channels` | chart-patterns | `found`, `direction`, `stable`, `windows_agreeing`, `windows_tested`, `best`, `noise_baseline` |
+| `trade_plans` | chart-patterns | array of `{pattern, status, family, bilateral, tradeable_now, legs, primary_leg, primary_note, base_rate}` |
 
 Plus scalars: `price`, `as_of`, `range_low/high`, `off_high_pct`, `off_low_pct`.
+
+### `channels`
+
+A channel is a shape the trend-line detector cannot see — it names patterns by
+whether boundaries CONVERGE or DIVERGE, and a channel's are parallel.
+
+**Consume `windows_agreeing` and `stable`, not `found`.** Channels appear on
+**33.5%** of random walks and 12% of walks yield one "stable" across three or
+more window/sensitivity combinations. `found: true` on its own is weak
+evidence. `windows_tested` is a count (12 by default), not the list of windows.
+
+### `trade_plans`
+
+Entry, stop and target for every detected pattern, as an array. Each entry:
+
+```jsonc
+{
+  "pattern": "bullish_rectangle",
+  "status": "forming",
+  "family": "bilateral",
+  "bilateral": true,
+  "tradeable_now": false,        // false while FORMING — the levels are what WOULD confirm it
+  "primary_leg": "long",         // typed rectangles only; null otherwise
+  "primary_note": "Upward break continues the trend the range interrupted...",
+  "legs": {
+    "long":  { "side": "long",  "entry": 706.39, "stop": 671.87, "target": 741.22,
+               "risk": 34.52, "reward": 34.83, "rr": 1.01, "note": "..." },
+    "short": { "side": "short", "entry": 675.19, "stop": 709.72, "target": 640.36,
+               "risk": 34.52, "reward": 34.83, "rr": 1.01, "note": "..." }
+  },
+  "base_rate": null              // Bulkowski's measured figures where they exist
+}
+```
+
+Three rules for a consumer:
+
+- **`tradeable_now: false` means do not treat the levels as live.** A forming
+  pattern is a hypothesis; its entry is the price that would confirm it.
+- **`bilateral: true` means BOTH legs are real.** Triangles, broadening
+  formations and rectangles do not know which way they break. Taking only the
+  leg that suits a thesis is how one ends up on the wrong side of a triangle.
+- **`primary_leg` names the continuation, not the better trade.** A typed
+  rectangle says which break continues the prior trend. Bulkowski measures the
+  *upward* break as the better one regardless of approach — 15% break-even
+  failure against 24-34% downward — so a `bearish_rectangle`'s primary leg is
+  the weaker of its two.
+
+**`rr` is arithmetic on the levels and is not evidence.** Read it beside
+`base_rate`: a rising wedge can show R:R 5.46 while failing to move 5% **51%**
+of the time.
 
 ## `our_view` — the independent call
 
@@ -124,7 +176,19 @@ Computed **before** TA is consulted, so the validation is not circular.
 
 Drawn on that ticker's own chart so the report and the chart can be read against each other. Prior week's group is cleared first. **Only patterns that passed the stability check are drawn** — a pattern present at one sensitivity is a fit, not a shape, and does not belong on a chart.
 
+Pattern **geometry** is drawn, not just the break level: wedges and triangles
+via TradingView's own 5-point pattern tool anchored to real pivots, rectangles
+as a box, flags and pennants as a pole line plus a pause box, tops and bottoms
+as connected peaks plus a neckline. Channel boundaries draw as two parallel
+lines. ENTRY/STOP/TARGET lines are drawn **only** for patterns that are
+`tradeable_now`.
+
 Remove with `draw_clear group="sunday-<TICKER>"`.
+
+**Drawings from a previous TradingView session cannot be removed that way** —
+entity IDs are session-scoped, so `draw_clear` cannot see them. Run
+`node scripts/clear-orphans.js` (dry run by default, `--apply` to delete); it
+matches them by label text and leaves hand-drawn work alone.
 
 ## Notes for a consumer
 

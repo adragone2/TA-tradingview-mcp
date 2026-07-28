@@ -20,6 +20,8 @@ node scripts/sunday-review.js --out-dir reports
 | `--limit N` | First N of each side — for a quick check |
 | `--holdings` | Add every portfolio position, not only the actionable ones |
 | `--no-draw` | Skip chart drawings (faster) |
+| `--tickers A,B,C` | Named tickers only. TA's list re-orders live, so `--limit 1` is not reproducible — use this to re-check one name |
+| `--out-dir DIR` | Where the report lands (default `reports/`) |
 
 **~7–12 minutes for ~60 tickers.** It drives the chart through each one on 1D, computes everything offline, draws the findings, and restores the original symbol.
 
@@ -35,12 +37,25 @@ Bump `schema_version` on any breaking change, and update the schema doc in the s
 
 Per ticker, four parts:
 
-1. **`assessment`** — 26 blocks, one per analysis type this repo has a skill for
+1. **`assessment`** — 26 blocks, one per analysis type this repo has a skill for, including `channels` and `trade_plans`
 2. **`our_view`** — our independent bias, computed **before** TA is consulted
 3. **`ta_validation`** — whether TA's suggestion holds up against that
 4. **`drawings`** — what went on the chart
 
 `our_view` being computed first is what stops the validation being circular.
+
+### `trade_plans` — entry, stop and target per pattern
+
+Every detected pattern carries its levels. Two things to respect:
+
+- **`tradeable_now` is false for a forming pattern.** Its levels are what WOULD confirm it, not a live setup.
+- **Bilateral patterns carry BOTH legs.** Triangles, broadening formations and rectangles do not know which way they break. A typed rectangle (`bullish_rectangle` / `bearish_rectangle`) adds `primary_leg` naming the continuation — but the other leg stays planned, and Bulkowski's numbers say the *upward* break is the better one regardless of approach, so a bearish rectangle's continuation leg is the weaker of its two.
+
+R:R is arithmetic on the levels. Quote the pattern's `base_rate` beside it or the number flatters itself — a 5.46 R:R on a rising wedge that fails 51% of the time is not a good trade.
+
+### `channels` — quote the stability count
+
+A channel is found on **33.5%** of random walks and 12% of walks produce a "stable" one. A single-window fit is not a shape. `windows_agreeing` and `stable` are the fields that matter, not `found`.
 
 ## Reading it
 
@@ -76,10 +91,17 @@ Every ticker's findings are drawn on its own chart in group **`sunday-<TICKER>`*
 - Up to 3 supports and 3 resistances, labelled with distance
 - Nearest demand and supply zone
 - **Only patterns that passed the stability check** — a pattern present at one sensitivity is a fit, not a shape, and does not belong on a chart
+- **Pattern GEOMETRY, not just the break level.** Wedges and triangles use TradingView's own 5-point pattern tool anchored to real pivots; rectangles draw as a box; flags and pennants draw the pole as a line and the pause as a box; tops/bottoms connect the peaks and add the neckline
+- **Channel boundaries** where a channel was found, as two parallel lines
+- **ENTRY / STOP / TARGET** lines, but only for patterns that are `tradeable_now` — a forming pattern's levels are a hypothesis and do not belong on the chart as if they were live
 - VCP pivot where one qualifies
 - **TA's own stop**, in orange, so its placement can be seen against the structure
 
 The prior week's group is cleared before drawing. Remove manually with `draw_clear group="sunday-<TICKER>"`.
+
+**If old drawings will not clear**, they are from a previous TradingView session — entity IDs die with the app, so `draw_clear` cannot see them. Run `node scripts/clear-orphans.js` (dry run; `--apply` to delete). It identifies them by label text and leaves hand-drawn work alone.
+
+**If you add or change a drawn label, append its format to `MCP_TEXT_SIGNATURES` in `src/core/orphans.js`.** A label with no signature leaks a drawing that can never be cleaned up. There is a test that lifts every label template out of this script and checks it.
 
 ## Catalyst evidence travels with the suggestion
 
