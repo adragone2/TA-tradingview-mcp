@@ -308,10 +308,24 @@ function assess(bars, spy) {
 
   // ── divergence ────────────────────────────────────────────────────────────
   const div = safe(() => D.surveyDivergences(bars), null);
+  // surveyDivergences returns `runs` and `agreeing_indicators`. This block read
+  // `divergences` and `indicators_agreeing` — neither key exists, so count was
+  // 0 and indicators_agreeing null on all 50 rows of a full run, while the
+  // `agreement` TEXT in the same block reported real divergences on five
+  // tickers. The structured fields contradicted their own prose, and a consumer
+  // filtering on count > 0 saw an empty portfolio.
+  //
+  // Note WHY this outlived ta_action: a wrong key that lands on `.length`
+  // produces 0, and 0 reads as a legitimate measurement rather than a missing
+  // one. Null is loud; zero is silent.
+  const divRuns = div?.runs || [];
   const divergenceBlock = {
     agreement: (div?.agreement || '').slice(0, 200) || null,
-    count: (div?.divergences || []).length,
-    indicators_agreeing: div?.indicators_agreeing ?? null,
+    count: divRuns.reduce((a, r) => a + (r.shown || 0), 0),
+    total_found: divRuns.reduce((a, r) => a + (r.total_found || 0), 0),
+    indicators_checked: div?.indicators_checked ?? null,
+    indicators_agreeing: div?.agreeing_indicators ?? null,
+    agreement_direction: div?.agreement_direction ?? null,
   };
 
   // ── wyckoff ───────────────────────────────────────────────────────────────
@@ -325,8 +339,18 @@ function assess(bars, spy) {
 
   // ── elliott ───────────────────────────────────────────────────────────────
   const ell = safe(() => E.surveyCounts(bars), null);
+  // surveyCounts returns total_valid_counts and runs. This read total_counts
+  // and counts — neither exists — and the `?? 0` fallback turned the miss into
+  // a plausible zero, so all 50 rows reported "0 valid counts" while the
+  // agreement text beside them said "2 different most-recent counts across 3
+  // sensitivities". Same silent-zero failure as the divergence block.
+  //
+  // distinct_recent_counts is the number that matters here: disagreement across
+  // sensitivities IS the finding, and it was not being reported at all.
   const elliott = {
-    valid_counts: ell?.total_counts ?? ell?.counts?.length ?? 0,
+    valid_counts: ell?.total_valid_counts ?? 0,
+    distinct_recent_counts: ell?.distinct_recent_counts ?? null,
+    sensitivities_run: (ell?.runs || []).length || null,
     agreement: ell?.agreement ?? null,
     caveat: 'Every rule-valid count is returned, never one. Disagreement across sensitivities IS the finding.',
   };

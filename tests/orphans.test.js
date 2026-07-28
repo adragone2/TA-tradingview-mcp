@@ -31,6 +31,19 @@ describe('isMcpText — recognises what this toolchain writes', () => {
     'ascending_channel lower',
     'bullish_rectangle forming',
     'VCP pivot 34.2',
+    // ta_draw_decision — these were leaking entirely until the 2026-07-28 audit
+    'TA Call Wall 143.24',
+    'TA Put Wall 1250',
+    'TA BB Upper 99.5',
+    'TA PIF Support 12.5',
+    'TA Stop (CRITICAL) 598.37',
+    'TA Stop (exit) 42',
+    // walls_draw / walls_apply — tags joined with " / ", price suffixed
+    'D Call Wall 1250',
+    'W Put GEX 1180',
+    'Gamma Flip 1195',
+    'M Call Wall / D Put Wall 1195',
+    'D Call Wall / W Call GEX / M Put Wall 900',
   ];
 
   for (const t of OURS) {
@@ -69,6 +82,10 @@ describe('isMcpText — leaves everything else alone', () => {
     'note: S 1277.33 (-0.07%)',       // our format EMBEDDED in a person's note
     'S 1277.33 (-0.07%) — my note',   // ours with something appended
     'VCP',
+    'TA Call Wall',                   // no price
+    'Call Wall 1250',                 // no TA prefix and no horizon
+    'my TA Stop 100',                 // prefixed by a person
+    'D Call Wall 1250 — mine',        // ours with something appended
     '',
     '   ',
   ];
@@ -97,44 +114,66 @@ describe('signatures cover every label format the code writes', () => {
    * So the template literals are lifted straight out of the source and each one
    * is rendered with plausible values and fed through the matcher.
    */
-  const SOURCES = ['scripts/sunday-review.js'];
+  /**
+   * EVERY file that writes a drawing label, not just the review. The audit
+   * found ta_decisions.js and ta_walls.js writing labels no signature matched,
+   * so every level ta_draw_decision and the walls overlay had ever drawn was a
+   * permanent orphan.
+   *
+   * Substitutions are PER FILE, because the same placeholder means different
+   * things in different files: `${l.label}` is "S"/"R" in the review and
+   * "TA Call Wall" in ta_decisions. A shared map silently renders one of them
+   * wrong and the test then fails for the wrong reason.
+   */
+  const COMMON = [
+    [/\$\{channel\.pattern\}/g, 'descending_channel'],
+    [/\$\{side\}/g, 'long'],
+    [/\$\{tag\}/g, 'double_bottom'],
+    [/\$\{pauseBars\}/g, '8'],
+    [/\$\{pv\.length\}/g, '3'],
+    [/\$\{m\.pole_pct\}/g, '33.38'],
+    [/\$\{m\.retrace_pct\}/g, '27.7'],
+    [/\$\{a\.volatility_contraction\.pivot\}/g, '34.2'],
+    [/\$\{r2\(neck, 2\)\}/g, '30.77'],
+    [/\$\{r2\(taRow\.stop, 2\)\}/g, '1862.51'],
+    [/\$\{l\.distance_pct\}/g, '-0.07'],
+    [/\$\{l\.entry\}/g, '30.77'],
+    [/\$\{l\.stop\}/g, '26.11'],
+    [/\$\{l\.target\}/g, '34.76'],
+    [/\$\{l\.rr\}/g, '0.86'],
+    [/\$\{z\.bottom\}/g, '33.16'],
+    [/\$\{z\.top\}/g, '34.2'],
+  ];
+  const SOURCES = [
+    { file: 'scripts/sunday-review.js', fill: [
+      [/\$\{label\}/g, 'double_bottom confirmed'],
+      [/\$\{l\.label\}/g, 'S'],
+      [/\$\{l\.price[^}]*\}/g, '34.93'],
+      ...COMMON,
+    ] },
+    { file: 'src/core/ta_decisions.js', fill: [
+      [/\$\{l\.label\}/g, 'TA Call Wall'],
+      [/\$\{l\.price >= 100[\s\S]*?\)\}/g, '143.24'],
+    ] },
+    { file: 'src/core/ta_walls.js', fill: [
+      [/\$\{label\}/g, 'D Call Wall / W Put GEX'],
+      [/\$\{l\.price\}/g, '1250'],
+    ] },
+  ];
 
-  test('every `text:` template in the review has a matching signature', () => {
-    const templates = new Set();
-    for (const f of SOURCES) {
-      const src = readFileSync(f, 'utf8');
-      for (const m of src.matchAll(/text: `([^`]*)`/g)) templates.add(m[1]);
+  test('every drawing label in the codebase has a matching signature', () => {
+    const templates = [];
+    for (const { file, fill } of SOURCES) {
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/text: `([^`]*)`/g)) templates.push({ file, t: m[1], fill });
     }
-    assert.ok(templates.size >= 10, `only found ${templates.size} templates — did the extraction break?`);
-
-    // Render each template with values of the right shape.
-    const fill = (t) => t
-      .replace(/\$\{label\}/g, 'double_bottom confirmed')
-      .replace(/\$\{channel\.pattern\}/g, 'descending_channel')
-      .replace(/\$\{side\}/g, 'long')
-      .replace(/\$\{tag\}/g, 'double_bottom')
-      .replace(/\$\{pauseBars\}/g, '8')
-      .replace(/\$\{pv\.length\}/g, '3')
-      .replace(/\$\{m\.pole_pct\}/g, '33.38')
-      .replace(/\$\{m\.retrace_pct\}/g, '27.7')
-      .replace(/\$\{a\.volatility_contraction\.pivot\}/g, '34.2')
-      .replace(/\$\{r2\(neck, 2\)\}/g, '30.77')
-      .replace(/\$\{r2\(taRow\.stop, 2\)\}/g, '1862.51')
-      .replace(/\$\{l\.distance_pct\}/g, '-0.07')
-      .replace(/\$\{l\.entry\}/g, '30.77')
-      .replace(/\$\{l\.stop\}/g, '26.11')
-      .replace(/\$\{l\.target\}/g, '34.76')
-      .replace(/\$\{l\.rr\}/g, '0.86')
-      .replace(/\$\{l\.price[^}]*\}/g, '34.93')
-      .replace(/\$\{z\.bottom\}/g, '33.16')
-      .replace(/\$\{z\.top\}/g, '34.2')
-      .replace(/\$\{l\.label\}/g, 'S');
+    assert.ok(templates.length >= 12, `only found ${templates.length} templates — did the extraction break?`);
 
     const unmatched = [];
-    for (const t of templates) {
-      const rendered = fill(t);
+    for (const { file, t, fill } of templates) {
+      const rendered = fill.reduce((s, [re, v]) => s.replace(re, v), t);
       if (/\$\{/.test(rendered)) continue;          // template we cannot render — not a coverage claim
-      if (!isMcpText(rendered)) unmatched.push({ template: t, rendered });
+      if (!isMcpText(rendered)) unmatched.push({ file, template: t, rendered });
     }
     assert.deepEqual(unmatched, [],
       `these labels would leave permanently unrecoverable orphans:\n${JSON.stringify(unmatched, null, 2)}`);

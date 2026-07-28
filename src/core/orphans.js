@@ -78,6 +78,18 @@ export const MCP_TEXT_SIGNATURES = [
   new RegExp(`^(?:${PAT}) (?:forming|confirmed) (?:upper|lower)$`),
   // VCP: "VCP pivot 34.2"
   new RegExp(`^VCP pivot ${NUM}$`),
+
+  // ── ta_draw_decision (src/core/ta_decisions.js) ──────────────────────────
+  // "TA Call Wall 143.24", "TA Stop (CRITICAL) 598.37".
+  // These were leaking: every level ta_draw_decision has ever drawn was
+  // unrecognisable to the sweep and could never be cleaned up.
+  new RegExp(`^TA (?:Call Wall|Put Wall|BB Upper|BB Lower|PIF Resistance|PIF Support) ${NUM}$`),
+  new RegExp(`^TA Stop \\([A-Za-z_]+\\) ${NUM}$`),
+
+  // ── walls_draw / walls_apply (src/core/ta_walls.js) ──────────────────────
+  // Tags joined with " / " and suffixed with the price: "D Call Wall 1250",
+  // "W Put GEX / M Call Wall 1180", "Gamma Flip 1195".
+  new RegExp(`^(?:(?:[DWM] (?:Call Wall|Put Wall|Call GEX|Put GEX)|Gamma Flip)(?: / )?)+ ${NUM}$`),
 ];
 
 /** Does this text match something we generate? */
