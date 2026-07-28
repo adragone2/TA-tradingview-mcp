@@ -17,6 +17,31 @@ Use [catalyst-aware-brief](../skills/catalyst-aware-brief/SKILL.md) to fold step
 
 **KEY LEVEL must come from the data returned.** If nothing supports a level, write `n/a`.
 
+## Sunday routine — the weekly review
+
+Scheduled for Sunday mornings. Run it directly with:
+
+```bash
+node scripts/sunday-review.js --out-dir reports
+```
+
+7–12 minutes for ~60 tickers. It walks every ticker TA wants action on, on the
+daily, computes the full assessment offline, draws the findings on each chart,
+and restores the original symbol.
+
+The procedure and the guardrails are in [skills/sunday-review/SKILL.md](../skills/sunday-review/SKILL.md);
+the output contract is [sunday-review-schema.md](sunday-review-schema.md).
+
+**Two schedulers exist on this machine and they do not share state.** A task in
+`~/.claude/scheduled-tasks/` (the MCP scheduler) does NOT appear in the Claude
+Desktop **Scheduled** panel, and vice versa. If the panel is where the other
+jobs live, the task has to be created there by hand — see
+[skills/sunday-review/scheduled-task-prompt.md](../skills/sunday-review/scheduled-task-prompt.md)
+for the paste-ready prompt and settings.
+
+It must run on **this computer** — it drives TradingView Desktop over CDP, so
+it cannot run in the cloud, and the machine has to be awake with the app open.
+
 ## Working a single name
 
 1. `chart_set_symbol` then `chart_get_state`
@@ -67,6 +92,7 @@ Read the **baseline**, not the signal. And carry the caveats into whatever you r
 ## Housekeeping
 
 - `draw_clear` — removes only what these tools drew; `group` clears one plan
+- `node scripts/clear-orphans.js` — when `draw_clear` reports `removed: 0` but the chart is still covered. Entity IDs die with the TradingView session, so anything drawn before the app last restarted is invisible to `draw_clear`; this matches our drawings by label text instead. Dry run by default. Add `--all-mcp` to clear tracked drawings too — **that flag is the one that actually clears the charts** — and `--apply` to delete. Hand-drawn shapes are never touched
 - `session_get` — what did we conclude yesterday
 - `tv_doctor` — first stop whenever anything behaves oddly
 
