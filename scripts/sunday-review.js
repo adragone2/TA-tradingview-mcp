@@ -60,6 +60,10 @@ export const SCHEMA_VERSION = '1.0';
 const args = process.argv.slice(2);
 const argVal = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
 const LIMIT = Number(argVal('--limit', '999'));
+// Specific names on demand. TA's actionable list is live and re-orders by
+// urgency, so `--limit N` does NOT give a stable set of tickers between runs —
+// use this when you want a particular symbol analysed and drawn.
+const ONLY = (argVal('--tickers', '') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 const INCLUDE_HOLDINGS = args.includes('--holdings');
 const DRAW = !args.includes('--no-draw');
 const OUT_DIR = argVal('--out-dir', 'reports');
@@ -681,11 +685,19 @@ try {
   log(`  SPY ${spy.length} bars`);
 } catch (e) { log(`  SPY unavailable: ${e.message}`); }
 
-const queue = [
+let queue = [
   ...exits.map((r) => ({ side: 'exit', taRow: r })),
   ...entries.map((r) => ({ side: 'entry', taRow: r })),
   ...holdings.map((r) => ({ side: 'holding', taRow: r })),
 ];
+if (ONLY.length) {
+  const found = queue.filter((q) => ONLY.includes(String(q.taRow.ticker).replace(/^.*:/, '').toUpperCase()));
+  const missing = ONLY.filter((t) => !found.some((q) => String(q.taRow.ticker).replace(/^.*:/, '').toUpperCase() === t));
+  // A requested ticker TA has no suggestion for is still worth assessing —
+  // our own analysis does not depend on TA having an opinion.
+  queue = [...found, ...missing.map((t) => ({ side: 'holding', taRow: { ticker: t, action: 'NONE (not in TA actionable)' } }))];
+  log(`  restricted to ${ONLY.join(', ')} — ${found.length} with a TA suggestion, ${missing.length} without`);
+}
 
 const tickers = [];
 let n = 0;
