@@ -32,15 +32,19 @@ and restores the original symbol.
 The procedure and the guardrails are in [skills/sunday-review/SKILL.md](../skills/sunday-review/SKILL.md);
 the output contract is [sunday-review-schema.md](sunday-review-schema.md).
 
-**Two schedulers exist on this machine and they do not share state.** A task in
-`~/.claude/scheduled-tasks/` (the MCP scheduler) does NOT appear in the Claude
-Desktop **Scheduled** panel, and vice versa. If the panel is where the other
-jobs live, the task has to be created there by hand — see
-[skills/sunday-review/scheduled-task-prompt.md](../skills/sunday-review/scheduled-task-prompt.md)
-for the paste-ready prompt and settings.
+Scheduled for **Sunday 08:00**, and it appears in the app under **Routines**
+(Code tab) — not under **Scheduled** (Home tab). Those are two views, not two
+stores; a task created through the `scheduled-tasks` MCP server surfaces in
+Routines only. The prompt it runs is version-controlled at
+[skills/sunday-review/scheduled-task-prompt.md](../skills/sunday-review/scheduled-task-prompt.md).
 
 It must run on **this computer** — it drives TradingView Desktop over CDP, so
 it cannot run in the cloud, and the machine has to be awake with the app open.
+
+**If TradingView is closed, the task launches it** rather than failing. That is
+gated on `tv_doctor` failing first: `tv_launch` defaults to killing any running
+instance, which is required to attach the debugging port to an already-open
+TradingView and destructive against a healthy one.
 
 ## Working a single name
 

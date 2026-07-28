@@ -1,40 +1,45 @@
-# Sunday review — scheduled task
+# Sunday review — the scheduled task
 
-The prompt below is the one to paste into the **Scheduled** panel's
-`New task` dialog.
+This is the prompt the weekly run executes. It lives in two places and they
+must be kept in step:
 
-## Why this file exists
+- `~/.claude/scheduled-tasks/sunday-review/SKILL.md` — what actually runs
+- this file — the version-controlled copy
 
-There are two schedulers on this machine and they do not share state:
+## Where to see it
 
-| | Where | Shows in the Scheduled panel? |
-|---|---|---|
-| `scheduled-tasks` MCP server | `~/.claude/scheduled-tasks/` | **No** |
-| Claude Desktop Scheduled panel | app store, not local | Yes |
+It appears in the app under **Routines** (Code tab), as
+`Sunday review — Every Sunday at ~8:00 AM`.
 
-A task created through the MCP server is real but invisible in the panel, so
-if the panel is where the other jobs live, the task has to be created there —
-by hand, through `New task`. Nothing in this repo can write to it.
+It does NOT appear under **Scheduled** (Home tab). Those are two different
+views, not two different stores — a task created through the `scheduled-tasks`
+MCP server shows up in Routines only. Looking in the wrong one is why this
+task seemed missing for a while.
 
 ## Settings
 
 | Field | Value |
 |---|---|
-| Name | `Sunday review` |
-| Schedule | Every **Sunday** at **08:00** |
-| Runs on | **Your computer** (it drives TradingView Desktop over CDP on port 9222 — it cannot run in the cloud) |
+| Schedule | Every **Sunday** at **08:00** local |
+| Runs on | **This computer** — it drives TradingView Desktop over CDP on port 9222 and cannot run in the cloud |
 
-**Run it once manually after creating it.** Tool approvals granted during a run
-are remembered, so pre-approving stops an unattended Sunday run from stalling
-on a permission prompt. It also proves the prerequisites before you are relying
-on it.
+The machine must be awake and the app open at 08:00. If it is closed, the run
+happens at next launch.
 
-The machine must be awake and the app open at 08:00 Sunday. If it is closed,
-the run happens at next launch.
+**Run it once manually after any change.** Tool approvals granted during a run
+are remembered, so pre-approving stops an unattended Sunday run stalling on a
+permission prompt.
+
+## On launching TradingView
+
+The task launches TradingView itself if CDP is unreachable, but only then.
+`tv_launch` defaults to `kill_existing: true` — necessary when TradingView is
+running *without* the debugging port, since reattaching it requires a restart,
+and destructive if called against a healthy session. The prompt below gates the
+launch on `tv_doctor` failing first, and re-checks afterwards because
+`tv_launch` returns `success: true` even when CDP never came up.
 
 ## The prompt
-
-Paste everything below the line.
 
 ---
 
@@ -42,9 +47,19 @@ Run the weekly Sunday review for the TradingView MCP project.
 
 WORKING DIRECTORY: E:\git-repos\TA-tradingview-mcp
 
-PREREQUISITES — check these first and stop with a clear message if they fail:
-1. TradingView Desktop must be running with CDP on port 9222. Verify with the `tv_doctor` tool. If it is not running, say so and stop — do not attempt to launch it.
-2. The TA API must be reachable. Verify with `ta_health`.
+PREREQUISITES:
+
+1. TradingView Desktop must be running with CDP on port 9222. Check with the `tv_doctor` tool.
+
+   IF IT IS NOT RUNNING, OR CDP IS UNREACHABLE — launch it:
+     - Call `tv_launch`. It starts TradingView with remote debugging enabled and waits up to 15 seconds for CDP.
+     - `tv_launch` defaults to `kill_existing: true`, which is what you want when TradingView is running WITHOUT CDP — that is the only way to get the debugging port attached. But do NOT call it when tv_doctor already reports a healthy CDP connection: it would kill a working session for no reason and could lose unsaved chart work. Launch only when the check actually failed.
+     - `tv_launch` returns `success: true` even when CDP did not come up — read `cdp_ready` and the `warning` field, do not trust the success flag.
+     - After launching, wait ~10 seconds, then run `tv_doctor` AGAIN to confirm. A cold start also has to load the workspace and may need a login.
+     - Only proceed once tv_doctor passes. If it still fails after one launch attempt, STOP and report exactly which check failed — do not retry in a loop and do not run the script blind.
+     - Note in the final summary that you had to launch TradingView, so an unattended failure is visible rather than silent.
+
+2. The TA API must be reachable. Verify with `ta_health`. If it is not, stop and say so — the review has nothing to validate against without it.
 
 STEP 1 — Read the skill:
 Read skills/sunday-review/SKILL.md in full. It defines the procedure and the guardrails. Also read docs/sunday-review-schema.md for the output contract.
@@ -68,7 +83,7 @@ Load reports/sunday-review-<TODAY>.json. Do NOT dump it into the conversation �
 
 STEP 4 — Write the summary:
 Produce a concise report for the user, in this order:
-  1. Counts: how many analysed, how many failed, and the two summary distributions.
+  1. Counts: how many analysed, how many failed, and the two summary distributions. Mention here if TradingView had to be launched.
   2. Market condition ONCE, up front, if broad_chop is true — then do not repeat "choppy regime" per name.
   3. Every CONTRADICTION individually, with its numbers. These are cases where TA and a measurement on the bars assert incompatible things — they are the highest-value part of the report.
   4. DISPUTED rows as a table.
@@ -91,6 +106,6 @@ RULES — these are not optional:
 - If the script crashes partway, the chart may be left on the wrong symbol. Check chart_get_state and report it.
 
 HOUSEKEEPING:
-- If old drawings appear stuck and `draw_clear` reports removed: 0, they are from a previous TradingView session — entity IDs are session-scoped so draw_clear cannot see them. Run `node scripts/clear-orphans.js` to inspect (dry run by default) and `--apply` to remove. It matches our drawings by label text and leaves hand-drawn work alone. Mention it rather than doing it silently.
+- If old drawings appear stuck and `draw_clear` reports removed: 0, they are from a previous TradingView session — entity IDs are session-scoped so draw_clear cannot see them. Run `node scripts/clear-orphans.js` to inspect (dry run by default); `--all-mcp --apply` clears the charts. It matches our drawings by label text and leaves hand-drawn work alone. Mention it rather than doing it silently.
 
 Keep the summary tight. The full detail is in the JSON; the conversation is for the parts that need a human.

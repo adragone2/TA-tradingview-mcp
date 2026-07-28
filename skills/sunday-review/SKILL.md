@@ -15,6 +15,14 @@ It is not a TA-validation tool that happens to look at charts. **It is our own f
 node scripts/sunday-review.js --out-dir reports
 ```
 
+**TradingView Desktop must be up with CDP on port 9222** — check `tv_doctor`
+first. If it is closed, or open without the debugging port, `tv_launch` starts
+it. Call that ONLY when the check has actually failed: it defaults to
+`kill_existing: true`, which is what reattaches CDP to an already-running
+TradingView and is destructive against a healthy session. It also returns
+`success: true` when CDP never came up, so re-run `tv_doctor` afterwards rather
+than trusting the flag.
+
 | Flag | Effect |
 |---|---|
 | `--limit N` | First N of each side — for a quick check |
