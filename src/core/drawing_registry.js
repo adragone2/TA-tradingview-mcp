@@ -99,13 +99,34 @@ export function forget(entityIds, { path = STORE_PATH } = {}) {
  * Drop tracked IDs that no longer exist on the chart.
  * @param {string[]} liveIds ids currently returned by getAllShapes()
  */
-export function prune(liveIds, { path = STORE_PATH } = {}) {
+/**
+ * Drop entries whose shapes no longer exist on the chart.
+ *
+ * **`symbol` is not optional in practice.** `getAllShapes()` returns only the
+ * shapes on the CURRENTLY LOADED symbol, so pruning globally against that list
+ * deletes the registry entries for every other symbol — they are simply not in
+ * the live list. In a multi-symbol run that silently untracks everything drawn
+ * on every previous symbol, and the next `clearAll` for those groups then finds
+ * nothing to remove and the drawings accumulate forever.
+ *
+ * Found the hard way: a weekly review run four times left 61 shapes on CARG
+ * with support levels stacked 4-6 deep.
+ *
+ * So: pass the symbol whose shapes `liveIds` came from, and only that symbol's
+ * entries are considered. Entries for other symbols are left alone.
+ */
+export function prune(liveIds, { symbol = null, path = STORE_PATH } = {}) {
   const live = new Set(liveIds || []);
   const store = readStore(path);
   const before = store.entries.length;
-  store.entries = store.entries.filter((e) => live.has(e.entity_id));
+  store.entries = store.entries.filter((e) => {
+    // Only judge entries belonging to the symbol these ids came from.
+    if (symbol && e.symbol && e.symbol !== symbol) return true;
+    if (symbol && !e.symbol) return true;   // untagged legacy entries: leave alone
+    return live.has(e.entity_id);
+  });
   writeStore(store, path);
-  return { pruned: before - store.entries.length, remaining: store.entries.length };
+  return { pruned: before - store.entries.length, remaining: store.entries.length, scoped_to: symbol };
 }
 
 export function clear({ path = STORE_PATH } = {}) {

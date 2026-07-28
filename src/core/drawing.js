@@ -100,14 +100,70 @@ export async function resolveTime(input) {
   return t || Math.floor(Date.now() / 1000);
 }
 
+/**
+ * TradingView's native pattern tools, and how many points each one takes.
+ *
+ * Verified against the live chart by creating each and reading back its
+ * internal toolname. The important discovery: an UNKNOWN shape name does NOT
+ * throw — it silently creates a LineToolFlagMark. So a "successful" call
+ * proves nothing about which tool you got, and drawShape validates the point
+ * count up front rather than letting a flag marker appear where a wedge was
+ * expected.
+ */
+export const NATIVE_PATTERN_SHAPES = {
+  head_and_shoulders: 7,        // LineToolHeadAndShoulders
+  triangle_pattern: 5,          // LineToolTrianglePattern
+  xabcd_pattern: 5,             // LineTool5PointsPattern
+  cypher_pattern: 5,            // LineToolCypherPattern
+  abcd_pattern: 4,              // LineToolABCD
+  elliott_impulse_wave: 6,      // LineToolElliottImpulse
+  elliott_correction_wave: 4,   // LineToolElliottCorrection
+  elliott_triangle_wave: 6,     // LineToolElliottTriangle
+  elliott_double_combo: 4,      // LineToolElliottDoubleCombo
+  elliott_triple_combo: 6,      // LineToolElliottTripleCombo
+  flat_bottom: 3,               // LineToolFlatBottom
+};
+
+/** The symbol currently loaded, used to tag drawings so pruning stays scoped. */
+async function currentSymbol() {
+  try {
+    const s = await evaluate(`(function(){try{return window.TradingViewApi._activeChartWidgetWV.value().symbol();}catch(e){return null;}})()`);
+    return typeof s === 'string' ? s : null;
+  } catch { return null; }
+}
+
 /** Create one shape and return its new entity id (null if it could not be identified). */
-async function createOne({ apiPath, shape, point, point2, overrides, text }) {
+async function createOne({ apiPath, shape, point, point2, points, overrides, text }) {
   const overridesStr = JSON.stringify(overrides || {});
   const textStr = text ? JSON.stringify(text) : '""';
 
   const before = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`);
 
-  if (point2) {
+  if (points && points.length > 2) {
+    // TradingView's native pattern tools are N-point multipoint shapes:
+    // head_and_shoulders (7), triangle_pattern (5), xabcd_pattern (5),
+    // cypher_pattern (5), abcd_pattern (4), elliott_* (4-6).
+    //
+    // Two silent failure modes, both found by probing the live chart:
+    //
+    //   1. An UNKNOWN shape name does not throw — it creates a
+    //      LineToolFlagMark instead. drawShape validates the name up front.
+    //   2. A NON-EMPTY `text` makes the create fail silently and return
+    //      normally. `text:""` works, `text:"label"` produces nothing at all.
+    //      So text is omitted here — these tools draw their own point labels
+    //      anyway (the shoulders and head, the triangle's A-E).
+    //
+    // Neither throws, which is precisely why the caller must verify what
+    // landed rather than trusting the absence of an error.
+    await evaluate(`
+      ${apiPath}.createMultipointShape(
+        ${JSON.stringify(points)},
+        { shape: ${JSON.stringify(shape)}, overrides: ${overridesStr} }
+      )
+    `);
+    // These resolve more slowly than the two-point shapes; 200ms is not enough.
+    await new Promise((r) => setTimeout(r, 500));
+  } else if (point2) {
     await evaluate(`
       ${apiPath}.createMultipointShape(
         [{ time: ${point.time}, price: ${point.price} }, { time: ${point2.time}, price: ${point2.price} }],
@@ -128,28 +184,50 @@ async function createOne({ apiPath, shape, point, point2, overrides, text }) {
   return (after || []).find(id => !(before || []).includes(id)) || null;
 }
 
-export async function drawShape({ shape, point, point2, overrides: overridesRaw, text, group }) {
+/**
+ * `points` (3 or more) uses TradingView's own N-point pattern tools — see
+ * NATIVE_PATTERN_SHAPES. Otherwise `point` / `point2` behave as before.
+ */
+export async function drawShape({ shape, point, point2, points, overrides: overridesRaw, text, group }) {
   // Validate before connecting, so bad input fails the same way with or
   // without a live chart.
   const overrides = styleFor(shape, parseOverrides(overridesRaw));
-  if (!point || point.price === undefined || point.price === null || Number.isNaN(Number(point.price))) {
+
+  const multi = Array.isArray(points) && points.length > 2;
+  if (multi) {
+    const need = NATIVE_PATTERN_SHAPES[shape];
+    if (need && points.length !== need) {
+      throw new Error(`Shape "${shape}" needs exactly ${need} points, got ${points.length}. `
+        + 'TradingView does NOT reject a wrong shape name or point count — it silently draws a flag marker instead.');
+    }
+    for (const p of points) {
+      if (!p || p.price === undefined || p.price === null || Number.isNaN(Number(p.price))) {
+        throw new Error('Every entry in `points` needs a numeric price.');
+      }
+    }
+  } else if (!point || point.price === undefined || point.price === null || Number.isNaN(Number(point.price))) {
     throw new Error('point.price is required and must be a number.');
   }
 
   const apiPath = await getChartApi();
 
-  const resolvedPoint = { price: Number(point.price), time: await resolveTime(point.time) };
+  const resolvedPoints = multi
+    ? await Promise.all(points.map(async (p) => ({ price: Number(p.price), time: await resolveTime(p.time) })))
+    : null;
+  const resolvedPoint = multi
+    ? resolvedPoints[0]
+    : { price: Number(point.price), time: await resolveTime(point.time) };
   let resolvedPoint2;
-  if (point2 && point2.price !== undefined && point2.price !== null) {
+  if (!multi && point2 && point2.price !== undefined && point2.price !== null) {
     resolvedPoint2 = { price: Number(point2.price), time: await resolveTime(point2.time) };
   }
 
   const entity_id = await createOne({
-    apiPath, shape, point: resolvedPoint, point2: resolvedPoint2, overrides, text,
+    apiPath, shape, point: resolvedPoint, point2: resolvedPoint2, points: resolvedPoints, overrides, text,
   });
 
   if (entity_id) {
-    registry.record([{ entity_id, shape, role: null }], { group: group || null });
+    registry.record([{ entity_id, shape, role: null }], { group: group || null, symbol: await currentSymbol() });
   }
 
   return {
@@ -158,6 +236,7 @@ export async function drawShape({ shape, point, point2, overrides: overridesRaw,
     entity_id,
     point: resolvedPoint,
     ...(resolvedPoint2 ? { point2: resolvedPoint2 } : {}),
+    ...(resolvedPoints ? { points: resolvedPoints } : {}),
     group: group || null,
     style_applied: overrides,
   };
@@ -505,8 +584,11 @@ export async function clearAll({ scope = 'mcp', group = null } = {}) {
     return { success: true, scope: 'all', removed: before || 0, action: 'all_shapes_removed', note: 'Every drawing was removed, including any the user placed by hand.' };
   }
 
+  // getAllShapes() only sees the CURRENT symbol, so the prune must be scoped
+  // to it — otherwise every other symbol's tracked drawings get untracked and
+  // can never be cleared again. See drawing_registry.prune.
   const liveIds = (await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`)) || [];
-  registry.prune(liveIds);
+  registry.prune(liveIds, { symbol: await currentSymbol() });
 
   const candidates = registry.list({ group });
   if (!candidates.length) {

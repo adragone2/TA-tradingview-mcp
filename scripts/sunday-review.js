@@ -377,6 +377,7 @@ function assess(bars, spy) {
     volume_analysis, divergence: divergenceBlock, wyckoff, elliott, fibonacci,
     liquidity, volatility_contraction, horizon: horizonBlock, risk, costs: costsBlock,
     level_pressure,
+    _raw_patterns: pats.structural || [],   // not serialised; used only for drawing
   };
 }
 
@@ -466,8 +467,135 @@ function validateTa(a, ours, { side, taRow }) {
   return { agreement, supports, conflicts, contradictions, catalyst_evidence };
 }
 
+/**
+ * Alternating swing pivots inside a pattern's own window.
+ *
+ * TradingView's native pattern tools take N alternating points and render the
+ * shape themselves. Feeding them REAL pivots is the whole point — it is what
+ * stops a drawn boundary from floating away from the price, which is exactly
+ * how the CQTM wedge ended up with a lower edge at 22.25 on a bar trading ~29.
+ */
+function windowPivots(bars, fromTime, toTime, want) {
+  const s = Math.max(0, bars.findIndex((b) => b.time >= fromTime));
+  let e = bars.findIndex((b) => b.time >= toTime);
+  if (e < 0) e = bars.length - 1;
+  const out = [];
+  for (const lb of [3, 2, 1]) {          // loosen until enough pivots are found
+    out.length = 0;
+    for (let i = Math.max(s, lb); i <= Math.min(e, bars.length - 1 - lb); i++) {
+      const w = bars.slice(i - lb, i + lb + 1);
+      const isHigh = bars[i].high === Math.max(...w.map((b) => b.high));
+      const isLow = bars[i].low === Math.min(...w.map((b) => b.low));
+      if (!isHigh && !isLow) continue;
+      const kind = isHigh ? 'high' : 'low';
+      const price = isHigh ? bars[i].high : bars[i].low;
+      const last = out[out.length - 1];
+      if (last && last.kind === kind) {   // keep the more extreme of a run
+        if (kind === 'high' ? price > last.price : price < last.price) out[out.length - 1] = { time: bars[i].time, price, kind };
+        continue;
+      }
+      out.push({ time: bars[i].time, price, kind });
+    }
+    if (out.length >= want) break;
+  }
+  return out.map(({ time, price }) => ({ time, price: r2(price, 4) }));
+}
+
+/**
+ * Draw a pattern's actual SHAPE.
+ *
+ * Three families, three geometries:
+ *
+ *   - trendline patterns (wedges, triangles, broadening, rectangle) — two
+ *     boundary lines, reconstructed backwards from the reported slopes
+ *   - flags — the pole as a line, the consolidation as a box
+ *   - structural (double/triple tops and bottoms, head and shoulders) — the
+ *     peaks connected, plus the neckline
+ *
+ * The completion level is drawn too, but as the *break* level rather than as
+ * the pattern.
+ */
+async function drawPatternGeometry(p, bars, group, put) {
+  const m = p.measurements || {};
+  const label = `${p.pattern} ${p.status}`;
+  const COL = p.direction === 'bearish' ? '#ef5350' : p.direction === 'bullish' ? '#26a69a' : '#42a5f5';
+  const idxOf = (t) => { const i = bars.findIndex((b) => b.time >= t); return i < 0 ? bars.length - 1 : i; };
+
+  // ── trendline family: TradingView's native triangle_pattern tool ─────────
+  //
+  // Anchored to the REAL alternating pivots inside the window, not to a slope
+  // extrapolation. Extrapolating a 0.93%/bar slope backwards over 46 bars put
+  // CQTM's lower boundary at 22.25 on a date when price was ~29 — a line that
+  // touched nothing. The native tool takes 5 alternating pivots and renders
+  // the converging/diverging shape itself.
+  if (m.resistance_now != null && m.support_now != null) {
+    const pv = windowPivots(bars, p.from_time, p.to_time, 5);
+    if (pv.length >= 5) {
+      await put(() => drawing.drawShape({ shape: 'triangle_pattern', points: pv.slice(-5),
+        overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
+        text: label, group }), `pattern ${p.pattern} (triangle_pattern)`);
+    } else {
+      // Too few pivots to anchor the native tool — say so rather than guessing.
+      await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: r2(m.resistance_now, 4) },
+        overrides: JSON.stringify({ linecolor: COL, linewidth: 1, linestyle: 2 }),
+        text: `${label} — only ${pv.length} pivots, too few to draw`, group }), `pattern ${p.pattern} unanchored`);
+    }
+    return;
+  }
+
+  // ── flags: pole as a line, consolidation as a box ─────────────────────────
+  if (m.pole_pct != null && m.flag_bars != null) {
+    const endIdx = idxOf(p.to_time);
+    const flagStartIdx = Math.max(0, endIdx - m.flag_bars);
+    const poleStartIdx = Math.max(0, flagStartIdx - (m.pole_bars || 0));
+    const poleStart = p.direction === 'bullish' ? bars[poleStartIdx].low : bars[poleStartIdx].high;
+    const poleEnd = p.direction === 'bullish' ? (m.flag_high ?? bars[flagStartIdx].high) : (m.flag_low ?? bars[flagStartIdx].low);
+    await put(() => drawing.drawShape({ shape: 'trend_line',
+      point: { price: r2(poleStart, 4), time: bars[poleStartIdx].time },
+      point2: { price: r2(poleEnd, 4), time: bars[flagStartIdx].time },
+      overrides: JSON.stringify({ linecolor: COL, linewidth: 3 }),
+      text: `${label} pole +${m.pole_pct}%`, group }), `pattern ${p.pattern} pole`);
+    if (m.flag_high != null && m.flag_low != null) {
+      await put(() => drawing.drawShape({ shape: 'rectangle',
+        point: { price: r2(m.flag_low, 4), time: bars[flagStartIdx].time },
+        point2: { price: r2(m.flag_high, 4), time: p.to_time },
+        overrides: JSON.stringify({ color: COL, backgroundColor: 'rgba(66,165,245,0.12)', linewidth: 1 }),
+        text: `${label} — ${m.flag_bars} bars, ${m.retrace_pct}% retrace`, group }), `pattern ${p.pattern} flag`);
+    }
+    return;
+  }
+
+  // ── structural: connect the peaks, then the neckline ──────────────────────
+  const pair = m.peak_1 != null ? [m.peak_1, m.peak_2]
+    : m.trough_1 != null && m.trough_2 != null && m.left_shoulder == null ? [m.trough_1, m.trough_2]
+    : null;
+  if (pair) {
+    await put(() => drawing.drawShape({ shape: 'trend_line',
+      point: { price: r2(pair[0], 4), time: p.from_time }, point2: { price: r2(pair[1], 4), time: p.to_time },
+      overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
+      text: `${label}`, group }), `pattern ${p.pattern} peaks`);
+  }
+  // Head and shoulders — TradingView's own 7-point tool, which draws the
+  // shoulders, the head and the neckline in the standard visual language.
+  if (m.left_shoulder != null && m.head != null && m.right_shoulder != null) {
+    const pv = windowPivots(bars, p.from_time, p.to_time, 7);
+    if (pv.length >= 7) {
+      await put(() => drawing.drawShape({ shape: 'head_and_shoulders', points: pv.slice(-7),
+        overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
+        text: label, group }), `pattern ${p.pattern} (head_and_shoulders)`);
+    }
+  }
+  // The break level, drawn as what it is rather than as the pattern.
+  const neck = m.neckline ?? m.trough ?? m.peak ?? p.completion_level;
+  if (neck != null) {
+    await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: r2(neck, 4) },
+      overrides: JSON.stringify({ linecolor: COL, linewidth: 2, linestyle: 2 }),
+      text: `${label} — breaks at ${r2(neck, 2)}`, group }), `pattern ${p.pattern} neckline`);
+  }
+}
+
 /** Draw the report's own findings on the chart, so the two can be read together. */
-async function drawFindings(ticker, a, taRow, side) {
+async function drawFindings(ticker, a, taRow, side, rawPatterns, bars) {
   const group = `sunday-${String(ticker).replace(/^.*:/, '')}`;
   const drawn = { group, shapes: 0, items: [], errors: [] };
   try { await drawing.clearAll({ scope: 'mcp', group }); } catch { /* first run */ }
@@ -501,14 +629,12 @@ async function drawFindings(ticker, a, taRow, side) {
       overrides: JSON.stringify({ linecolor: '#c62828', linewidth: 1, linestyle: 2 }),
       text: `supply ${z.bottom}-${z.top}`, group }), 'supply zone');
   }
-  // Only patterns that SURVIVED the stability check get drawn.
-  for (const p of a.chart_patterns.detected) {
+  // Pattern GEOMETRY, not just the completion level. A wedge is two trendlines;
+  // drawing a horizontal line at the neckline tells you where it completes but
+  // shows nothing of the shape the report is claiming.
+  for (const p of rawPatterns) {
     if (!a.chart_patterns.stable_across_sensitivities.includes(p.pattern)) continue;
-    if (p.completion_level != null) {
-      await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: p.completion_level },
-        overrides: JSON.stringify({ linecolor: '#42a5f5', linewidth: 2 }),
-        text: `${p.pattern} ${p.status} — completes ${p.completion_level}`, group }), `pattern ${p.pattern}`);
-    }
+    await drawPatternGeometry(p, bars, group, put);
   }
   // VCP pivot.
   if (a.volatility_contraction.vcp_qualifies && a.volatility_contraction.pivot) {
@@ -592,9 +718,10 @@ for (const item of queue) {
     const a = assess(bars, spy);
     const ours = ourAssessment(a);
     row.symbol = symbol; row.resolution = resolution; row.bars = bars.length; row.status = 'ok';
+    const rawPatterns = a._raw_patterns; delete a._raw_patterns;
     row.assessment = a; row.our_view = ours;
     row.ta_validation = validateTa(a, ours, { side: item.side, taRow: item.taRow });
-    if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side);
+    if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars);
     log(`${ours.bias}/${row.ta_validation.agreement}${row.drawings ? ` (${row.drawings.shapes} drawn)` : ''}`);
   } catch (e) {
     row.error = e.message;
