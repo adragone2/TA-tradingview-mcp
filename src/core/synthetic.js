@@ -108,8 +108,16 @@ export const GENERATORS = {
   symmetrical_triangle: ({ per = 7 } = {}) =>
     legs([70, 112, 88, 108, 92, 104, 96, 100, 120], per),
 
+  // Three rectangles, because a rectangle is named for the trend it
+  // interrupts. The shape is identical in all three; only the approach differs.
   rectangle: ({ per = 8 } = {}) =>
-    legs([70, 100, 90, 100, 90, 100, 90, 100, 120], per),
+    legs([98, 100, 90, 100, 90, 100, 90, 100, 120], per),
+
+  bullish_rectangle: ({ per = 8 } = {}) =>
+    legs([60, 70, 85, 100, 90, 100, 90, 100, 90, 100, 120], per),
+
+  bearish_rectangle: ({ per = 8 } = {}) =>
+    legs([140, 130, 115, 100, 110, 100, 110, 100, 110, 100, 80], per),
 
   rising_wedge: ({ per = 7 } = {}) =>
     legs([70, 100, 86, 104, 94, 108, 100, 110, 80], per),

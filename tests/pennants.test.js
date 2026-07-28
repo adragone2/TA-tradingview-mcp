@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { detectPatterns, STRUCTURAL_PATTERNS, NOISE_BASELINE } from '../src/core/patterns.js';
+import { detectPatterns, STRUCTURAL_PATTERNS, NOISE_BASELINE, trendBefore } from '../src/core/patterns.js';
 import { GENERATORS, barsFromPath, randomWalk } from '../src/core/synthetic.js';
 
 const names = (bars) => (detectPatterns(bars).structural || []).map((p) => p.pattern);
@@ -159,5 +159,72 @@ describe('pennants — degenerate input', () => {
   test('a flat series produces no pennant — there is no pole', () => {
     const flat = barsFromPath(Array(60).fill(100), { noise: 0.001, seed: 2 });
     assert.ok(!names(flat).some((x) => x.endsWith('_pennant')));
+  });
+});
+
+describe('rectangles are typed by the trend they interrupt', () => {
+  const rectNames = (kind) => names(truth(kind)).filter((n) => n.includes('rectangle'));
+
+  test('a range entered from an uptrend is a bullish rectangle', () => {
+    assert.ok(rectNames('bullish_rectangle').includes('bullish_rectangle'));
+  });
+
+  test('a range entered from a downtrend is a bearish rectangle', () => {
+    assert.ok(rectNames('bearish_rectangle').includes('bearish_rectangle'));
+  });
+
+  test('a range with no trend into it stays untyped', () => {
+    // The important negative. Typing every rectangle would manufacture a
+    // continuation bet out of a drift, and "no clear trend" is a real answer.
+    const found = rectNames('rectangle');
+    assert.ok(found.includes('rectangle'), 'the plain rectangle was not detected');
+    assert.ok(!found.includes('bullish_rectangle') && !found.includes('bearish_rectangle'),
+      `an untrended range was typed: ${found.join(', ')}`);
+  });
+
+  test('a typed rectangle is a continuation, an untyped one is uncertain', () => {
+    assert.equal(find(truth('bullish_rectangle'), 'bullish_rectangle').type, 'continuation');
+    assert.equal(find(truth('rectangle'), 'rectangle').type, 'uncertain');
+  });
+
+  test('all three are registered as structural patterns', () => {
+    for (const r of ['rectangle', 'bullish_rectangle', 'bearish_rectangle']) {
+      assert.ok(STRUCTURAL_PATTERNS.includes(r), `${r} is not in STRUCTURAL_PATTERNS`);
+    }
+  });
+
+  test('the note says the other break is still open', () => {
+    const p = find(truth('bullish_rectangle'), 'bullish_rectangle');
+    assert.match(p.note, /not planned away|still open/);
+  });
+});
+
+describe('trendBefore — the blunt instrument behind rectangle typing', () => {
+  const rise = barsFromPath(Array.from({ length: 60 }, (_, i) => 100 + i), { noise: 0.001, seed: 3 });
+  const fall = barsFromPath(Array.from({ length: 60 }, (_, i) => 160 - i), { noise: 0.001, seed: 3 });
+  const flat = barsFromPath(Array.from({ length: 60 }, () => 100), { noise: 0.001, seed: 3 });
+
+  test('reads a rise as up and a fall as down', () => {
+    assert.equal(trendBefore(rise, 50), 'up');
+    assert.equal(trendBefore(fall, 50), 'down');
+  });
+
+  test('a flat run has no trend', () => {
+    assert.equal(trendBefore(flat, 50), null);
+  });
+
+  test('a move below the threshold does not count', () => {
+    const drift = barsFromPath(Array.from({ length: 60 }, (_, i) => 100 + i * 0.02), { noise: 0.001, seed: 3 });
+    assert.equal(trendBefore(drift, 50), null);   // ~1% over 50 bars
+  });
+
+  test('too few bars before the pattern returns null rather than guessing', () => {
+    assert.equal(trendBefore(rise, 5), null);
+    assert.equal(trendBefore(rise, 0), null);
+  });
+
+  test('degenerate input returns null rather than throwing', () => {
+    assert.equal(trendBefore(null, 50), null);
+    assert.equal(trendBefore([], 50), null);
   });
 });

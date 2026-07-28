@@ -14,9 +14,16 @@ describe('PATTERN_FAMILY — every detectable pattern has a construction', () =>
     const bilateral = Object.entries(PATTERN_FAMILY)
       .filter(([, f]) => f === 'bilateral').map(([k]) => k).sort();
     assert.deepEqual(bilateral, [
-      'ascending_triangle', 'broadening_formation', 'descending_triangle',
-      'rectangle', 'symmetrical_triangle',
+      'ascending_triangle', 'bearish_rectangle', 'broadening_formation',
+      'bullish_rectangle', 'descending_triangle', 'rectangle',
+      'symmetrical_triangle',
     ]);
+  });
+
+  test('a typed rectangle is still bilateral — typing names a bias, not a break', () => {
+    for (const r of ['rectangle', 'bullish_rectangle', 'bearish_rectangle']) {
+      assert.equal(PATTERN_FAMILY[r], 'bilateral', `${r} stopped being bilateral`);
+    }
   });
 
   test('pennants are continuation, and directional', () => {
@@ -158,6 +165,40 @@ describe('tradePlan — bilateral patterns emit BOTH legs', () => {
       assert.equal(plan.bilateral, true, `${name} was not bilateral`);
       assert.equal(Object.keys(plan.legs).length, 2, `${name} did not emit two legs`);
     }
+  });
+});
+
+describe('tradePlan — a typed rectangle names its continuation leg', () => {
+  const rect = (name) => p(name, { resistance_now: 110, support_now: 100, height: 10 });
+
+  test('a bullish rectangle makes the LONG leg primary', () => {
+    const plan = tradePlan(rect('bullish_rectangle'), { atr: ATR });
+    assert.equal(plan.primary_leg, 'long');
+  });
+
+  test('a bearish rectangle makes the SHORT leg primary', () => {
+    const plan = tradePlan(rect('bearish_rectangle'), { atr: ATR });
+    assert.equal(plan.primary_leg, 'short');
+  });
+
+  test('an untyped rectangle names no primary leg — there is no trend to continue', () => {
+    const plan = tradePlan(rect('rectangle'), { atr: ATR });
+    assert.equal(plan.primary_leg, undefined);
+  });
+
+  test('the non-primary leg is still fully planned', () => {
+    // The whole failure mode of typing a bilateral pattern is quietly dropping
+    // the other side. Both legs keep their entry, stop and target.
+    const plan = tradePlan(rect('bullish_rectangle'), { atr: ATR });
+    assert.equal(Object.keys(plan.legs).length, 2);
+    for (const l of Object.values(plan.legs)) {
+      assert.ok(l.entry != null && l.stop != null && l.target != null);
+    }
+  });
+
+  test('the primary note says outright that the other leg is still live', () => {
+    const plan = tradePlan(rect('bearish_rectangle'), { atr: ATR });
+    assert.match(plan.primary_note, /not a one-way pattern/);
   });
 });
 

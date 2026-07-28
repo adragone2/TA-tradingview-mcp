@@ -407,7 +407,13 @@ function assess(bars, spy) {
   })();
   const trade_plans = safe(() => tradePlans(pats.structural || [], { atr: atrForPlans })
     .map((x) => ({ pattern: x.pattern, status: x.status, family: x.plan.family, bilateral: !!x.plan.bilateral,
-      tradeable_now: x.plan.tradeable_now ?? null, legs: x.plan.legs || {}, base_rate: x.plan.base_rate ?? null })), []);
+      tradeable_now: x.plan.tradeable_now ?? null, legs: x.plan.legs || {},
+      // A typed rectangle names which of its two legs continues the prior
+      // trend. Flattening the plan without this loses the entire point of
+      // typing it and leaves TA two identical-looking legs.
+      primary_leg: x.plan.primary_leg ?? null,
+      primary_note: x.plan.primary_note ?? null,
+      base_rate: x.plan.base_rate ?? null })), []);
 
   return {
     price: r2(px, 4),
@@ -564,6 +570,25 @@ async function drawPatternGeometry(p, bars, group, put) {
   const label = `${p.pattern} ${p.status}`;
   const COL = p.direction === 'bearish' ? '#ef5350' : p.direction === 'bullish' ? '#26a69a' : '#42a5f5';
   const idxOf = (t) => { const i = bars.findIndex((b) => b.time >= t); return i < 0 ? bars.length - 1 : i; };
+
+  // ── rectangles: a box, not a triangle ────────────────────────────────────
+  //
+  // Rectangles reach the trendline branch below because they report
+  // resistance_now and support_now like every other two-line pattern — and
+  // were being drawn with TradingView's CONVERGING triangle tool, which is the
+  // one shape a rectangle is definitionally not. A range gets a box.
+  if (/rectangle/.test(p.pattern) && m.resistance_now != null && m.support_now != null) {
+    // A typed rectangle carries its bias in its name while its `direction`
+    // stays bilateral, so the colour comes from the name here.
+    const rectCol = p.pattern.startsWith('bullish') ? '#26a69a'
+      : p.pattern.startsWith('bearish') ? '#ef5350' : '#42a5f5';
+    await put(() => drawing.drawShape({ shape: 'rectangle',
+      point: { price: r2(m.support_now, 4), time: p.from_time },
+      point2: { price: r2(m.resistance_now, 4), time: p.to_time },
+      overrides: JSON.stringify({ color: rectCol, backgroundColor: 'rgba(66,165,245,0.10)', linewidth: 2 }),
+      text: label, group }), `pattern ${p.pattern} range`);
+    return;
+  }
 
   // ── trendline family: TradingView's native triangle_pattern tool ─────────
   //

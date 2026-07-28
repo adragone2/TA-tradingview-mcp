@@ -1100,6 +1100,31 @@ function lineAt(points, index) {
 }
 
 /**
+ * The trend a pattern was entered from.
+ *
+ * Used to type a rectangle, which has no direction of its own and is named for
+ * the move it interrupts. Deliberately blunt: the net move over the bars
+ * immediately before the pattern began, against a threshold, with `null` for
+ * "no clear trend" — which is a real and common answer. A rectangle that
+ * formed out of a drift is not a bullish rectangle just because the last few
+ * bars ticked up, and the alternative to admitting that is inventing a
+ * continuation bet in both directions at once.
+ *
+ * `min_move_pct` is deliberately above ordinary noise. At 5% over 40 bars a
+ * flat drift does not qualify.
+ */
+export function trendBefore(bars, startIndex, { lookback = 40, min_move_pct = 5 } = {}) {
+  if (!Array.isArray(bars) || !(startIndex > 0)) return null;
+  const from = Math.max(0, startIndex - lookback);
+  if (startIndex - from < 10) return null;          // too short to call a trend
+  const a = bars[from]?.close, b = bars[startIndex]?.close;
+  if (!(a > 0) || !(b > 0)) return null;
+  const movePct = ((b - a) / a) * 100;
+  if (Math.abs(movePct) < min_move_pct) return null;
+  return movePct > 0 ? 'up' : 'down';
+}
+
+/**
  * Triangles, rectangles, wedges, flags and broadening formations.
  *
  * All of these are "two trend lines" patterns; what separates them is only the
@@ -1155,8 +1180,23 @@ function trendlinePatterns(bars, swings, {
     note = 'Converging lines with no directional bias of its own. Textbooks call it a continuation; in practice it often just becomes a sideways range.';
     avoid = 'Direction is not knowable in advance, and these frequently resolve into a trading range rather than a trend. A breakout from one is often just a normal swing inside that range. Treat with suspicion rather than as a setup.';
   } else if (flatHigh && flatLow) {
-    pattern = 'rectangle'; direction = 'bilateral'; type = 'uncertain';
-    note = 'A trading range bounded by two horizontal lines. Prone to false breakouts.';
+    // A rectangle is named for the trend it INTERRUPTS, not for a direction of
+    // its own. The two horizontal lines look identical whether the approach was
+    // up or down; what differs is which break continues the move already in
+    // progress. So the prior trend supplies the name, and the pattern keeps
+    // both breakout legs — Bulkowski measures rectangles in both directions
+    // (upward breakouts rank 4-8/39, downward 14-32/36), and typing one is not
+    // a reason to stop planning the other.
+    const priorTrend = trendBefore(bars, first);
+    pattern = priorTrend === 'up' ? 'bullish_rectangle'
+      : priorTrend === 'down' ? 'bearish_rectangle'
+      : 'rectangle';
+    direction = 'bilateral'; type = priorTrend ? 'continuation' : 'uncertain';
+    note = priorTrend
+      ? `A trading range bounded by two horizontal lines, entered from ${priorTrend === 'up' ? 'an uptrend' : 'a downtrend'}. `
+        + `The ${priorTrend === 'up' ? 'upward' : 'downward'} break is the continuation; the other way is still open and is not planned away. `
+        + 'Prone to false breakouts either way.'
+      : 'A trading range bounded by two horizontal lines, with no clear trend into it. Prone to false breakouts.';
     avoid = 'Price action inside a range is close to random. Beware of finding further patterns in it — that is where most imaginary patterns come from.';
   } else if (hSlope > flat_slope_pct && lSlope > flat_slope_pct && converging && lSlope > hSlope) {
     // Both rise, and the LOWER line rises faster — that is what closes the
@@ -1421,6 +1461,37 @@ export const STRUCTURAL_STATS = {
       throwback_pullback_pct_range: [64, 66], meeting_target_pct_range: [78, 79], sample: '900-1000+', variants: 'tops and bottoms',
     },
   },
+  // Typed rectangles carry the SAME measured figures. Bulkowski's sample is
+  // rectangle tops and bottoms with both breakout directions; naming the
+  // pattern for the trend it interrupts does not create a new base rate, and
+  // pretending it did would be the exact error these stats exist to prevent.
+  // Note what the numbers say: the upward break is much the better one
+  // regardless of which way price arrived (15% failure vs 24-34%), so a
+  // bearish rectangle's continuation leg is the WEAKER of its two legs.
+  bullish_rectangle: {
+    downward: {
+      rank_range: '14-32/36', break_even_failure_pct_range: [24, 34], average_move_pct_range: [13, 16],
+      throwback_pullback_pct_range: [64, 66], meeting_target_pct_range: [54, 55], sample: '900-1000+',
+      variants: 'tops and bottoms', measured_on: 'rectangle — not typed by prior trend',
+    },
+    upward: {
+      rank_range: '4-8/39', break_even_failure_pct_range: [15, 15], average_move_pct_range: [48, 51],
+      throwback_pullback_pct_range: [64, 66], meeting_target_pct_range: [78, 79], sample: '900-1000+',
+      variants: 'tops and bottoms', measured_on: 'rectangle — not typed by prior trend',
+    },
+  },
+  bearish_rectangle: {
+    downward: {
+      rank_range: '14-32/36', break_even_failure_pct_range: [24, 34], average_move_pct_range: [13, 16],
+      throwback_pullback_pct_range: [64, 66], meeting_target_pct_range: [54, 55], sample: '900-1000+',
+      variants: 'tops and bottoms', measured_on: 'rectangle — not typed by prior trend',
+    },
+    upward: {
+      rank_range: '4-8/39', break_even_failure_pct_range: [15, 15], average_move_pct_range: [48, 51],
+      throwback_pullback_pct_range: [64, 66], meeting_target_pct_range: [78, 79], sample: '900-1000+',
+      variants: 'tops and bottoms', measured_on: 'rectangle — not typed by prior trend',
+    },
+  },
   rising_wedge: {
     downward: {
       rank: '36/36', break_even_failure_pct: 51, average_move_pct: 9, throwback_pullback_pct: 72, meeting_target_pct: 32, sample: '1400+',
@@ -1527,7 +1598,13 @@ export const NOISE_BASELINE = {
   detections_per_walk: 0.78,
   walks_with_any_pattern_pct: 68,
   per_walk: {
-    rectangle: 0.3,
+    // Rectangles, measured over 200 walks when prior-trend typing split them
+    // into three names. Typing does not make the shape rarer — it distributes
+    // the same detections — so the three together are what the old single
+    // `rectangle: 0.3` figure covered.
+    rectangle: 0.065,
+    bullish_rectangle: 0.015,
+    bearish_rectangle: 0.035,
     falling_wedge: 0.18,
     inverse_head_and_shoulders: 0.13,
     rising_wedge: 0.08,
@@ -1566,7 +1643,8 @@ export const STRUCTURAL_PATTERNS = [
   'double_top', 'double_bottom', 'triple_top', 'triple_bottom',
   'head_and_shoulders', 'inverse_head_and_shoulders',
   'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
-  'rectangle', 'rising_wedge', 'falling_wedge', 'broadening_formation',
+  'rectangle', 'bullish_rectangle', 'bearish_rectangle',
+  'rising_wedge', 'falling_wedge', 'broadening_formation',
   'bull_flag', 'bear_flag', 'high_tight_flag',
   'bullish_pennant', 'bearish_pennant',
 ];

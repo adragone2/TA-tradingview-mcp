@@ -68,12 +68,17 @@ A hammer in the middle of a range is a bar with a long wick. The tool reports `p
 
 **Structural, from swings** — double and triple tops/bottoms, head-and-shoulders and its inverse.
 
-**Structural, from trend lines** — ascending/descending/symmetrical triangles, rectangles, rising/falling wedges, broadening formations, bull/bear flags. These require **at least two touches of each line**; fewer is two points and an opinion.
+**Structural, from trend lines** — ascending/descending/symmetrical triangles, rectangles, rising/falling wedges, broadening formations, bull/bear flags, bull/bear pennants. These require **at least two touches of each line**; fewer is two points and an opinion.
 
-Two that catch people out:
+**Channels** are separate — `findChannels`, not `patterns_detect`. The trend-line detector names a shape by whether its lines CONVERGE or DIVERGE, so parallel boundaries fell through the middle and were emitted as nothing.
+
+Three that catch people out:
 
 - A **rising wedge is bearish** and a **falling wedge is bullish** — each breaks *against* the direction of its own lines.
 - A **symmetrical triangle is bilateral**. Its breakout direction is not knowable in advance; it usually continues the prior trend. Do not assign it one.
+- A **pennant is not a flag**. Both are a pole plus a pause; the flag's pause is parallel, the pennant's CONVERGES. A pennant is also not a symmetrical triangle — the pole is what makes it a pennant, and a triangle has none.
+
+**Rectangles are typed by the trend they interrupt** — `bullish_rectangle`, `bearish_rectangle`, or plain `rectangle` when there was no clear trend into it. The name gives the continuation direction, but the pattern stays **bilateral**: both breakout legs are planned, because a range breaks either way. Note what Bulkowski's numbers say — the upward break is the better one regardless of approach (15% failure vs 24-34%), so a bearish rectangle's continuation leg is the *weaker* of its two.
 
 ## Reading the output
 
@@ -218,10 +223,12 @@ The first measurement was damning — five double tops and five double bottoms i
 
 `patterns_detect` returns `noise_check`. **Still quote it.** The floor is lower, not zero:
 
-- `rectangle` appears in **30%** of random walks
+- the three `rectangle` variants together at **~0.115 per walk**, the most permissive shape here
 - `falling_wedge` in 18%, `inverse_head_and_shoulders` in 13%
+- **channels** on **33.5%** of walks, and only **12%** survive three or more windows — so quote the stability count, never a single-window fit
+- **pennants: 0 in 200 walks**, against 8/8 on constructed truth. Tied with VCP as the most selective detector here, and the only structural shape whose absence from noise is total
 
-Those four are the ones to treat with suspicion. A double top is now worth reading; a rectangle in a choppy market is still mostly noise.
+Treat rectangles, wedges and unstable channels with suspicion. A double top is now worth reading; a rectangle in a choppy market is still mostly noise. A pennant is the one structural detection that has never been produced by noise.
 
 Each double top and bottom reports `valley_pct` and `separation_bars`. A valley barely over 10% is a marginal pattern — say so.
 

@@ -56,7 +56,7 @@ The consequence is uncomfortable and applies to most of what this toolchain dete
 
 | Setup family | Our detectors | At 2–20 days |
 |---|---|---|
-| **Continuation** | flags, triangles, wedges, rectangles, VCP, breakouts | **fighting** the documented effect |
+| **Continuation** | flags, pennants, triangles, wedges, rectangles, channels, VCP, breakouts | **fighting** the documented effect |
 | **Reversal** | double tops/bottoms, H&S, springs, divergence | **aligned** with it |
 
 **Almost every structural detector here is continuation-flavoured.** That is a systematic tilt into the weaker side of the boundary, and it was invisible until now.
@@ -188,7 +188,7 @@ Rules that decide whether any of this is reportable:
 - Divergence: prefer `divergence_survey`. One indicator out of four is weak, and in a strong trend divergence is normal rather than a warning.
 - **Candles carry Nison's context and confirmation rules in a `nison` block.** A hammer needs no confirmation; a hanging man does, and until the next bar closes beneath it the status is `awaiting_confirmation` — a hypothesis, not a signal. Check `context_ok` too: the same shape without its required prior trend is not the pattern.
 - Zones: read `total_found` before the list. Dozens exist; the returned ones are not rare.
-- **Structural patterns: read `noise_check` FIRST.** The noise floor is now 0.78 patterns per 200-bar random walk, down from 19.3, so a double top is worth reading. But `rectangle` still appears in 30% of random walks and the wedges in 8-18% — treat those four with suspicion, especially in a choppy regime.
+- **Structural patterns: read `noise_check` FIRST.** The noise floor is now 0.78 patterns per 200-bar random walk, down from 19.3, so a double top is worth reading. But the `rectangle` family still appears at ~0.115 per walk, channels on 33.5% (only 12% stable across three windows), and the wedges in 8-18% — treat those four with suspicion, especially in a choppy regime.
 - **Before naming a wedge or triangle, run two checks.** Both are cheap and both have killed a pattern here.
   1. **Sensitivity sweep** — re-run `patterns_detect` at lookback 3/4/5/6/8. A pattern present at only one or two settings is a fit, not a shape. On CSCO five settings gave four different answers, including two *confirmed* patterns pointing opposite ways.
   2. **Pivot-width check** — the detector's `converging: true` describes its own fitted boundaries, not the price. Take the pivot highs and lows in the window and measure the width at the first pair and the last pair. On CSCO the detector reported 17.18 → 9.02 (converging); the pivots gave 13.87 → 14.08 (**diverging**). No wedge existed.

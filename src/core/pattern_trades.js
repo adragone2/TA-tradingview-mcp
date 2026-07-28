@@ -48,6 +48,8 @@ export const PATTERN_FAMILY = {
   descending_triangle: 'bilateral',
   symmetrical_triangle: 'bilateral',
   rectangle: 'bilateral',
+  bullish_rectangle: 'bilateral',
+  bearish_rectangle: 'bilateral',
   broadening_formation: 'bilateral',
   ascending_channel: 'channel',
   descending_channel: 'channel',
@@ -153,10 +155,23 @@ export function tradePlan(p, { atr = null } = {}) {
   const live = Object.fromEntries(Object.entries(legs).filter(([, v]) => v));
   const measured = p.measured || null;
 
+  // A typed rectangle names the trend it interrupts, so one of its two legs is
+  // the continuation and the other is the reversal. Both stay planned — the
+  // pattern still breaks either way — but saying which is which is the whole
+  // point of typing it.
+  const primaryLeg = p.pattern === 'bullish_rectangle' ? 'long'
+    : p.pattern === 'bearish_rectangle' ? 'short'
+    : null;
+
   return {
     family,
     bilateral: family === 'bilateral',
     legs: live,
+    ...(primaryLeg && live[primaryLeg] ? {
+      primary_leg: primaryLeg,
+      primary_note: `${primaryLeg === 'long' ? 'Upward' : 'Downward'} break continues the trend the range interrupted. `
+        + 'The other leg is the reversal and is still planned — a typed rectangle is not a one-way pattern.',
+    } : {}),
     status: p.status ?? null,
     tradeable_now: p.status === 'confirmed',
     status_note: p.status === 'forming'
