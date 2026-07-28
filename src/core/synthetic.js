@@ -128,6 +128,19 @@ export const GENERATORS = {
   bear_flag: ({ per = 6 } = {}) =>
     [...legs([140, 130], per * 2), ...legs([130, 100], per * 2), ...legs([100, 107], per)],
 
+
+  // A pennant is a pole plus a CONVERGING pause — the shape a flag is not.
+  bullish_pennant: ({ per = 6 } = {}) => [
+    ...legs([60, 70], per * 2), ...legs([70, 100], per * 2),
+    // converging zig-zag: swings shrink toward the apex
+    ...legs([100, 93, 99, 95, 98, 96, 97.5], 2),
+  ],
+
+  bearish_pennant: ({ per = 6 } = {}) => [
+    ...legs([140, 130], per * 2), ...legs([130, 100], per * 2),
+    ...legs([100, 107, 101, 105, 102, 104, 102.5], 2),
+  ],
+
   high_tight_flag: ({ per = 6 } = {}) =>
     [...legs([48, 50], per * 2), ...legs([50, 100], per * 3), ...legs([100, 92], per)],
 };

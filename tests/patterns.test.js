@@ -739,7 +739,11 @@ describe('STRUCTURAL_STATS — Bulkowski measurements from thepatternsite.com', 
     for (const [pat, dirs] of Object.entries(STRUCTURAL_STATS)) {
       for (const [dir, s] of Object.entries(dirs)) {
         for (const [k, v] of Object.entries(s)) {
-          if (k === 'sample' || k === 'variants') continue;
+          // Non-numeric provenance fields. `measured_on`, `proxy` and `caveat`
+          // exist because pennants have no measured statistics of their own and
+          // borrow the flag figures — the borrowing has to be visible wherever
+          // the numbers are, not just in a comment.
+          if (['sample', 'variants', 'measured_on', 'proxy', 'caveat'].includes(k)) continue;
           if (k === 'rank') {
             if (v !== null) assert.match(v, /^\d+\/\d+$/, `${pat}.${dir}.rank = ${v}`);
             continue;

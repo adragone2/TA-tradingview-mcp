@@ -54,6 +54,8 @@ import * as kernel from '../src/core/kernel.js';
 import * as lmw from '../src/core/lmw_patterns.js';
 import * as costs from '../src/core/costs.js';
 import * as breadth from '../src/core/breadth.js';
+import { findChannels } from '../src/core/channels.js';
+import { tradePlans } from '../src/core/pattern_trades.js';
 
 export const SCHEMA_VERSION = '1.0';
 
@@ -192,6 +194,7 @@ function assess(bars, spy) {
   for (const lb of [3, 4, 5, 6, 8]) sweep[lb] = safe(() => P.detectPatterns(bars, { lookback: lb }).structural.map((p) => p.pattern), []);
   const stable = [...new Set(Object.values(sweep).flat())]
     .filter((n) => Object.values(sweep).filter((l) => l.includes(n)).length >= 3);
+  const ch = safe(() => findChannels(bars), { found: false, channels: [] });
   const kp = safe(() => kernel.findKernelPivots(bars.slice(-60)), { pivots: [] });
   const width = safe(() => kernel.pivotWidth(kp.pivots), { verdict: 'indeterminate' });
   const lmwOut = safe(() => lmw.detectLmwPatterns(bars, { window: 38 }), { patterns: [] });
@@ -209,6 +212,28 @@ function assess(bars, spy) {
     lmw_second_opinion_count: (lmwOut.patterns || []).length,
     lmw_noise_floor_pct: 43.4,
     noise_check: (pats.noise_check || []).map((n) => n.verdict),
+  };
+
+  // ── channels ──────────────────────────────────────────────────────────────
+  // A separate detector because a channel is neither converging nor diverging,
+  // so the trendline branch emitted nothing for it. Noise floor 32% any /
+  // 11.5% stable — looser than the other shapes, and reported as such.
+  const channels = {
+    found: ch.found ?? false,
+    direction: ch.direction ?? null,
+    stable: ch.stable ?? false,
+    windows_agreeing: ch.windows_agreeing ?? 0,
+    windows_tested: ch.windows_tested ?? null,
+    best: ch.best ? {
+      pattern: ch.best.pattern, window: ch.best.window, lookback: ch.best.lookback,
+      upper_now: ch.best.upper_now, lower_now: ch.best.lower_now,
+      slope_ratio: ch.best.slope_ratio, r2_upper: ch.best.r2_upper, r2_lower: ch.best.r2_lower,
+      containment: ch.best.containment, width_in_atr: ch.best.width_in_atr,
+      position_in_channel: ch.best.position_in_channel, position_note: ch.best.position_note,
+      entry: ch.best.entry ?? null,
+    } : null,
+    noise_floor_pct: 32,
+    stability_note: ch.stability_note ?? ch.note ?? null,
   };
 
   // ── candlesticks ──────────────────────────────────────────────────────────
@@ -370,6 +395,20 @@ function assess(bars, spy) {
     on_support_reading: pressureSup?.interpretation ? pressureSup.interpretation.slice(0, 160) : null,
   };
 
+  // ── trade_plans ───────────────────────────────────────────────────────────
+  // Entry, stop and target for every detected pattern. Bilateral shapes carry
+  // BOTH legs, because a triangle does not know which way it breaks.
+  const atrForPlans = (() => {
+    const tr = [];
+    for (let i = 1; i < bars.length; i++) {
+      tr.push(Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - bars[i - 1].close), Math.abs(bars[i].low - bars[i - 1].close)));
+    }
+    return tr.slice(-14).reduce((a, b) => a + b, 0) / 14;
+  })();
+  const trade_plans = safe(() => tradePlans(pats.structural || [], { atr: atrForPlans })
+    .map((x) => ({ pattern: x.pattern, status: x.status, family: x.plan.family, bilateral: !!x.plan.bilateral,
+      tradeable_now: x.plan.tradeable_now ?? null, legs: x.plan.legs || {}, base_rate: x.plan.base_rate ?? null })), []);
+
   return {
     price: r2(px, 4),
     as_of: iso(bars.at(-1).time),
@@ -380,8 +419,9 @@ function assess(bars, spy) {
     chart_patterns, candlesticks, momentum: momentumBlock, relative_strength,
     volume_analysis, divergence: divergenceBlock, wyckoff, elliott, fibonacci,
     liquidity, volatility_contraction, horizon: horizonBlock, risk, costs: costsBlock,
-    level_pressure,
+    level_pressure, channels, trade_plans,
     _raw_patterns: pats.structural || [],   // not serialised; used only for drawing
+    _raw_channel: ch.best || null,
   };
 }
 
@@ -548,9 +588,12 @@ async function drawPatternGeometry(p, bars, group, put) {
   }
 
   // ── flags: pole as a line, consolidation as a box ─────────────────────────
-  if (m.pole_pct != null && m.flag_bars != null) {
+  // Pennants share this construction — they are a pole plus a pause — but
+  // name the pause `pennant_bars`, so both keys are accepted here.
+  const pauseBars = m.flag_bars ?? m.pennant_bars ?? null;
+  if (m.pole_pct != null && pauseBars != null) {
     const endIdx = idxOf(p.to_time);
-    const flagStartIdx = Math.max(0, endIdx - m.flag_bars);
+    const flagStartIdx = Math.max(0, endIdx - pauseBars);
     const poleStartIdx = Math.max(0, flagStartIdx - (m.pole_bars || 0));
     const poleStart = p.direction === 'bullish' ? bars[poleStartIdx].low : bars[poleStartIdx].high;
     const poleEnd = p.direction === 'bullish' ? (m.flag_high ?? bars[flagStartIdx].high) : (m.flag_low ?? bars[flagStartIdx].low);
@@ -564,7 +607,7 @@ async function drawPatternGeometry(p, bars, group, put) {
         point: { price: r2(m.flag_low, 4), time: bars[flagStartIdx].time },
         point2: { price: r2(m.flag_high, 4), time: p.to_time },
         overrides: JSON.stringify({ color: COL, backgroundColor: 'rgba(66,165,245,0.12)', linewidth: 1 }),
-        text: `${label} — ${m.flag_bars} bars, ${m.retrace_pct}% retrace`, group }), `pattern ${p.pattern} flag`);
+        text: `${label} — ${pauseBars} bars, ${m.retrace_pct}% retrace`, group }), `pattern ${p.pattern} pause`);
     }
     return;
   }
@@ -599,7 +642,7 @@ async function drawPatternGeometry(p, bars, group, put) {
 }
 
 /** Draw the report's own findings on the chart, so the two can be read together. */
-async function drawFindings(ticker, a, taRow, side, rawPatterns, bars) {
+async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, channel) {
   const group = `sunday-${String(ticker).replace(/^.*:/, '')}`;
   const drawn = { group, shapes: 0, items: [], errors: [] };
   try { await drawing.clearAll({ scope: 'mcp', group }); } catch { /* first run */ }
@@ -639,6 +682,47 @@ async function drawFindings(ticker, a, taRow, side, rawPatterns, bars) {
   for (const p of rawPatterns) {
     if (!a.chart_patterns.stable_across_sensitivities.includes(p.pattern)) continue;
     await drawPatternGeometry(p, bars, group, put);
+  }
+
+  // The CHANNEL, as two parallel boundaries anchored to real pivots.
+  if (channel) {
+    const seg = bars.slice(-channel.window);
+    const t0 = seg[0].time, t1 = seg[seg.length - 1].time, n = seg.length - 1;
+    const col = channel.direction === 'descending' ? '#ef5350' : channel.direction === 'ascending' ? '#26a69a' : '#78909c';
+    await put(() => drawing.drawShape({ shape: 'trend_line',
+      point: { price: channel.upper_start, time: t0 }, point2: { price: r2(channel.slope_used * n + channel.upper_start, 4), time: t1 },
+      overrides: JSON.stringify({ linecolor: col, linewidth: 2 }),
+      text: `${channel.pattern} upper`, group }), `channel ${channel.direction} upper`);
+    await put(() => drawing.drawShape({ shape: 'trend_line',
+      point: { price: channel.lower_start, time: t0 }, point2: { price: r2(channel.slope_used * n + channel.lower_start, 4), time: t1 },
+      overrides: JSON.stringify({ linecolor: col, linewidth: 2 }),
+      text: `${channel.pattern} lower`, group }), `channel ${channel.direction} lower`);
+  }
+
+  // ENTRY / STOP / TARGET for whichever plan is actually live.
+  //
+  // Only CONFIRMED patterns get their levels drawn. A forming pattern's entry
+  // is a hypothesis, and putting three bright lines on a chart for a shape
+  // that has not completed is how a hypothesis starts looking like a plan.
+  for (const tp of (a.trade_plans || [])) {
+    if (!tp.tradeable_now) continue;
+    for (const [side, l] of Object.entries(tp.legs || {})) {
+      if (!l || l.entry == null) continue;
+      const tag = tp.bilateral ? `${tp.pattern} ${side}` : tp.pattern;
+      await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: l.entry },
+        overrides: JSON.stringify({ linecolor: '#ffb300', linewidth: 3 }),
+        text: `ENTRY ${side} ${l.entry} — ${tag}`, group }), `entry ${tag}`);
+      if (l.stop != null) {
+        await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: l.stop },
+          overrides: JSON.stringify({ linecolor: '#d50000', linewidth: 1, linestyle: 2 }),
+          text: `STOP ${l.stop} — ${tag}`, group }), `stop ${tag}`);
+      }
+      if (l.target != null) {
+        await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: l.target },
+          overrides: JSON.stringify({ linecolor: '#00c853', linewidth: 1, linestyle: 2 }),
+          text: `TARGET ${l.target} (R:R ${l.rr}) — ${tag}`, group }), `target ${tag}`);
+      }
+    }
   }
   // VCP pivot.
   if (a.volatility_contraction.vcp_qualifies && a.volatility_contraction.pivot) {
@@ -731,9 +815,10 @@ for (const item of queue) {
     const ours = ourAssessment(a);
     row.symbol = symbol; row.resolution = resolution; row.bars = bars.length; row.status = 'ok';
     const rawPatterns = a._raw_patterns; delete a._raw_patterns;
+    const rawChannel = a._raw_channel; delete a._raw_channel;
     row.assessment = a; row.our_view = ours;
     row.ta_validation = validateTa(a, ours, { side: item.side, taRow: item.taRow });
-    if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars);
+    if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars, rawChannel);
     log(`${ours.bias}/${row.ta_validation.agreement}${row.drawings ? ` (${row.drawings.shapes} drawn)` : ''}`);
   } catch (e) {
     row.error = e.message;

@@ -62,6 +62,12 @@ export const CHANNEL_DEFAULTS = {
   flat_slope_pct: 0.05,      // per-bar % below which a slope counts as flat
   min_r2: 0.85,              // least-squares fit quality on EACH boundary — the real discriminator
   max_width_atr: 6,          // a channel wider than this contains everything and says nothing
+  // FLAT boundaries only: max pivot scatter about the line, in bar ranges.
+  // R2 cannot judge a horizontal boundary (see channelIn), so scatter is the
+  // gate instead. CALIBRATED, not guessed: at 1.0 the flat path fired on 28.5%
+  // of random walks on its own and took the detector from 32% to 58.5%. At 0.30
+  // horizontal contributes 1.5% and the total returns to 33.5%.
+  flat_max_rms_atr: 0.30,
 };
 
 
@@ -166,10 +172,24 @@ export function channelIn(bars, { window = 30, lookback = 2, opts = CHANNEL_DEFA
   const fh = fit(highs), fl = fit(lows);
   if (!fh || !fl) return null;
 
-  // Same sign, and close enough in magnitude to call parallel.
-  if (fh.m * fl.m <= 0) return null;
-  const ratio = fl.m / fh.m;
-  if (Math.abs(ratio - 1) > opts.parallel_tolerance) return null;
+  // PARALLEL. The obvious test — same sign, ratio near 1 — is correct for a
+  // sloping channel and completely wrong for a flat one. On a constructed
+  // horizontal channel the two fitted slopes came out +0.0012 and -0.00004
+  // per bar: both flat to any eye, but opposite in sign and a ratio of -0.03,
+  // so the sign gate and the ratio gate each rejected it. `horizontal_channel`
+  // and its entry block were unreachable.
+  //
+  // A ratio is the wrong instrument near zero. When BOTH slopes are flat in
+  // percent-of-price terms they are parallel by definition, so the ratio is
+  // skipped and the flatness itself is the test.
+  const pxRef = seg[seg.length - 1].close;
+  const pctPerBar = (m) => (pxRef > 0 ? Math.abs(m / pxRef) * 100 : Infinity);
+  const bothFlat = pctPerBar(fh.m) < opts.flat_slope_pct && pctPerBar(fl.m) < opts.flat_slope_pct;
+  const ratio = fh.m !== 0 ? fl.m / fh.m : null;
+  if (!bothFlat) {
+    if (fh.m * fl.m <= 0) return null;
+    if (ratio == null || Math.abs(ratio - 1) > opts.parallel_tolerance) return null;
+  }
 
   // FIT QUALITY is the real discriminator, and it is measured on the
   // least-squares lines BEFORE they are turned into envelopes. Measured on
@@ -183,7 +203,30 @@ export function channelIn(bars, { window = 30, lookback = 2, opts = CHANNEL_DEFA
     return ssTot === 0 ? 1 : 1 - ssRes / ssTot;
   };
   const r2Upper = r2(highs, fh), r2Lower = r2(lows, fl);
-  if (r2Upper < opts.min_r2 || r2Lower < opts.min_r2) return null;
+
+  // R² is the wrong gate for a FLAT boundary, and not marginally so. It asks
+  // "how much of the variance does the line explain?" — but a horizontal
+  // boundary's pivots have almost no variance to explain, so a textbook flat
+  // channel scores near zero and gets rejected for being exactly what it is.
+  //
+  // When both slopes are flat, the question is not "does the line explain the
+  // scatter" but "is the scatter small". Measured against typical bar range so
+  // it scales across instruments, same as the width gate below.
+  const barRanges = seg.map((b) => b.high - b.low);
+  const atrSeg = barRanges.reduce((a, b) => a + b, 0) / barRanges.length;
+  const rms = (pts, f) => Math.sqrt(
+    pts.reduce((a, p) => a + (p.y - (f.m * p.x + f.b)) ** 2, 0) / pts.length,
+  );
+  const rmsUpper = rms(highs, fh), rmsLower = rms(lows, fl);
+
+  if (bothFlat) {
+    // A flat boundary must be TIGHT: its pivots scatter less than one typical
+    // bar range around the line. Loose scatter is a range, not a channel.
+    if (!(atrSeg > 0)) return null;
+    if (rmsUpper / atrSeg > opts.flat_max_rms_atr || rmsLower / atrSeg > opts.flat_max_rms_atr) return null;
+  } else if (r2Upper < opts.min_r2 || r2Lower < opts.min_r2) {
+    return null;
+  }
 
   // ENVELOPE, not a centre line. A least-squares fit through the pivot highs
   // runs THROUGH them — about half sit above it — so using it as the upper
@@ -210,8 +253,7 @@ export function channelIn(bars, { window = 30, lookback = 2, opts = CHANNEL_DEFA
 
   // WIDTH. A channel wide enough to contain anything says nothing. Measured
   // against typical bar range, so it scales across instruments.
-  const ranges = seg.map((b) => b.high - b.low);
-  const atr = ranges.reduce((a, b) => a + b, 0) / ranges.length;
+  const atr = atrSeg;
   const widthInAtr = atr > 0 ? (upperNow - lowerNow) / atr : Infinity;
   if (widthInAtr > opts.max_width_atr) return null;
 
@@ -235,11 +277,20 @@ export function channelIn(bars, { window = 30, lookback = 2, opts = CHANNEL_DEFA
     containment: round(containment, 3),
     r2_upper: round(r2Upper, 3),
     r2_lower: round(r2Lower, 3),
+    // Reported for every channel, but only GATED on when the boundaries are
+    // flat — where R2 is not a meaningful measure of fit.
+    rms_upper_in_atr: round(atrSeg > 0 ? rmsUpper / atrSeg : null, 3),
+    rms_lower_in_atr: round(atrSeg > 0 ? rmsLower / atrSeg : null, 3),
+    fit_gated_on: bothFlat ? 'scatter (flat boundaries — R2 is undefined on a constant)' : 'r2',
     width_in_atr: round(widthInAtr, 2),
     slope_upper_per_bar: round(fh.m),
     slope_lower_per_bar: round(fl.m),
     slope_used: round(slope),
     slope_ratio: round(ratio, 3),
+    parallel_by: bothFlat ? 'flatness' : 'slope_ratio',
+    // Sort key for picking the best fit. A ratio is meaningless when both
+    // slopes are flat, so flatness scores as perfectly parallel.
+    parallel_deviation: round(bothFlat ? 0 : Math.abs(ratio - 1), 4),
     slope_pct_per_bar: round(midSlopePct, 4),
     upper_now: round(upperNow),
     lower_now: round(lowerNow),
@@ -282,7 +333,8 @@ export function findChannels(bars, options = {}) {
     return {
       found: false, channels: [], best: null,
       note: 'No parallel channel across any window or sensitivity tested.',
-      windows_tested: opts.windows, lookbacks_tested: opts.lookbacks,
+      windows_tested: opts.windows.length * opts.lookbacks.length,
+      windows: opts.windows, lookbacks: opts.lookbacks,
       noise_baseline: CHANNEL_NOISE_BASELINE,
     };
   }
@@ -291,7 +343,7 @@ export function findChannels(bars, options = {}) {
   const dominant = Object.entries(byDirection).sort((a, b) => b[1] - a[1])[0][0];
   const agreeing = hits.filter((c) => c.direction === dominant);
   // Prefer the most parallel fit among the agreeing windows.
-  const best = agreeing.slice().sort((a, b) => Math.abs(a.slope_ratio - 1) - Math.abs(b.slope_ratio - 1))[0];
+  const best = agreeing.slice().sort((a, b) => a.parallel_deviation - b.parallel_deviation)[0];
 
   return {
     found: true,
@@ -317,6 +369,30 @@ export function findChannels(bars, options = {}) {
  * exactly what the rest of this repo exists to avoid.
  */
 export const CHANNEL_NOISE_BASELINE = {
-  measured: false,
-  note: 'Run scripts/channel-noise.js to populate. Until then, treat any detection as unmeasured.',
+  measured: true,
+  script: 'scripts/channel-noise.js',
+  walks: 200,
+  bars_per_walk: 200,
+  any_channel_pct: 33.5,
+  stable_channel_pct: 12.0,
+  by_direction: { descending: 40, ascending: 24, horizontal: 3 },
+  // The flat-boundary path was calibrated against this number rather than
+  // eyeballed. Its first version used a scatter gate of 1.0 bar range and took
+  // the detector from 32.0% to 58.5% on noise, horizontal alone accounting for
+  // 28.5%. Tightening to 0.30 put it back to 33.5% while still finding a
+  // constructed horizontal channel.
+  flat_path_cost: { gate_1_0: 58.5, gate_0_30: 33.5, without_flat_path: 32.0 },
+  before_containment_and_r2: { any_channel_pct: 93.5, stable_channel_pct: 64.0 },
+  note:
+    'A channel is found on about a THIRD of random walks, and one in nine walks '
+    + 'produces a "stable" one across three or more windows. So a single detection '
+    + 'is weak evidence — quote the stability count, and treat an unstable channel '
+    + 'as a fit rather than a shape. The pre-gate figures show why the R2 and width '
+    + 'tests exist: without them the detector fired on 93.5% of noise.',
+  context: {
+    structural_patterns_pct: 68,
+    lmw_definitions_pct: 43.4,
+    vcp_pct: 0,
+    pennants_pct: 0,
+  },
 };

@@ -752,6 +752,139 @@ function flagPatterns(bars, {
 }
 
 /**
+ * Pennants — the flag's sibling, and the shape this detector was missing.
+ *
+ * A flag and a pennant share a POLE. What differs is the pause:
+ *
+ *   FLAG     the consolidation runs roughly PARALLEL — a small channel
+ *            leaning against the pole
+ *   PENNANT  the consolidation CONVERGES — a small symmetrical triangle
+ *
+ * Because `flagPatterns` never tested the shape of the pause, a pennant either
+ * came back as a flag or as nothing at all. Neither is right: they are drawn
+ * differently, and the convergence is the whole visual signature.
+ *
+ * A pennant is also distinct from a symmetrical triangle, which has no pole
+ * and is a standalone bilateral shape. The pole is what makes a pennant a
+ * CONTINUATION pattern with a directional bias.
+ *
+ * Convergence is measured by halving the consolidation and comparing the range
+ * of each half. That is cruder than fitting two boundaries, and deliberately
+ * so — over a 5-15 bar pause there are rarely enough pivots to fit anything,
+ * which is exactly the trap the channel detector fell into.
+ *
+ * Measure rule: the pole projected from the breakout, as for a flag.
+ */
+function pennantPatterns(bars, {
+  min_pole_pct = 15,
+  max_pole_bars = 25,
+  min_pennant_bars = 5,
+  max_pennant_bars = 15,
+  max_retrace_pct = 50,
+  convergence_ratio = 0.7,   // second half's range must be this fraction of the first's
+  min_pause_turns = 3,       // direction changes inside the pause — a pennant oscillates, a drift does not
+} = {}) {
+  const out = [];
+  const n = bars.length;
+  if (n < 20) return out;
+  const last = bars[n - 1];
+
+  for (let plen = min_pennant_bars; plen <= Math.min(max_pennant_bars, n - 10); plen++) {
+    const pen = bars.slice(n - plen, n);
+    const penHigh = Math.max(...pen.map((b) => b.high));
+    const penLow = Math.min(...pen.map((b) => b.low));
+
+    // CONVERGENCE — the test that separates a pennant from a flag.
+    const half = Math.floor(plen / 2);
+    if (half < 2) continue;
+    const a = pen.slice(0, half), b = pen.slice(half);
+    const rangeA = Math.max(...a.map((x) => x.high)) - Math.min(...a.map((x) => x.low));
+    const rangeB = Math.max(...b.map((x) => x.high)) - Math.min(...b.map((x) => x.low));
+    if (!(rangeA > 0) || rangeB > rangeA * convergence_ratio) continue;
+
+    // OSCILLATION. Convergence alone is not enough, because nothing forces the
+    // pause window to begin where the pole ends. A window that straddles the
+    // boundary — the pole's last steep leg as its "first half", the quiet drift
+    // as its "second half" — narrows on that measure for a reason that has
+    // nothing to do with a pennant. On a constructed bull_flag exactly this
+    // produced a bullish_pennant at convergence 0.697, sliding under a 0.70
+    // gate, with an 11-bar pause covering a 25-bar pole's tail.
+    //
+    // A real pennant zig-zags between two converging boundaries. A pole leg
+    // followed by a one-way drift changes direction once. Counting the turns
+    // separates them, and does it on the shape rather than on a threshold.
+    let turns = 0;
+    for (let k = 2; k < pen.length; k++) {
+      const d1 = pen[k - 1].close - pen[k - 2].close;
+      const d2 = pen[k].close - pen[k - 1].close;
+      if (d1 !== 0 && d2 !== 0 && Math.sign(d1) !== Math.sign(d2)) turns++;
+    }
+    if (turns < min_pause_turns) continue;
+
+    // Largest qualifying pole immediately before it, same rule as flags.
+    let bestPole = null;
+    for (let poleLen = 5; poleLen <= Math.min(max_pole_bars, n - plen); poleLen++) {
+      const p0 = bars.slice(n - plen - poleLen, n - plen);
+      if (p0.length < 5) continue;
+      const mv = ((p0[p0.length - 1].close - p0[0].close) / p0[0].close) * 100;
+      if (Math.abs(mv) < min_pole_pct) continue;
+      if (!bestPole || Math.abs(mv) > Math.abs(bestPole.movePct)) bestPole = { pole: p0, poleLen, movePct: mv };
+    }
+    if (!bestPole) continue;
+
+    const { pole, poleLen, movePct } = bestPole;
+    const poleEnd = pole[pole.length - 1].close;
+    const poleRange = Math.abs(poleEnd - pole[0].close);
+    const up = movePct > 0;
+
+    const retrace = up ? (poleEnd - penLow) / poleRange : (penHigh - poleEnd) / poleRange;
+    if (!(retrace >= 0 && retrace * 100 <= max_retrace_pct)) continue;
+
+    const completion = up ? penHigh : penLow;
+    const status = up
+      ? (last.close > completion ? 'confirmed' : 'forming')
+      : (last.close < completion ? 'confirmed' : 'forming');
+
+    out.push({
+      pattern: up ? 'bullish_pennant' : 'bearish_pennant',
+      type: 'continuation',
+      direction: up ? 'bullish' : 'bearish',
+      status,
+      bars: plen + poleLen,
+      bars_ago: 0,
+      completion_level: round(completion),
+      target: round(up ? completion + poleRange : completion - poleRange),
+      target_basis: 'the pole projected from the breakout, as for a flag',
+      measurements: {
+        pole_pct: round(movePct, 2),
+        pole_bars: poleLen,
+        pennant_bars: plen,
+        retrace_pct: round(retrace * 100, 1),
+        flag_high: round(penHigh),      // named for the shared trade construction
+        flag_low: round(penLow),
+        range_first_half: round(rangeA),
+        range_second_half: round(rangeB),
+        convergence: round(rangeB / rangeA, 3),
+        pause_turns: turns,
+      },
+      from_time: pole[0].time,
+      to_time: last.time,
+      note: 'A converging pause attached to a sharp move. Bulkowski does not measure pennants separately from flags, so '
+        + 'treat the ordinary-flag base rate as the closest available: 44% fail to move even 5%.',
+      base_rate_warning: 'No pennant-specific measured statistics exist. The flag figures are the nearest proxy and they are poor.',
+    });
+  }
+
+  // Best candidate per name, by pole size — same rule as flags.
+  const best = new Map();
+  for (const p of out) {
+    const prev = best.get(p.pattern);
+    if (!prev || Math.abs(p.measurements.pole_pct) > Math.abs(prev.measurements.pole_pct)) best.set(p.pattern, p);
+  }
+  return [...best.values()];
+}
+
+/**
  * Bulkowski's identification guidelines, as thresholds.
  *
  * Detection previously required only that two swings sat within a price
@@ -1208,6 +1341,33 @@ export const STRUCTURAL_STATS = {
       rank: null, break_even_failure_pct: 44, average_move_pct: 9, throwback_pullback_pct: null, meeting_target_pct: 46, sample: 'hundreds',
     },
   },
+  // Pennants carry the FLAG figures, and say so in every field that matters.
+  //
+  // Bulkowski does not measure pennants separately from flags. The honest
+  // options were to leave them without statistics — which the coverage test
+  // correctly rejects, because a pattern with no base rate quietly reads as a
+  // pattern with a good one — or to borrow the nearest measured proxy and
+  // label the borrowing. This is the second. Nothing here was measured on a
+  // pennant, and `measured_on` says so wherever these numbers are quoted.
+  bullish_pennant: {
+    upward: {
+      rank: null, break_even_failure_pct: 44, average_move_pct: 9, throwback_pullback_pct: null,
+      meeting_target_pct: 46, sample: 'hundreds',
+      measured_on: 'bull_flag — NOT pennants',
+      proxy: true,
+      caveat: 'No pennant-specific measured statistics exist. These are the ordinary-flag figures, '
+        + 'and they are poor: 44% fail to move even 5% past the breakout.',
+    },
+  },
+  bearish_pennant: {
+    downward: {
+      rank: null, break_even_failure_pct: 45, average_move_pct: 8, throwback_pullback_pct: null,
+      meeting_target_pct: 46, sample: 'hundreds',
+      measured_on: 'bear_flag — NOT pennants',
+      proxy: true,
+      caveat: 'No pennant-specific measured statistics exist. These are the ordinary-flag figures.',
+    },
+  },
   descending_triangle: {
     downward: {
       rank: '15/36', break_even_failure_pct: 23, average_move_pct: 15, throwback_pullback_pct: 58, meeting_target_pct: 50, sample: '1300+',
@@ -1353,6 +1513,17 @@ export function statsFor(pattern, { direction = null } = {}) {
 export const NOISE_BASELINE = {
   bars: 200,
   walks: 40,
+  // Pennants, measured separately over 200 walks when they were added:
+  // 0 detections, against 8/8 on constructed truth for both directions.
+  // That ties VCP as the most selective shape here.
+  pennants_per_walk: 0,
+  pennant_detection_on_truth_pct: 100,
+  // A pennant must not simply be a flag seen generously. Measured after the
+  // oscillation gate: constructed bull_flag, bear_flag and high_tight_flag are
+  // each detected 8/8 and cross-detected as a pennant 0/8. Before the gate,
+  // bull_flag also returned bullish_pennant — the pause window had swallowed
+  // the pole's last leg and converged for the wrong reason.
+  flag_cross_detected_as_pennant_pct: 0,
   detections_per_walk: 0.78,
   walks_with_any_pattern_pct: 68,
   per_walk: {
@@ -1397,6 +1568,7 @@ export const STRUCTURAL_PATTERNS = [
   'ascending_triangle', 'descending_triangle', 'symmetrical_triangle',
   'rectangle', 'rising_wedge', 'falling_wedge', 'broadening_formation',
   'bull_flag', 'bear_flag', 'high_tight_flag',
+  'bullish_pennant', 'bearish_pennant',
 ];
 
 /**
@@ -1441,6 +1613,7 @@ export function detectPatterns(bars, {
     ...structuralPatterns(bars, swings, opts),
     ...trendlinePatterns(bars, swings, { window_bars, flat_slope_pct, min_touches: 2 }),
     ...flagPatterns(bars, {}),
+    ...pennantPatterns(bars, {}),
   ];
 
   // Age every pattern by how long ago it finished forming. Without this the
