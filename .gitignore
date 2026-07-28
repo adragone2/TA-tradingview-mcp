@@ -20,3 +20,6 @@ books/
 
 # Exported bar data — regenerable from the chart
 exports/
+
+# Weekly review reports — regenerated each run, not source
+reports/

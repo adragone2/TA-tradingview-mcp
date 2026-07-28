@@ -26,6 +26,7 @@
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
 | [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
 | [docs/research-evidence.md](docs/research-evidence.md) | What the academic evidence supports, what didn't replicate, and what to build next |
+| [docs/sunday-review-schema.md](docs/sunday-review-schema.md) | Fixed output contract for the weekly review — TA imports this |
 | [docs/swing-evidence-review.md](docs/swing-evidence-review.md) | **Read first.** The owner's own evidence review — tiers A/B/C, and the horizon problem |
 | [docs/literature.md](docs/literature.md) | 25 papers, paper by paper — including the ones that contradict our own modules |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
@@ -42,6 +43,7 @@
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
+| Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
 | "What's the regime?" | `ta_regime` — also carries position sizing |
