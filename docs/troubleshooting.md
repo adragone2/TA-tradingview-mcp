@@ -74,10 +74,24 @@ node scripts/clear-orphans.js
 Dry run by default. It identifies our drawings by their **label text** rather
 than by ID, and removes only shapes whose text matches a format this toolchain
 generates — anything unrecognised, including every unlabelled hand-drawn shape,
-is left alone. Add `--apply` to delete, `--tickers A,B` to limit the sweep.
+is left alone.
 
-Measured on 2026-07-28: 670 shapes across 48 charts, 69 still trackable. It
-removed 545 and preserved 7 hand-drawn shapes.
+| Flag | Effect |
+|---|---|
+| `--apply` | Actually delete. Without it, nothing changes |
+| `--all-mcp` | Also remove drawings the registry still tracks. **Use this to clear the charts** — without it the sweep only recovers what was lost, and leaves the current run's drawings in place |
+| `--tickers A,B` | Limit the sweep |
+
+The sweep visits the union of TA's actionable list, the portfolio, the
+TradingView watchlist, and every symbol the registry has ever recorded drawing
+on. All four are needed: TA's list drifts, and a symbol that drops off it keeps
+its drawings forever otherwise — CARG survived a full sweep with 17 shapes for
+exactly that reason.
+
+Measured on 2026-07-28: 670 shapes across 48 charts, 69 still trackable. The
+first pass removed 545 orphans; a second with `--all-mcp` cleared the remaining
+tracked drawings. 133 symbols now sweep clean with 18 hand-drawn shapes
+preserved.
 
 **If you add or change a drawn label, append its format to
 `MCP_TEXT_SIGNATURES` in `src/core/orphans.js`.** A label with no signature

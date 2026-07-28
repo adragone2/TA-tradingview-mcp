@@ -23,22 +23,28 @@ const STORE_PATH = join(STORE_DIR, "drawings.json");
 
 // Bound the store so a long-running session can't grow it without limit.
 const MAX_ENTRIES = 2000;
+// Symbols are a few bytes each and are the only record of WHERE to look, so
+// they get their own, much larger bound.
+const MAX_SYMBOLS = 5000;
 
 function readStore(path = STORE_PATH) {
-  if (!existsSync(path)) return { entries: [] };
+  if (!existsSync(path)) return { entries: [], symbols: [] };
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return Array.isArray(parsed?.entries) ? parsed : { entries: [] };
+    if (!Array.isArray(parsed?.entries)) return { entries: [], symbols: [] };
+    return { entries: parsed.entries, symbols: Array.isArray(parsed.symbols) ? parsed.symbols : [] };
   } catch {
     // A corrupt store must never block drawing. Start over.
-    return { entries: [] };
+    return { entries: [], symbols: [] };
   }
 }
 
 function writeStore(store, path = STORE_PATH) {
   mkdirSync(dirname(path), { recursive: true });
   const entries = store.entries.slice(-MAX_ENTRIES);
-  writeFileSync(path, JSON.stringify({ entries }, null, 2));
+  // `symbols` is deliberately NOT derived from `entries` — see recordSymbol.
+  const symbols = (store.symbols || []).slice(-MAX_SYMBOLS);
+  writeFileSync(path, JSON.stringify({ entries, symbols }, null, 2));
 }
 
 /**
@@ -51,6 +57,9 @@ export function record(items, { group = null, symbol = null, path = STORE_PATH }
   if (!valid.length) return { recorded: 0, group };
 
   const store = readStore(path);
+  if (symbol && !(store.symbols || []).includes(symbol)) {
+    store.symbols = [...(store.symbols || []), symbol];
+  }
   const created_at = new Date().toISOString();
   for (const item of valid) {
     store.entries.push({
@@ -70,6 +79,24 @@ export function record(items, { group = null, symbol = null, path = STORE_PATH }
 export function list({ group = null, path = STORE_PATH } = {}) {
   const { entries } = readStore(path);
   return group ? entries.filter((e) => e.group === group) : entries;
+}
+
+/**
+ * Every symbol this tool has ever drawn on.
+ *
+ * APPEND-ONLY, and separate from `entries` on purpose. Entity IDs die with the
+ * TradingView session, so `prune` and `forget` legitimately empty `entries` —
+ * and when they do, the record of WHERE drawings were made goes with them.
+ * A cleanup sweep then has no way to find those charts: CARG kept 17 shapes
+ * through a full sweep because it had dropped off TA's actionable list and the
+ * registry no longer remembered it.
+ *
+ * A symbol name costs a few bytes and never goes stale, so it is kept even
+ * after every drawing on that chart is gone. Being sent to look at a clean
+ * chart is free; not knowing to look at all is not recoverable.
+ */
+export function drawnSymbols({ path = STORE_PATH } = {}) {
+  return [...new Set(readStore(path).symbols || [])];
 }
 
 /** Distinct group names currently tracked. */

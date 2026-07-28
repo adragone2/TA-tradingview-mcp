@@ -1,6 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import * as registry from '../src/core/drawing_registry.js';
 import { isMcpText, MCP_TEXT_SIGNATURES } from '../src/core/orphans.js';
 
 describe('isMcpText — recognises what this toolchain writes', () => {
@@ -157,5 +160,48 @@ describe('MCP_TEXT_SIGNATURES — anchored, not substring', () => {
       assert.ok(s.startsWith('^'), `not anchored at start: ${s}`);
       assert.ok(s.endsWith('$'), `not anchored at end: ${s}`);
     }
+  });
+});
+
+describe('drawnSymbols — the record of WHERE to sweep', () => {
+  const tmp = join(tmpdir(), `reg-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+  const clean = () => { try { rmSync(tmp); } catch { /* fine */ } };
+
+  test('remembers a symbol after every drawing on it is forgotten', () => {
+    // The exact failure this fixes: prune/forget empty `entries` when the
+    // TradingView session ends, taking the only record of which charts were
+    // drawn on with them. CARG kept 17 shapes through a full sweep this way.
+    clean();
+    registry.record([{ entity_id: 'a1' }, { entity_id: 'a2' }], { symbol: 'BATS:CARG', path: tmp });
+    assert.deepEqual(registry.drawnSymbols({ path: tmp }), ['BATS:CARG']);
+
+    registry.forget(['a1', 'a2'], { path: tmp });
+    assert.equal(registry.list({ path: tmp }).length, 0, 'entries should be empty');
+    assert.deepEqual(registry.drawnSymbols({ path: tmp }), ['BATS:CARG'],
+      'the symbol was forgotten along with its entity ids');
+    clean();
+  });
+
+  test('survives a prune that drops every id as dead', () => {
+    clean();
+    registry.record([{ entity_id: 'b1' }], { symbol: 'BATS:VOO', path: tmp });
+    registry.prune([], { symbol: 'BATS:VOO', path: tmp });   // nothing live
+    assert.equal(registry.list({ path: tmp }).length, 0);
+    assert.deepEqual(registry.drawnSymbols({ path: tmp }), ['BATS:VOO']);
+    clean();
+  });
+
+  test('does not duplicate a symbol drawn on repeatedly', () => {
+    clean();
+    for (let i = 0; i < 5; i++) {
+      registry.record([{ entity_id: `c${i}` }], { symbol: 'BATS:SHAZ', path: tmp });
+    }
+    assert.deepEqual(registry.drawnSymbols({ path: tmp }), ['BATS:SHAZ']);
+    clean();
+  });
+
+  test('an empty or missing store yields an empty list, not a throw', () => {
+    clean();
+    assert.deepEqual(registry.drawnSymbols({ path: tmp }), []);
   });
 });
