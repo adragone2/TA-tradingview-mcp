@@ -221,13 +221,119 @@ base rate. They are not used.
 
 ---
 
-## Open questions
+## Decisions — settled, with what was measured
 
-1. **Universe.** `type=stock` + $2B + 1M shares gives 1,120. Wider (small caps)
-   finds more but the costs screen will kill most of them.
-2. **Stage 2 budget.** 166 survivors × ~5s is ~14 minutes of chart loading. Cap
-   stage 1 output at the top N by some ranking, or accept the runtime?
-3. **Where results go.** A report like the Sunday review, a TV watchlist
-   written back, or both?
-4. **Frequency.** Pre-open uses yesterday's close; intraday fields
-   (`premarket_volume`, `gap`) need a live session.
+### 1. Universe: S&P 500 + Nasdaq Composite + Russell 2000
+
+Index membership is **not a filter**, which took several attempts to establish.
+`indexes` rejects every operation with HTTP 400; `index_id` accepts them and
+matches nothing — a silent zero, the most expensive kind of wrong. It is a
+top-level `symbols.symbolset`:
+
+```jsonc
+{ "symbols": { "symbolset": ["SYML:SP;SPX","SYML:NASDAQ;IXIC","SYML:TVC;RUT"] },
+  "filter": [ … ], "columns": [ … ], "markets": ["america"] }
+```
+
+| Set | symbolset id | Count |
+|---|---|---|
+| S&P 500 | `SYML:SP;SPX` | 503 |
+| Nasdaq Composite | `SYML:NASDAQ;IXIC` | 3381 |
+| Nasdaq 100 | `SYML:NASDAQ;NDX` | 103 |
+| Russell 2000 | `SYML:TVC;RUT` | 1977 |
+| **union, deduplicated** | | **4505** |
+
+"Nasdaq" is read as the **Composite**. Swapping in `NDX` for the 100 takes the
+universe from 4,505 to roughly 2,400.
+
+### 2. Top 20 — ranked by CONFLUENCE, not by a composite
+
+Each screen ranks its own candidates on its own axis. They are then merged and
+ranked by **how many screens a name appears in**, tie-broken by 12-month
+performance.
+
+This is deliberate. A weighted composite across six screens invents six
+coefficients nobody measured, which is curve-fitting with extra steps. Counting
+agreement invents nothing, and it is the rule this repo already runs on — the
+same reason a lone divergence is discarded at a 99% noise floor and two
+agreeing are kept at 13.5%.
+
+A name hitting one screen is not excluded; it ranks below a name hitting three.
+
+### 3. Output: a rewritten watchlist AND a companion report
+
+**Watchlist.** TradingView's REST API is reachable from inside the chart page
+with the session cookie — `GET /api/v1/symbols_list/custom/` returns the lists,
+and the active one comes back as `{id, type, name, symbols, active, shared,
+color, description}`. A named list can therefore be created and rewritten daily.
+
+What did **not** work, both established by probing rather than assumed:
+`window.TradingViewApi.watchlist()` throws *not implemented* in the desktop
+app, and `TV_WATCHLISTS_URL` is empty. The REST path is the only one, and it
+must be called from inside the page — from Node it carries no session.
+
+**Writing to the account is a real side effect** and will be confirmed before
+the first live write.
+
+**Report.** The Sunday review's schema, so TA imports one contract, not two.
+
+> **This forces a refactor.** `assess()` — the 26-block assessment — lives
+> inside `scripts/sunday-review.js` and is not exported. Copying it would create
+> two versions that drift, which is exactly the failure just fixed in the
+> divergence and elliott blocks: the review read keys its modules never returned
+> and reported zeros across 50 rows while the prose beside them said otherwise.
+> It has to move to `src/core/assessment.js` and be imported by both.
+
+### 4. Pre-open: yes, and the daily bar is clean
+
+**Measured at 04:16 ET on a Wednesday**, five hours before the open, on SPY:
+
+```
+bar 2026-07-24   O 738.51  H 743.72  L 737.29  C 738.93
+bar 2026-07-27   O 744.91  H 745.53  L 735.87  C 739.09
+bar 2026-07-28   O 739.19  H 742.79  L 735.98  C 740.86   <- last bar
+```
+
+The series ends on the **prior completed session** — no partial bar for today.
+Every detector sees finished data, which is what a swing screen wants and the
+reason pre-open is the right time to run rather than a compromise.
+
+Suggested slot: **07:00–08:00 ET**.
+
+**What is not available pre-open**, and none of it matters here: the intraday
+operands (`vwap`, `rvol`, `time_et`, `opening_range_*`) are null on a daily
+chart at any hour, and `premarket_volume` is thin enough to be noise on most
+names.
+
+**The one real caveat.** A company reporting after yesterday's close is not in
+yesterday's bar. The veto catches *scheduled* earnings via
+`earnings_release_next_date`, but an overnight gap on news is invisible to every
+detector, because they all read a bar that closed before it happened. The report
+must carry, per name, the **premarket move against the last close** — flagged
+past roughly half an ATR, not as a signal but as *"price has already left the
+bar this analysis is based on"*.
+
+---
+
+## Run shape
+
+```
+07:00 ET   stage 1   one POST, 4505-symbol universe -> ~150 candidates   <1s
+           merge     rank by screen-confluence, apply the veto
+           top 20
+07:05 ET   stage 2   20 x assess()                                       ~4 min
+           deflate   rule_select across the morning's trials
+07:10 ET   output    rewrite the Swing Watchlist + write the report
+```
+
+Twenty names is roughly four minutes of stage 2, against the Sunday review's
+7–12 for about fifty. Comfortably inside the pre-open window.
+
+## Still open
+
+- **Drawings.** The Sunday review draws its findings on every chart. Twenty
+  charts redrawn daily is real churn — worth deciding whether the morning screen
+  draws at all, or only writes the report.
+- **The list name.** `Swing Watchlist` unless you prefer otherwise. It must not
+  collide with the existing `TA_TradingView_Watchlist` (314) or `Watchlist`
+  (175).
