@@ -278,3 +278,51 @@ The bottom two are instructive: both circulate widely with impressive headline r
 - Nekrasov's reproduction is a self-published report, not peer reviewed. Its *conclusion* aligns with Park & Irwin's caveats and the JPM result, which is why I weight it — but it is one author.
 - Sharpe figures quoted for HMM strategies come from vendor and blog sources, not journals. Treated as unverified.
 - Minervini's and Weinstein's published track records are not independently audited in anything I found. Their *rules* are testable; their results are claims.
+
+## Crabel (1990) — the contraction/expansion principle has no lift over noise
+
+Toby Crabel, *Day Trading with Short Term Price Patterns and Opening Range
+Breakout*. A practitioner classic, and the source of NR4 and NR7 — both of
+which were already implemented here and match his definitions exactly.
+
+**Half the book is unreachable.** Opening Range Breakout, the title concept,
+needs the opening range, which he defines as the first **thirty seconds** of
+trade. Chapters 1-4, 17 and 26-32 all hang off it. Daily bars cannot see it.
+
+**The half that is reachable does not survive its own control group.** The book
+rests on the Contraction/Expansion Principle: a narrow range precedes a range
+expansion. It does — and it does so just as strongly with no market present.
+
+| | Random walk | Real data |
+|---|---|---|
+| P(next range > this range) | 50.1% | 49.7% |
+| P(next range > this range \| NR4) | **80.2%** | **76.4%** |
+| **lift** | **+30.0 pts** | **+26.7 pts** |
+
+*200 random walks of 300 bars; 12 large caps, 300 daily bars each.
+`node scripts/crabel-noise.js`.*
+
+**Real data shows LESS lift than pure noise.** Daily range is mean-reverting by
+arithmetic — a narrow day sits below its own average, so the next is usually
+wider — and that accounts for the whole effect. The principle is *true as a
+description* and *empty as an edge*: a narrow range really is followed by a
+wider one about three quarters of the time, and knowing it tells you nothing a
+random number generator would not.
+
+Every pattern in the module fires on **100% of random walks**, several times
+each — 2BNR 12.8 per walk, 3DHR 13.3, hooks 4.5. They are the least selective
+detectors in this repo; supply/demand zones at 99.5% are more discriminating.
+
+**What was still worth taking.** The multi-bar NR family (2BNR/3BNR/4BNR/8BNR)
+measures something NR4 and NR7 cannot see: a market coiling across a week with
+no single day unusually quiet. It is implemented, as a *volatility state* with
+its noise floor attached — never as a signal.
+
+**And the methodology.** Chapter 3 is an explicit CONTROL GROUP: the
+unconditional rate of a move of a given size, against which he insists every
+other test be read. That is this repo's noise-floor discipline, arrived at
+independently by a practitioner in 1990. He could not have found the result
+above — his control is an unconditional market rate, not a randomised one — but
+he was asking the right question, which is more than most of the literature
+does.
+
