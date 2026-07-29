@@ -407,12 +407,12 @@ const report = {
 const jsonPath = join(OUT_DIR, `morning-screen-${stamp}.json`);
 writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf8');
 /**
- * A stable path alongside the dated one.
+ * A stable path alongside the dated one, so "the latest screen" can be read
+ * without globbing the directory and parsing dates — which gets it wrong on the
+ * first holiday, when the newest file is not yesterday's.
  *
- * Anything downstream — TA, a skill, a dashboard — otherwise has to glob the
- * directory and parse dates to find the newest file, and gets it wrong on the
- * first holiday. This is the local half of publishing; nothing here transmits
- * anywhere.
+ * Local only. The morning report is NOT sent to TA; TA is the master system for
+ * investing and this is the trading layer reading it, not writing to it.
  */
 const latestPath = join(OUT_DIR, 'morning-screen-latest.json');
 writeFileSync(latestPath, JSON.stringify(report, null, 2), 'utf8');
