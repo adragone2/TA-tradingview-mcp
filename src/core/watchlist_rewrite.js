@@ -1,4 +1,70 @@
 /**
+ * Set a list's contents to exactly `entries`, in that order.
+ *
+ * THREE ENDPOINTS, AND `/replace/` IS NOT THE ONE.
+ *
+ * Measured against the live API:
+ *
+ *   POST .../append/    200  adds symbols, returns the new list
+ *   POST .../remove/    200  removes symbols, returns what is left
+ *   POST .../replace/   422  "You can't add new symbols during safe replace
+ *                            (reorder)"  code: add_new_symbols
+ *                       422  "You can't remove symbols during safe replace"
+ *                            code: remove_symbols
+ *
+ * `/replace/` is a REORDER. It rejects any write whose symbol SET differs from
+ * the current one, in either direction. So a content change is
+ * remove-then-append, with `/replace/` afterwards only to impose order once the
+ * set matches.
+ *
+ * Remove runs FIRST: appending first would briefly hold both sets, and a
+ * failure between the calls would leave a superset — harder to notice than a
+ * subset, and harder to undo.
+ *
+ * Section headers ("###KEEP") are ordinary entries in this array and pass
+ * through all three calls unchanged.
+ */
+export async function setListContents(listId, entries, { current = null } = {}) {
+  const desired = [...new Set((entries || []).filter(Boolean))];
+  const before = current ?? await listContentsById(listId);
+
+  const call = async (path, symbols) => {
+    if (!symbols.length) return { ok: true, skipped: true };
+    const r = await pageFetch(`
+      fetch("${TV}/api/v1/symbols_list/custom/${listId}/${path}/", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: ${JSON.stringify(JSON.stringify(symbols))}
+      })
+        .then(function(r){ return r.text().then(function(t){ return { status:r.status, ok:r.ok, body:t.slice(0,200) }; }); })
+        .catch(function(e){ return { err: String(e) }; })
+    `);
+    if (!r?.ok) throw new Error(`${path} rejected (HTTP ${r?.status}): ${r?.body}`);
+    return r;
+  };
+
+  const removed = before.filter((s) => !desired.includes(s));
+  const added = desired.filter((s) => !before.includes(s));
+  await call('remove', removed);
+  await call('append', added);
+  await call('replace', desired);
+  return { removed: removed.length, added: added.length, total: desired.length };
+}
+
+/** A list's entries by id, without a name lookup. */
+export async function listContentsById(listId) {
+  const res = await pageFetch(`
+    fetch("${TV}/api/v1/symbols_list/custom/", { credentials: "include" })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ var l = (j||[]).filter(function(x){ return x.id === ${listId}; })[0];
+                         return l ? (l.symbols || []) : { err: "no list with id ${listId}" }; })
+      .catch(function(e){ return { err: String(e) }; })
+  `);
+  if (!Array.isArray(res)) throw new Error(`Could not read list ${listId}.`);
+  return res;
+}
+
+/**
  * Rewrite ONE named TradingView watchlist from scratch.
  *
  * ── Why this is not applySync ──
@@ -188,50 +254,7 @@ export async function rewrite({ name, symbols, dry_run = true, backup_dir = 'bac
   const backup = join(backup_dir, `watchlist-${name.replace(/\W+/g, '_')}-${stamp}.json`);
   writeFileSync(backup, JSON.stringify({ id: target.id, name, symbols: before.symbols }, null, 2), 'utf8');
 
-  /**
-   * THREE ENDPOINTS, AND `/replace/` IS NOT THE ONE.
-   *
-   * Measured against the live API:
-   *
-   *   POST .../append/    200  adds symbols, returns the new list
-   *   POST .../remove/    200  removes symbols, returns what is left
-   *   POST .../replace/   422  "You can't add new symbols during safe replace
-   *                            (reorder)" — and equally for removals
-   *
-   * `/replace/` is a REORDER. It rejects any write whose symbol SET differs
-   * from the current one, in either direction. A full rewrite is therefore
-   * remove-then-append, with `/replace/` used afterwards only to impose the
-   * ranking order now that the set matches.
-   *
-   * (This is also why `applySync` in watchlist_sync.js no longer works: it
-   * writes a superset through `/replace/`. Same 422.)
-   */
-  const call = async (path, symbols) => {
-    if (!symbols.length) return { ok: true, skipped: true };
-    const r = await pageFetch(`
-      fetch("${TV}/api/v1/symbols_list/custom/${target.id}/${path}/", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: ${JSON.stringify(JSON.stringify(symbols))}
-      })
-        .then(function(r){ return r.text().then(function(t){ return { status:r.status, ok:r.ok, body:t.slice(0,200) }; }); })
-        .catch(function(e){ return { err: String(e) }; })
-    `);
-    if (!r?.ok) throw new Error(`${path} rejected (HTTP ${r?.status}): ${r?.body}`);
-    return r;
-  };
-
-  const toRemove = before.symbols.filter((s) => !clean.includes(s));
-  const toAdd = clean.filter((s) => !before.symbols.includes(s));
-
-  // Remove first. Appending first would briefly hold both lists at once, and a
-  // failure between the two calls would leave a superset rather than a
-  // half-written list — harder to notice and harder to undo.
-  await call('remove', toRemove);
-  await call('append', toAdd);
-  // Now the set matches, so a reorder is legal and imposes the ranking.
-  const res = await call('replace', clean);
-  if (res?.skipped) { /* nothing to order */ }
+  await setListContents(target.id, clean, { current: before.symbols });
 
   // Verify by reading back, not by trusting the 200.
   const after = await pageFetch(`

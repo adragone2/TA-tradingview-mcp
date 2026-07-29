@@ -20,6 +20,7 @@ import { evaluateAsync } from '../connection.js';
 import * as ta from './ta_api.js';
 
 const TV = 'https://www.tradingview.com';
+import { setListContents } from './watchlist_rewrite.js';
 const SECTION_PREFIX = '###';
 
 /**
@@ -359,19 +360,19 @@ export async function applySync({ mapping, dry_run = false } = {}) {
     throw new Error(`Refusing to write: rebuilt watchlist is smaller (${next.length} vs ${tv.total}). No changes made.`);
   }
 
-  const res = await evaluateAsync(`
-    fetch("${TV}/api/v1/symbols_list/custom/${tv.id}/replace/", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: ${JSON.stringify(JSON.stringify(next))}
-    })
-      .then(function(r) { return r.text().then(function(t) { return { status: r.status, ok: r.ok, body: t.slice(0, 200) }; }); })
-      .catch(function(e) { return { err: e.message }; })
-  `);
-
-  if (res?.err) throw new Error(`Watchlist write failed: ${res.err}`);
-  if (!res?.ok) throw new Error(`Watchlist write rejected (HTTP ${res?.status}): ${res?.body}`);
+  /**
+   * `/replace/` CANNOT ADD SYMBOLS. It is a reorder, and TradingView rejects
+   * any write whose symbol set differs from the current one:
+   *
+   *   422 {"detail":"You can't add new symbols during safe replace (reorder)",
+   *        "code":"add_new_symbols"}
+   *
+   * This function wrote a superset through it, so it had stopped working —
+   * reproduced against the live API on 2026-07-29. `setListContents` does the
+   * remove-then-append-then-reorder that actually works, and is shared with the
+   * morning screen's rewrite so there is one implementation of the sequence.
+   */
+  await setListContents(tv.id, next, { current: tv.raw });
 
   const after = await readTvWatchlist();
   const grew = after.total - tv.total;

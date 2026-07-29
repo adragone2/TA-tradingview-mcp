@@ -10,9 +10,12 @@
  *   stage 2   assess() + drawings on the 20                          ~4 min
  *   output    rewrite the Swing Opportunities watchlist + a report
  *
- * PRE-OPEN IS THE RIGHT TIME, not a compromise. Measured at 04:16 ET, the daily
- * series ends on the PRIOR completed session — no partial bar — so every
- * detector reads finished data.
+ * PRE-OPEN IS THE RIGHT TIME, not a compromise. Measured after a session close,
+ * the daily series ends on the PRIOR COMPLETED session — no partial bar — so
+ * every detector reads finished data. Run it AFTER the open and today's
+ * unfinished bar is in the series, which corrupts every one of them.
+ *
+ * Scheduled 05:30 PT, an hour before the 06:30 PT open.
  *
  * The one thing that cannot be seen: a company reporting after yesterday's
  * close. The veto catches SCHEDULED earnings, but an overnight move on news is

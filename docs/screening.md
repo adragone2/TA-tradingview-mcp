@@ -11,7 +11,7 @@ Status: **built and running.** Scheduled weekdays 07:00 ET.
 | Exact parameters | [screening-parameters.md](screening-parameters.md) — generated from the code |
 | Runner | `node scripts/morning-screen.js` |
 | Output | `reports/morning-screen-YYYY-MM-DD.json` + the `Swing Opportunities` watchlist |
-| Scheduled task | `morning-screen`, weekdays 07:00 |
+| Scheduled task | `morning-screen`, weekdays **05:30 PT** (an hour before the 06:30 PT open) |
 
 Three things changed between this design and the implementation, each because
 the live data disagreed with the plan — see the git log for the measurements:
@@ -341,7 +341,7 @@ irrelevant.)*
 
 ### 4. Pre-open: yes, and the daily bar is clean
 
-**Measured at 04:16 ET on a Wednesday**, five hours before the open, on SPY:
+**Measured at 21:16 PT on a Tuesday**, after that session had closed, on SPY:
 
 ```
 bar 2026-07-24   O 738.51  H 743.72  L 737.29  C 738.93
@@ -349,11 +349,26 @@ bar 2026-07-27   O 744.91  H 745.53  L 735.87  C 739.09
 bar 2026-07-28   O 739.19  H 742.79  L 735.98  C 740.86   <- last bar
 ```
 
-The series ends on the **prior completed session** — no partial bar for today.
-Every detector sees finished data, which is what a swing screen wants and the
-reason pre-open is the right time to run rather than a compromise.
+The series ends on the **prior completed session** — no partial bar. Every
+detector sees finished data, which is what a swing screen wants and the reason
+pre-open is the right time to run rather than a compromise.
 
-Suggested slot: **07:00–08:00 ET**.
+**Scheduled 05:30 PT**, an hour before the 06:30 PT open (08:30 ET, one hour
+before 09:30 ET). The run takes 4–6 minutes, so it finishes with roughly fifty
+minutes to spare.
+
+> Two corrections worth recording, both caught after the fact.
+>
+> The first schedule was `0 7 * * 1-5`. Cron is evaluated in LOCAL time, which
+> is Pacific here — so it would have fired at 07:00 PT, **thirty minutes after
+> the open**, when today's partial bar already exists and every detector would
+> be reading an unfinished session.
+>
+> The measurement above was originally reported as "04:16 ET". Git Bash on
+> Windows silently ignores `TZ` and returns UTC, so `TZ=America/New_York date`
+> gave UTC. The real time was 21:16 PT / 00:16 ET. The conclusion was unaffected
+> — that is still after the close, so the last bar was a completed session — but
+> the stated time was four hours out.
 
 **What is not available pre-open**, and none of it matters here: the intraday
 operands (`vwap`, `rvol`, `time_et`, `opening_range_*`) are null on a daily

@@ -45,7 +45,7 @@
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
-| "Any new swing candidates?" | `node scripts/morning-screen.js` — 4,505 index members to a drawn, watchlisted top 20. Runs weekdays 07:00. A KEEP section in the watchlist is preserved |
+| "Any new swing candidates?" | `node scripts/morning-screen.js` — 4,505 index members to a drawn, watchlisted top 20. Runs weekdays 05:30 PT, an hour before the open. A KEEP section in the watchlist is preserved |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
