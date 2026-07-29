@@ -46,9 +46,20 @@ Add these columns. They are the difference between a diary and a dataset:
 | Field | Source |
 |-------|--------|
 | Barrier hit | `target` / `stop` / `time` — which came **first** |
+| **Exit reason** | a key from `EXIT_REASONS` in `src/core/exits.js` — see below |
 | Bars held | bars from entry to resolution |
 | Exit price | the actual fill |
 | Ambiguous | `true` if one bar's range contained both stop and target |
+
+### Barrier hit is not the same question as exit reason
+
+`target` / `stop` / `time` are the only three exits a backtest can model, which is precisely why those three alone teach nothing: they cannot separate an exit the **plan** called for from one **decided while the position was live**.
+
+Use the twelve-key taxonomy in [src/core/exits.js](../../src/core/exits.js) (Bellafiore's Reasons2Sell) and run `exit_mix` over the column periodically. It splits planned from discretionary and counts the ones driven by the **index** rather than the position — which no single-symbol backtest can see at all.
+
+The reason to bother is not discipline. It is that **a backtest can only model a planned exit**, so if most real exits are discretionary the backtest is measuring a different strategy that merely shares an entry signal. Every rule in this repo about benchmarks, trial counts and deflated Sharpe is void if the exit in the test is not the exit in the account.
+
+Record `discretionary_other` rather than forcing a poor fit. An honest unknown still counts; a wrong label corrupts the distribution.
 
 A plan that emits an entry, a stop and a target **is a triple-barrier problem**: the outcome is decided by which of the three is touched first. `tripleBarrier` in `labeling.js` resolves exactly this, and `backtest_evaluate` reports the ambiguous share.
 

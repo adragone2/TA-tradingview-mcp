@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-172 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+173 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 172 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 173 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
@@ -48,6 +48,7 @@
 | "Any new swing candidates?" | `node scripts/morning-screen.js` — index members to a drawn, watchlisted top 20, split into **Months** (rebalances monthly, hysteresis band) and **Weeks** (daily). Runs weekdays 05:30 PT. Any `KEEP*` section is preserved. `--force-months` overrides the clock |
 | "How far can it run before it halts?" | `luld_band` — 5% Tier 1, 10% Tier 2, doubled at the open and into the close |
 | "Move this setup to another timeframe" | `timeframe_scale` — lookbacks scale LINEARLY, stops and targets as the SQUARE ROOT. Scaling a stop linearly is the common error |
+| "Why did I exit?" / journal review | `exit_mix` — splits PLANNED from DISCRETIONARY exits. A backtest can only model a planned exit, so a discretionary majority means the backtest tests a different strategy |
 | "Is this series trending or mean-reverting?" | `scaling_exponent` — measures the exponent the sqrt-of-time law assumes to be 0.5. Cross-checks `stopping_premium` |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
@@ -112,6 +113,8 @@ Each of these exists because it has already gone wrong here.
 **The sqrt law is the random-walk law, so measuring it is a test.** `scaling_exponent` fits log(stdev) against log(horizon): 0.5 means independent, above means moves compound, below means they offset. That makes the reversal/continuation boundary a property of the series rather than a 1993 citation. It agrees with `stopping_premium` where both have a verdict — PNC 0.619 persistent by both, CYTK 0.369 mean-reverting by both. Drift does NOT move it, and must not: drift is not persistence.
 
 **The higher timeframe is context, not a verdict.** Grimes ran a triple-MA trend indicator over 973,087 observations WITH a random control; across ~903k equity observations it was INVERTED (−157.9 excess when reading up, +166.9 when reading down) and next-bar direction sat at ~50% everywhere. `mtf_analyze` no longer states Elder's rule as settled, and a ranging context now withholds a directional LEAN rather than forbidding the trade — a ranging HTF is where sharp LTF trends appear.
+
+**A backtest can only model an exit that was specifiable before entry.** `target`/`stop`/`time` are exactly the modellable set, which is why recording only those teaches nothing — they cannot separate an exit the plan called for from one decided while the position was live. `exit_mix` splits them using the twelve-key Reasons2Sell taxonomy and counts the ones driven by the INDEX, which no single-symbol backtest can see. If discretionary exits are the majority, every benchmark, trial count and deflated Sharpe in the test describes a different strategy that merely shares an entry signal.
 
 **A noise floor you cannot measure is not a noise floor.** The 1-2-3 (`src/core/ignition.js`) fires on 5.9% of real charts and 22.5% of random walks — *below* its own null. The cause was the ATR gate: ATR counts overnight gaps, bar range does not, so every constructed null shifts the gate rather than the pattern, and estimates span 5.9–39.6% on the same data. It is implemented, tested, and deliberately **not registered as a tool**. One relative finding survives because both arms shared a generator: the top-third clause is load-bearing (22.5% vs 63%).
 

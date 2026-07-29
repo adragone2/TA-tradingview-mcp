@@ -320,7 +320,7 @@ Triaged for NEW CAPABILITY versus renamed vocabulary. Two produced code; three d
 | **Shannon**, *Technical Analysis Using Multiple Timeframes* (2008, 198p, SCANNED) | Fig. 10.4 produced the linear lookback law. Framework is Weinstein stage analysis = the Wyckoff phases we already ship, and ours carries a measured noise floor his does not. |
 | **Farley**, *The Master Swing Trader* (2000, 377p) | Corroboration, no new capability. Reaches our horizon-and-cost doctrine independently — "trend relativity errors steal more profits than any other trading mistake". For a 1-3 day hold: reward from the daily, execution from the 60-minute (a horizon our Weeks/Months split excludes). |
 | **Aziz**, *How to Day Trade for a Living* (116p) | Adds nothing here. Day-trading horizon; one statistical mention in the whole book; the ABCD pattern is a pullback `fib_levels` and the momentum-pullback screen already cover. |
-| **Bellafiore**, *The PlayBook* (42p EXCERPT) | Excerpt is front matter, the Introduction, and the Index — no method. But its index surfaced `Reasons2Sell`: a DISJUNCTIVE exit list closing on whichever condition fires first, one of which is a TIME stop. See the open gap below. |
+| **Bellafiore**, *The PlayBook* (590p, FULL) | **Verdict revised.** The first read was of a 42-page excerpt — 7% of the book — and was too dismissive. The full text yields a seven-section trade-review schema and the ten-item `Reasons2Sell` exit taxonomy, which produced `src/core/exits.js` and `exit_mix`. Still contains no statistics: "The Failure Rate of a Prop Trader" gives anecdote, not a rate. |
 
 ### What Grimes measured, and why it changed our code
 
@@ -337,6 +337,12 @@ Four of these sources justify moving averages by crowd self-fulfilment — Farle
 
 They agree on the mechanism, contradict each other on what to do with it, and the only one who measured found the opposite of what three of them teach. Treat the mechanism as unfalsifiable and prefer `scaling_exponent`, which measures persistence directly.
 
-### Open gap: a disjunctive exit list
+### The PlayBook template, and what it changed
 
-`labeling.js` implements triple-barrier labelling — profit, stop, and **time** — but only for building training sets. Nothing in the trade-management layer takes a time barrier. `MONTHS_EXIT` is effectively one (the monthly rebalance) but it is implicit rather than enumerated beside the others. Bellafiore's `Reasons2Sell` is the framing: list every independent reason to close, and close on whichever fires first. Not built.
+Seven sections per archived trade: **Big Picture, Intraday Fundamentals, Technical Analysis, Reading the Tape, Trade Management, Trade Strategy, Trade Review**. His claim about why it matters is specific — among a group of experienced but underperforming traders, the common denominator was that none had a method for archiving their own best setups, and none could state their best plays definitively.
+
+Item 8 of his "Top Ten Ways the PlayBook Can Help Your Trading" is *"take the first step toward developing auto strategies"* — a discretionary prop trader arriving at this repo's "criteria as data, not prose" doctrine from the opposite direction.
+
+**What it produced:** `src/core/exits.js` and the `exit_mix` tool. The journal recorded `target`/`stop`/`time`, which are exactly the exits a backtest CAN model — and therefore could not distinguish a planned exit from one decided while the position was live. `Reasons2Sell` supplies twelve categories, several driven by the index rather than the position. The point is not discipline: if discretionary exits are the majority, the backtest measures a different strategy that merely shares an entry signal, and every benchmark and trial count in it is void.
+
+Bellafiore's own methodological aside under "intraday uptrend is broken" — fix the timeframe you watch *before* entry and be consistent — is Grimes's timeframe-justification warning reached independently.

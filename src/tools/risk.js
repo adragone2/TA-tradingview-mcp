@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/risk.js';
+import { exitMix, EXIT_REASONS } from '../core/exits.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -64,5 +65,14 @@ export function registerRiskTools(server) {
       manual_stop: z.coerce.number().optional().describe('A stop price you already picked, to compare against the ATR stop'),
     },
     wrap((args) => ({ success: true, ...core.sizeByVolatility(args), disclaimer: DISCLAIMER })),
+  );
+
+  server.tool(
+    'exit_mix',
+    "Split a set of journalled exits into PLANNED versus DISCRETIONARY, using the twelve-key Reasons2Sell taxonomy. The point is not discipline: a backtest can only model an exit that was specifiable before entry, so if most real exits were decided while the position was live, the backtest is measuring a different strategy that merely shares an entry signal. Also counts exits driven by the INDEX rather than the position, which no single-symbol backtest can see. Pass reason keys from EXIT_REASONS.",
+    {
+      exits: z.array(z.string()).describe('Exit reason keys, one per closed trade'),
+    },
+    wrap(({ exits }) => ({ success: true, ...exitMix(exits), taxonomy: Object.keys(EXIT_REASONS) })),
   );
 }
