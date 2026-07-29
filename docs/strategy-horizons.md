@@ -49,7 +49,7 @@ reason to avoid the bucket; it is a reason to be honest about what goes in it.
 
 | Signal | Evidence | Status |
 |---|---|---|
-| **Short-term reversal as liquidity provision** — Nagel (2012) | **Tier A**, and the anchor for this bucket. But: reversal portfolios "earn essentially nothing unconditionally" and "become profitable when VIX is high". | **NOT IMPLEMENTED** |
+| **Short-term reversal as liquidity provision** — Nagel (2012) | **Tier A**, and the anchor for this bucket. Reversal portfolios "earn essentially nothing unconditionally" and "become profitable when VIX is high". | **implemented** — `tier_a_factors`, inactive below the VIX threshold |
 | Springs / upthrusts | 0% on 200 random walks — as selective as VCP. An event, not a state. | implemented, unscreened |
 | 2+ indicators diverging in agreement | 13.5% on noise, against 99% for a lone divergence | implemented |
 | Confirmed double bottom / top | Bulkowski's base rates, but measured to the *ultimate* high — a weeks-to-months exit | implemented, horizon mismatch |
@@ -74,30 +74,36 @@ this bucket is going to exist, its centre of gravity should be 10–21 days, not
 
 ## MONTHS — 63 days and beyond
 
-This is where the well-replicated material lives, and where three Tier A
-results are sitting unused.
+This is where the well-replicated material lives. All three Tier A signals
+here are now implemented in `src/core/factors.js`, exposed as
+`tier_a_factors`.
 
 | Signal | Evidence | Status |
 |---|---|---|
-| **Moving Average Distance** — Avramov, Kaplanski & Subrahmanyam (2021) | **Tier A. ~9% annualised** on value-weighted hedge portfolios. Incremental to momentum, the 52-week high and profitability. **Survives institutional trading costs.** Stronger on the LONG side. Still meaningful in years when standard momentum was not — momentum is insignificant in its presence. | **NOT IMPLEMENTED** |
-| **Trend factor** — Han, Zhou & Zhu (2016) | **Tier A.** ~1.63%/month, t≈13.6 against 6.04 for momentum. Positive through 2008–09 when momentum lost heavily. Replicates in the G7. Insensitive to lag choice. | **NOT IMPLEMENTED** |
-| **High-volume return premium** — Gervais, Kaniel & Mingelgrin (2001) | **Tier A.** Unusual volume over a day or week → appreciation over the following **month**. Replicates across developed and emerging markets. | **NOT IMPLEMENTED** |
+| **Moving Average Distance** — Avramov, Kaplanski & Subrahmanyam (2021) | **Tier A. ~9% annualised** on value-weighted hedge portfolios. Incremental to momentum, the 52-week high and profitability. **Survives institutional trading costs.** Stronger on the LONG side. Still meaningful in years when standard momentum was not — momentum is insignificant in its presence. | **implemented** — `tier_a_factors` |
+| **Trend factor** — Han, Zhou & Zhu (2016) | **Tier A.** ~1.63%/month, t≈13.6 against 6.04 for momentum. Positive through 2008–09 when momentum lost heavily. Replicates in the G7. Insensitive to lag choice. | **implemented** — `tier_a_factors` |
+| **High-volume return premium** — Gervais, Kaniel & Mingelgrin (2001) | **Tier A.** Unusual volume over a day or week → appreciation over the following **month**. Replicates across developed and emerging markets. | **implemented** — `tier_a_factors` |
 | Post-earnings announcement drift | Tier A in aggregate, but **dissolves at firm level** — 16.1% of good-news quarters drift negative | TA layer, portfolio-only |
 | Time-series momentum (12m) | Tier A, 58/58 futures, Sharpe 1.28 — but a PORTFOLIO result; `edge_breadth` gives what one position retains | implemented, screened |
 | Nearness to the 52-week high | **Tier B** — severe liquidity conditioning, negative in illiquid names | implemented, screened |
 | `momentum_pullback`, `near_52w_high`, `rs_leadership` | the three continuation screens | implemented |
 
-### Two things to internalise about the unimplemented three
+### Three constructions that are easy to get wrong, and what the code does about them
 
 **MAD is a state, not an event.** A cross-sectional decile sort on normalised
 21-day vs 200-day distance, rebalanced monthly. It is *not* a crossover trigger
 and *not* a same-day entry. Implementing it as "price crossed its MA" would be
 a different thing entirely, with none of the evidence.
 
-**The trend factor's robustness is the lesson, not its return.** Results barely
-change when the lag set changes — so effort spent hunting *the* right moving
-average is spent on the dimension where the signal is least sensitive and
-overfitting is most likely to be mistaken for skill.
+**The trend factor's LEARNED WEIGHTS are not implemented, and no composite is
+emitted in their place.** The paper estimates coefficients by monthly
+cross-sectional regression; that needs a stored panel of past cross-sections and
+their forward returns, which this toolchain does not keep. An equal-weighted
+blend would be a different object with none of the evidence, so `weights` is
+`null` and the signal vector is returned bare. Its robustness result is the
+lesson anyway: results barely change when the lag set changes, so effort spent
+hunting *the* right moving average goes into the dimension where the signal is
+least sensitive and overfitting is most easily mistaken for skill.
 
 **And the volume premium was tested as a monthly cross-sectional sort**, not as
 a volume filter on a same-day breakout. There is no basis for assuming the
@@ -129,14 +135,20 @@ inside a bucket**, not as the reason to be in a trade.
 ## What this implies for the plan
 
 1. **Classification first** — this document. Done.
-2. **The Weeks bucket is nearly empty.** Its one Tier A anchor, VIX-conditioned
-   short-term reversal, is not implemented. Everything currently in it is either
-   a structure with no horizon evidence, or a reversal detector without the
-   conditioning that makes it pay.
-3. **Three Tier A signals for Months are unimplemented**, and one of them —
-   Moving Average Distance — is described in this repo's own review as the
-   strongest single technical cross-sectional signal in it, and one that
-   survives costs. That is the largest evidence-backed gap in the toolchain.
+2. **The Weeks bucket now has its anchor.** VIX-conditioned short-term reversal
+   is implemented and, crucially, returns an EMPTY long side when VIX is below
+   the threshold — because unconditionally the effect earns essentially nothing,
+   and running it anyway is discarding the result rather than weakening it. On a
+   live run VIX sat at 19.94 against a threshold of 20, so it was inactive by
+   0.06. The paper has returns rising continuously with VIX, so treat a reading
+   either side of the line as the same thing.
+3. **All four Tier A signals are now implemented** in `src/core/factors.js`,
+   exposed as `tier_a_factors`. One deliberate omission: the trend factor's
+   LEARNED WEIGHTS. The paper estimates them by monthly cross-sectional
+   regression, which needs a stored panel of past cross-sections and their
+   forward returns. The signal vector is computed; no composite is emitted,
+   because an equal-weighted blend would be a different object with none of the
+   evidence.
 4. **The watchlist gets four sections**: `Weeks`, `Months`, `KEEP weeks`,
    `KEEP months`. The section machinery already works and is tested; the rewrite
    preserves any section named in `PRESERVE_SECTIONS`.

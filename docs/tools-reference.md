@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **168 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **169 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -384,6 +384,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### volatility_* (1)
 
 - **`volatility_state`** — Crabel's contraction/expansion measures, reported as a VOLATILITY STATE and never as a signal
+
+### tier_* (1)
+
+- **`tier_a_factors`** — The four Tier A cross-sectional factors from the evidence review, computed over the live index universe in one scanner request
 
 ---
 

@@ -13,6 +13,8 @@ import * as horizon from '../core/horizon.js';
 import * as selection from '../core/selection.js';
 import * as costs from '../core/costs.js';
 import * as crabel from '../core/crabel.js';
+import * as factors from '../core/factors.js';
+import { scan } from '../core/scanner.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -256,6 +258,74 @@ export function registerEvidenceTools(server) {
         verdict: crabel.CRABEL_NOISE_BASELINE.contraction_expansion.verdict,
         how_to_read: 'A contraction says a range expansion is likelier — and says nothing about direction. '
           + 'Take direction from structure_analyze or momentum_read. Quote the noise floor beside any detection.',
+      };
+    }),
+  );
+
+  server.tool(
+    'tier_a_factors',
+    "The four Tier A cross-sectional factors from the evidence review, computed over the live index universe in one scanner request. THREE FOR MONTHS: Moving Average Distance (Avramov 2021 — ~9% annualised, incremental to momentum AND the 52-week high, survives institutional costs, stronger on the long side); the high-volume return premium (Gervais 2001 — unusual volume, held ~1 month); and the trend factor signal vector (Han 2016). ONE FOR WEEKS: short-term reversal as liquidity provision (Nagel 2012), which is INACTIVE unless VIX is elevated because it 'earns essentially nothing unconditionally'. Every result is a DECILE RANK IN A UNIVERSE, not a forecast for a name — run edge_breadth for what a cross-sectional edge retains on one position. Two constructions people get wrong and this refuses to: MAD is a STATE rebalanced monthly, not a crossover trigger; and the volume premium was measured as a monthly sort, not as confirmation on a same-day breakout. The trend factor's LEARNED WEIGHTS are deliberately not implemented — they need a stored panel this toolchain does not keep, and an equal-weighted blend would be a different object with none of the evidence.",
+    {
+      min_price: z.coerce.number().optional().describe('Minimum close (default 10)'),
+      min_volume: z.coerce.number().optional().describe('Minimum 10-day average volume (default 1,000,000)'),
+      vix_threshold: z.coerce.number().optional().describe('VIX at or above which short-term reversal activates (default 20)'),
+      limit: z.coerce.number().optional().describe('Universe rows to fetch (default 500, the scanner cap)'),
+    },
+    wrap(async ({ min_price = 10, min_volume = 1_000_000, vix_threshold = 20, limit = 500 }) => {
+      const cols = ['name', 'close', 'SMA10', 'SMA20', 'SMA50', 'SMA100', 'SMA200',
+        'relative_volume_10d_calc', 'Perf.W', 'Perf.1M', 'market_cap_basic', 'average_volume_10d_calc'];
+      const r = await scan({
+        filter: [
+          { left: 'type', operation: 'equal', right: 'stock' },
+          { left: 'close', operation: 'greater', right: min_price },
+          { left: 'average_volume_10d_calc', operation: 'greater', right: min_volume },
+        ],
+        columns: cols,
+        range: [0, limit],
+      });
+
+      // VIX from the same endpoint, so the conditioning uses one source.
+      let vix = null;
+      try {
+        const res = await fetch('https://scanner.tradingview.com/america/scan', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols: { tickers: ['CBOE:VIX'] }, columns: ['close'], range: [0, 1] }),
+        });
+        vix = (await res.json())?.data?.[0]?.d?.[0] ?? null;
+      } catch { /* volatilityRegime treats null as unknown, which is inactive */ }
+
+      const f = factors.allFactors(r.rows, { vix });
+      const slim = (x) => ({ symbol: x.symbol, name: x.name, value: x._value, decile: x._decile });
+      return {
+        success: true,
+        universe_matched: r.total,
+        universe_ranked: r.rows.length,
+        vix,
+        months: {
+          moving_average_distance: {
+            ...f.months.moving_average_distance,
+            ranked_rows: undefined,
+            long_side: f.months.moving_average_distance.long_side.slice(-25).reverse().map(slim),
+            short_side: f.months.moving_average_distance.short_side.slice(0, 25).map(slim),
+          },
+          high_volume_premium: {
+            ...f.months.high_volume_premium,
+            ranked_rows: undefined,
+            long_side: f.months.high_volume_premium.long_side.slice(-25).reverse().map(slim),
+            short_side: f.months.high_volume_premium.short_side.slice(0, 10).map(slim),
+          },
+          trend_factor: { ...f.months.trend_factor, signals: undefined,
+            signals_note: 'Per-symbol signal vectors omitted from the tool output for size; they are '
+              + 'available from src/core/factors.js trendSignals().' },
+        },
+        weeks: {
+          short_term_reversal: {
+            ...f.weeks.short_term_reversal,
+            ranked_rows: undefined,
+            long_side: f.weeks.short_term_reversal.long_side.slice(0, 25).map(slim),
+          },
+        },
+        note: f.note,
       };
     }),
   );
