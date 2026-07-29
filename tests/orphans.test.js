@@ -115,10 +115,14 @@ describe('signatures cover every label format the code writes', () => {
    * is rendered with plausible values and fed through the matcher.
    */
   /**
-   * EVERY file that writes a drawing label, not just the review. The audit
-   * found ta_decisions.js and ta_walls.js writing labels no signature matched,
-   * so every level ta_draw_decision and the walls overlay had ever drawn was a
-   * permanent orphan.
+   * EVERY file that writes a drawing label. The audit found ta_decisions.js and
+   * ta_walls.js writing labels no signature matched, so every level
+   * ta_draw_decision and the walls overlay had ever drawn was a permanent
+   * orphan.
+   *
+   * The review's own labels now live in src/core/assessment_draw.js — extracted
+   * so the morning screen draws from one implementation. This test's
+   * "did the extraction break?" guard is what caught the move.
    *
    * Substitutions are PER FILE, because the same placeholder means different
    * things in different files: `${l.label}` is "S"/"R" in the review and
@@ -145,7 +149,7 @@ describe('signatures cover every label format the code writes', () => {
     [/\$\{z\.top\}/g, '34.2'],
   ];
   const SOURCES = [
-    { file: 'scripts/sunday-review.js', fill: [
+    { file: 'src/core/assessment_draw.js', fill: [
       [/\$\{label\}/g, 'double_bottom confirmed'],
       [/\$\{l\.label\}/g, 'S'],
       [/\$\{l\.price[^}]*\}/g, '34.93'],
