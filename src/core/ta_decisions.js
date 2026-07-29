@@ -18,7 +18,15 @@ const cache = new Map();
  * Parse a CSV whose fields may be quoted and contain commas — TA's Reasoning
  * and Catalysts columns both do, so a naive split corrupts every later column.
  */
-function parseCsv(text) {
+/**
+ * RFC4180-ish CSV.
+ *
+ * Exported for testing. TA's exports carry quoted fields containing commas
+ * (catalyst lists) and doubled quotes, and a parser that mishandles either
+ * shifts every column after it — which reads as plausible data rather than as
+ * an error.
+ */
+export function parseCsv(text) {
   const rows = [];
   let field = '';
   let row = [];
@@ -70,7 +78,11 @@ async function loadDataset(name) {
   return value;
 }
 
-function freshnessWarnings(ds, label) {
+/**
+ * Exported for testing. "A 200 is not freshness" — TA stamps age from the
+ * source file's mtime, so a successful fetch says nothing about currency.
+ */
+export function freshnessWarnings(ds, label) {
   const w = [];
   if (Number.isFinite(ds.age_hours)) {
     if (ds.age_hours > 30) {

@@ -74,7 +74,13 @@ const WALLS_SOURCES = [
  * Split on the FIRST comma only — the JSON column is unquoted and full of
  * commas, so a naive CSV split shreds every row.
  */
-function parseTvJsonCsv(text) {
+/**
+ * Exported for testing. Each row is `TICKER,<json>` where the JSON may be
+ * quote-wrapped with doubled inner quotes. A row that fails to parse must be
+ * COLLECTED rather than thrown on — one malformed ticker should not lose the
+ * other twenty-one.
+ */
+export function parseTvJsonCsv(text) {
   const lines = text.trim().split('\n');
   const byTicker = new Map();
   const bad = [];
