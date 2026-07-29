@@ -22,6 +22,7 @@
 | [docs/tools-reference.md](docs/tools-reference.md) | All 168 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
+| [docs/screening.md](docs/screening.md) | Morning screening design — TV scanner as coarse filter, our detectors as verdict |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
 | [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
