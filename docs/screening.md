@@ -262,18 +262,53 @@ A name hitting one screen is not excluded; it ranks below a name hitting three.
 
 ### 3. Output: a rewritten watchlist AND a companion report
 
-**Watchlist.** TradingView's REST API is reachable from inside the chart page
-with the session cookie — `GET /api/v1/symbols_list/custom/` returns the lists,
-and the active one comes back as `{id, type, name, symbols, active, shared,
-color, description}`. A named list can therefore be created and rewritten daily.
+**Watchlist — the mechanism already exists.** `src/core/watchlist_sync.js` has
+carried the full write path for some time:
 
-What did **not** work, both established by probing rather than assumed:
-`window.TradingViewApi.watchlist()` throws *not implemented* in the desktop
-app, and `TV_WATCHLISTS_URL` is empty. The REST path is the only one, and it
-must be called from inside the page — from Node it carries no session.
+```
+read:  GET  /api/v1/symbols_list/active/
+list:  GET  /api/v1/symbols_list/custom/          -> [{id, name, symbols, active}]
+write: POST /api/v1/symbols_list/custom/{id}/replace/   body = the full array
+find:  GET  /api/v1/symbols_list/search/?text=   -> resolves a bare ticker
+```
 
-**Writing to the account is a real side effect** and will be confirmed before
-the first live write.
+It runs from inside the chart page so the session cookie applies, resolves bare
+tickers to TradingView symbols (`RHM.DE` → `XETR:RHM`), refuses to write when a
+symbol would appear twice (TradingView 422s the whole request on a duplicate),
+verifies the entry count moved by exactly the expected amount afterwards, and
+backs the previous list up.
+
+**The one thing that does not carry over is its safety rule.** `applySync` is
+deliberately *additive only*:
+
+```
+Refusing to write: rebuilding the watchlist would drop N existing symbols
+Refusing to write: rebuilt watchlist is smaller
+```
+
+That is right for the TA sync, whose job is to never lose a symbol from a
+314-entry list the user curates. It is exactly wrong for a list that is
+rewritten from scratch every morning, where shrinking is the point.
+
+So the daily rewrite needs its own path with the guard **inverted**: instead of
+*never shrink*, it is *never write to a list you do not own*. Concretely — the
+target is resolved by exact name match, the id is confirmed against that name
+immediately before the POST, and any other list is untouchable. A rewrite that
+cannot find `Swing Opportunities` by name must fail rather than fall back to
+the active list, because the active list is the 314-entry one.
+
+Everything else — resolution, duplicate handling, count verification, backup —
+is reused rather than rewritten.
+
+**The list itself is yours to create.** Nothing here creates account objects;
+it only rewrites the one list you designate. Create `Swing Opportunities` in
+TradingView and the runner will find it by name.
+
+*(An earlier draft of this doc said the write path was unproven and that
+`TradingViewApi.watchlist()` being unimplemented left REST as an untested
+option. That was wrong — `watchlist_sync.js` has been using the REST path in
+production. The `watchlist()` and `TV_WATCHLISTS_URL` dead ends are real, but
+irrelevant.)*
 
 **Report.** The Sunday review's schema, so TA imports one contract, not two.
 
@@ -329,11 +364,13 @@ bar this analysis is based on"*.
 Twenty names is roughly four minutes of stage 2, against the Sunday review's
 7–12 for about fifty. Comfortably inside the pre-open window.
 
-## Still open
+## Settled
 
-- **Drawings.** The Sunday review draws its findings on every chart. Twenty
-  charts redrawn daily is real churn — worth deciding whether the morning screen
-  draws at all, or only writes the report.
-- **The list name.** `Swing Watchlist` unless you prefer otherwise. It must not
-  collide with the existing `TA_TradingView_Watchlist` (314) or `Watchlist`
-  (175).
+- **Drawings: yes**, on all twenty charts, same as the Sunday review. Stale
+  drawings are cleared per ticker first — **by text signature, not by entity
+  id**, since ids die with the TradingView session and this runs daily. That is
+  the `sources: ['review']` path already used by the Sunday run; the morning
+  screen reuses it rather than adding a second vocabulary.
+- **List name: `Swing Opportunities`**, created by hand in TradingView and
+  resolved by exact name. `TA_TradingView_Watchlist` (314) and `Watchlist` (175)
+  are never written to.
