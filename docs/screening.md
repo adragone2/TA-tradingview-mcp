@@ -4,8 +4,28 @@ How to find candidate trades across the whole US market each morning, using
 TradingView's own scanner as the coarse filter and this repo's detectors as the
 verdict.
 
-Status: **design, not built.** Every number below is measured; no code exists
-yet beyond the probes that produced them.
+Status: **built and running.** Scheduled weekdays 07:00 ET.
+
+| | |
+|---|---|
+| Exact parameters | [screening-parameters.md](screening-parameters.md) — generated from the code |
+| Runner | `node scripts/morning-screen.js` |
+| Output | `reports/morning-screen-YYYY-MM-DD.json` + the `Swing Opportunities` watchlist |
+| Scheduled task | `morning-screen`, weekdays 07:00 |
+
+Three things changed between this design and the implementation, each because
+the live data disagreed with the plan — see the git log for the measurements:
+
+1. **Ranking is confluence WITHIN direction**, not global. `structural_reversal`
+   overlaps every other screen at 0% by construction, so a global ranking
+   deleted the reversal side outright.
+2. **The continuation screens overlap up to 42%**, so their agreement is not
+   independent confirmation. The pairwise matrix ships in every report.
+3. **`/replace/` is a reorder, not a rewrite.** A watchlist rewrite is
+   remove-then-append; `/replace/` only imposes order afterwards.
+
+A **KEEP** section in the watchlist is preserved across rewrites — its symbols
+stay in the list and their drawings are not cleared.
 
 ---
 

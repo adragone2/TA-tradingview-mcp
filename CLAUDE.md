@@ -22,7 +22,8 @@
 | [docs/tools-reference.md](docs/tools-reference.md) | All 168 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
-| [docs/screening.md](docs/screening.md) | Morning screening design — TV scanner as coarse filter, our detectors as verdict |
+| [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
+| [docs/screening-parameters.md](docs/screening-parameters.md) | The exact screen parameters (generated — `node scripts/gen-screens-doc.js`) |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
 | [docs/playbook.md](docs/playbook.md) | Strategies and patterns from the reference books |
@@ -44,6 +45,7 @@
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
+| "Any new swing candidates?" | `node scripts/morning-screen.js` — 4,505 index members to a drawn, watchlisted top 20. Runs weekdays 07:00. A KEEP section in the watchlist is preserved |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |

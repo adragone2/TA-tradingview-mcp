@@ -36,7 +36,8 @@
     "clear:orphans": "node scripts/clear-orphans.js",
     "noise:detectors": "node scripts/detector-noise.js",
     "noise:crabel": "node scripts/crabel-noise.js",
-    "morning": "node scripts/morning-screen.js"
+    "morning": "node scripts/morning-screen.js",
+    "docs:screens": "node scripts/gen-screens-doc.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
