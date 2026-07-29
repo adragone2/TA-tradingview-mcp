@@ -64,6 +64,8 @@ A hammer in the middle of a range is a bar with a long wick. The tool reports `p
 
 ## What gets detected
 
+**Volatility state** — NR4/NR7 here, plus 2BNR/3BNR/4BNR/8BNR via `volatility_state`. The multi-bar ones measure a coil across several days that the single-day NRs cannot see. None of them carry direction, and all of them fire on 100% of random walks.
+
 **Candlestick** — doji, hammer/hanging man, shooting star/inverted hammer, bullish/bearish engulfing, harami, dark cloud cover, piercing line, inside bar, NR4/NR7, gaps.
 
 **Structural, from swings** — double and triple tops/bottoms, head-and-shoulders and its inverse.

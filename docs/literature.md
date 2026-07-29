@@ -172,3 +172,32 @@ Covered in [research-evidence.md](research-evidence.md) §1.1 — kernel-regress
 Demonstrated on a constructed candidate set: the gross winner is a 280-signal rule; at 20bps the winner is a 15-signal rule. Ranking gross and costing afterwards picks the wrong one.
 
 One limitation surfaced rather than hidden: **FDR needs a large candidate set.** With 21 candidates, expected false positives (1.05) exceed a single true selection, so FDR+ pins at 100% however real the edge — measured, and the same edge among 201 candidates is detected. The tool says `underpowered` below ~50 and points to `deflated_sharpe`, which is built for that case.
+
+---
+
+## Crabel, *Day Trading with Short Term Price Patterns and Opening Range Breakout* (1990)
+
+Not a paper — a practitioner monograph, and the origin of NR4 and NR7, which
+were already implemented here and match his definitions exactly.
+
+**What it adds.** The multi-bar narrow-range family (2BNR/3BNR/4BNR/8BNR):
+the narrowest N-day range against every other N-day period in a lookback. NR4
+and NR7 compare single days, so they are blind to a market coiling across a
+week with no one day unusually quiet. Implemented in `src/core/crabel.js`,
+exposed as `volatility_state`.
+
+**What it cannot give us.** Opening Range Breakout — the title concept, and
+chapters 1-4, 17, 26-32 — needs the first *thirty seconds* of trade. Not
+reachable from daily bars, and deliberately not approximated.
+
+**Where it fails.** Its central Contraction/Expansion Principle has no lift
+over noise: +26.7 points on real data against **+30.0 on a random walk**. Daily
+range is mean-reverting by arithmetic, and that is the whole effect. True as a
+description, empty as an edge. Full numbers in
+[research-evidence.md](research-evidence.md).
+
+**Where it is ahead of most of this list.** Chapter 3 is an explicit control
+group — the unconditional rate against which every conditional result must be
+read. A practitioner reaching for the noise floor in 1990, without the
+randomisation that would have shown him the answer above.
+

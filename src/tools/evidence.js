@@ -12,6 +12,7 @@ import * as stops from '../core/stops.js';
 import * as horizon from '../core/horizon.js';
 import * as selection from '../core/selection.js';
 import * as costs from '../core/costs.js';
+import * as crabel from '../core/crabel.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -237,6 +238,25 @@ export function registerEvidenceTools(server) {
         throw new Error('Supply either `edge`, or both `published_ir` and `study_breadth`.');
       }
       return { success: true, ...breadth.translateEdge({ published_ir, study_breadth, your_positions }) };
+    }),
+  );
+
+  server.tool(
+    'volatility_state',
+    "Crabel's contraction/expansion measures, reported as a VOLATILITY STATE and never as a signal. Returns the multi-bar narrow ranges (2BNR/3BNR/4BNR/8BNR) — the narrowest N-day range against every other N-day period in a lookback, which NR4 and NR7 structurally cannot see because they compare single days. Also hooks, wide-spread days, 3DHR and the stretch. READ THE VERDICT BEFORE THE PATTERNS: the contraction/expansion principle these rest on has NO lift over noise. A narrow range is followed by a wider one 76.4% of the time on real data — and 80.2% of the time on a random walk, against a 50% base in both. Real data shows LESS lift than noise, because daily range is mean-reverting by arithmetic. Every pattern here fires on 100% of random walks. Use it to describe how coiled a market is; never to justify a direction or a trade.",
+    {
+      count: z.coerce.number().optional().describe('Bars to load (default 300 — the 8BNR lookback needs 48)'),
+    },
+    wrap(async ({ count = 300 }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const out = crabel.crabelPatterns(bars);
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        ...out,
+        verdict: crabel.CRABEL_NOISE_BASELINE.contraction_expansion.verdict,
+        how_to_read: 'A contraction says a range expansion is likelier — and says nothing about direction. '
+          + 'Take direction from structure_analyze or momentum_read. Quote the noise floor beside any detection.',
+      };
     }),
   );
 }

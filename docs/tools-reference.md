@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **167 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **168 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -380,6 +380,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### edge_* (1)
 
 - **`edge_breadth`** — What a published cross-sectional edge is actually worth on YOUR number of positions
+
+### volatility_* (1)
+
+- **`volatility_state`** — Crabel's contraction/expansion measures, reported as a VOLATILITY STATE and never as a signal
 
 ---
 

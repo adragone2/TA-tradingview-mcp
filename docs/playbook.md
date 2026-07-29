@@ -295,3 +295,16 @@ Everything here is checked against its own tests and against a live chart. Nothi
 
 Patternz keys bars by date, so it expects DAILY data. The export warns when the chart is intraday, because multiple bars sharing a date would be misread rather than rejected.
 
+## Crabel's contraction/expansion — why it is not in the playbook
+
+`volatility_state` implements it, and it is deliberately absent from the
+strategies above.
+
+A narrow range really does precede a wider one — 76.4% of the time. But a
+random walk manages 80.2%, against a 50% base in both, so there is no edge to
+build a rule on. Daily range is mean-reverting by arithmetic and that accounts
+for all of it.
+
+Use it as CONTEXT — "this market is coiled, expect a bigger bar" — and take the
+direction from structure. Anything more is trading an artefact of ranges.
+
