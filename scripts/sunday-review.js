@@ -56,6 +56,7 @@ import * as costs from '../src/core/costs.js';
 import * as breadth from '../src/core/breadth.js';
 import { findChannels } from '../src/core/channels.js';
 import { tradePlans } from '../src/core/pattern_trades.js';
+import { removeOrphans } from '../src/core/orphans.js';
 
 export const SCHEMA_VERSION = '1.0';
 
@@ -728,8 +729,30 @@ async function drawPatternGeometry(p, bars, group, put) {
 /** Draw the report's own findings on the chart, so the two can be read together. */
 async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, channel) {
   const group = `sunday-${String(ticker).replace(/^.*:/, '')}`;
-  const drawn = { group, shapes: 0, items: [], errors: [] };
-  try { await drawing.clearAll({ scope: 'mcp', group }); } catch { /* first run */ }
+  const drawn = { group, shapes: 0, items: [], errors: [], cleared: { tracked: 0, stale: 0 } };
+
+  // CLEAR LAST WEEK BEFORE DRAWING THIS WEEK — in two passes, because one is
+  // not enough and the gap is exactly a week wide.
+  //
+  // clearAll only removes what the registry still tracks. TradingView entity
+  // IDs are SESSION-scoped, so by the next Sunday the app has restarted, every
+  // ID from the previous run is dead, prune has dropped them, and this call
+  // silently removes nothing while the drawings remain. That is how 545 stale
+  // shapes accumulated across 45 charts — SNDK carrying the same level set six
+  // times over.
+  //
+  // The second pass matches by TEXT, which survives a restart. It is scoped to
+  // `review` signatures so it clears what this script drew and leaves a walls
+  // overlay or a ta_draw_decision the user placed deliberately alone — and it
+  // never touches a shape whose label we do not generate.
+  try {
+    const r = await drawing.clearAll({ scope: 'mcp', group });
+    drawn.cleared.tracked = r?.removed || 0;
+  } catch { /* first run, or nothing tracked */ }
+  try {
+    const r = await removeOrphans({ dry_run: false, sources: ['review'] });
+    drawn.cleared.stale = r?.removed || 0;
+  } catch (e) { drawn.errors.push(`clear stale: ${e.message}`); }
 
   const put = async (fn, label) => {
     try { const r = await fn(); if (r?.success) { drawn.shapes++; drawn.items.push(label); } }
@@ -985,3 +1008,10 @@ log(`\n  ${jsonPath}`);
 log(`  analysed ${ok.length}/${queue.length}`);
 log(`  TA validation: ${JSON.stringify(report.ta_validation_summary)}`);
 log(`  our bias:      ${JSON.stringify(report.our_bias_summary)}`);
+
+// EXIT EXPLICITLY. The CDP connection keeps a socket open, so the process
+// finishes all its work, prints this summary and then sits there forever. Run
+// by hand that is merely annoying; run by the Sunday scheduler it means the
+// task never completes and reports no result despite having done everything.
+// clear-orphans.js already does this for the same reason.
+process.exit(0);

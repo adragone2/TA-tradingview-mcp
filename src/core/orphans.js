@@ -37,13 +37,32 @@ const NUM = String.raw`-?\d+(?:\.\d+)?`;
 const PAT = [...STRUCTURAL_PATTERNS, 'ascending_channel', 'descending_channel', 'horizontal_channel'].join('|');
 
 /**
- * The text formats this toolchain writes.
+ * The text formats this toolchain writes, grouped by WHICH TOOL WROTE THEM.
  *
  * Kept beside the code that writes them — if a drawing label changes format
  * and its signature is not updated here, the orphan it leaves behind becomes
- * permanent. `signaturesCoverText` in the tests asserts the round trip.
+ * permanent. The tests assert that round trip across every file that draws.
+ *
+ * The grouping exists so a caller can clear its own prior output without
+ * touching another tool's. The Sunday review must wipe last week's levels and
+ * patterns before redrawing — otherwise they stack, which is how 545 stale
+ * shapes accumulated across 45 charts — but a walls overlay the user applied
+ * deliberately is not the review's to delete.
+ *
+ * `MCP_TEXT_SIGNATURES` is the flat union, because the full sweep should still
+ * reach everything.
  */
-export const MCP_TEXT_SIGNATURES = [
+export const SIGNATURES_BY_SOURCE = {
+  /** levels, zones, patterns, trade plans, channels, VCP — what the review draws. */
+  review: [],
+  /** ta_draw_decision. */
+  ta_decision: [],
+  /** walls_draw / walls_apply. */
+  walls: [],
+};
+
+// ── the Sunday review's own vocabulary ──────────────────────────────────────
+SIGNATURES_BY_SOURCE.review.push(
   // levels_draw / the review's key levels: "S 1277.33 (-0.07%)", "R 36.99 (5.5%)"
   new RegExp(`^[SR] ${NUM} \\(${NUM}%\\)$`),
   // zones: "demand 33.16-34.2", "supply 1411.5-1573.09"
@@ -78,26 +97,42 @@ export const MCP_TEXT_SIGNATURES = [
   new RegExp(`^(?:${PAT}) (?:forming|confirmed) (?:upper|lower)$`),
   // VCP: "VCP pivot 34.2"
   new RegExp(`^VCP pivot ${NUM}$`),
+);
 
-  // ── ta_draw_decision (src/core/ta_decisions.js) ──────────────────────────
-  // "TA Call Wall 143.24", "TA Stop (CRITICAL) 598.37".
-  // These were leaking: every level ta_draw_decision has ever drawn was
-  // unrecognisable to the sweep and could never be cleaned up.
+// ── ta_draw_decision (src/core/ta_decisions.js) ────────────────────────────
+// "TA Call Wall 143.24", "TA Stop (CRITICAL) 598.37".
+// These were leaking: every level ta_draw_decision has ever drawn was
+// unrecognisable to the sweep and could never be cleaned up.
+SIGNATURES_BY_SOURCE.ta_decision.push(
   new RegExp(`^TA (?:Call Wall|Put Wall|BB Upper|BB Lower|PIF Resistance|PIF Support) ${NUM}$`),
   new RegExp(`^TA Stop \\([A-Za-z_]+\\) ${NUM}$`),
+);
 
-  // ── walls_draw / walls_apply (src/core/ta_walls.js) ──────────────────────
-  // Tags joined with " / " and suffixed with the price: "D Call Wall 1250",
-  // "W Put GEX / M Call Wall 1180", "Gamma Flip 1195".
+// ── walls_draw / walls_apply (src/core/ta_walls.js) ────────────────────────
+// Tags joined with " / " and suffixed with the price: "D Call Wall 1250",
+// "W Put GEX / M Call Wall 1180", "Gamma Flip 1195".
+SIGNATURES_BY_SOURCE.walls.push(
   new RegExp(`^(?:(?:[DWM] (?:Call Wall|Put Wall|Call GEX|Put GEX)|Gamma Flip)(?: / )?)+ ${NUM}$`),
-];
+);
 
-/** Does this text match something we generate? */
-export function isMcpText(text) {
+/** The flat union. The full sweep should still reach everything. */
+export const MCP_TEXT_SIGNATURES = Object.values(SIGNATURES_BY_SOURCE).flat();
+
+/**
+ * Does this text match something we generate?
+ *
+ * `sources` narrows it to particular writers — `['review']` matches only what
+ * the Sunday review draws, leaving a deliberate walls overlay alone. Omitted,
+ * it matches everything, which is what the full sweep wants.
+ */
+export function isMcpText(text, { sources = null } = {}) {
   if (typeof text !== 'string') return false;
   const t = text.trim();
   if (!t) return false;                       // an empty label proves nothing
-  return MCP_TEXT_SIGNATURES.some((re) => re.test(t));
+  const list = sources
+    ? sources.flatMap((s) => SIGNATURES_BY_SOURCE[s] || [])
+    : MCP_TEXT_SIGNATURES;
+  return list.some((re) => re.test(t));
 }
 
 /**
@@ -107,7 +142,7 @@ export function isMcpText(text) {
  * `orphans` is ours by text but lost from the registry; `foreign` is
  * everything else and is never touched.
  */
-export async function findOrphans() {
+export async function findOrphans({ sources = null } = {}) {
   const api = await getChartApi();
   const shapes = (await evaluate(`
     (function(){
@@ -128,7 +163,7 @@ export async function findOrphans() {
   const tracked = [], orphans = [], foreign = [];
   for (const s of shapes) {
     if (trackedIds.has(s.id)) tracked.push(s);
-    else if (isMcpText(s.text)) orphans.push(s);
+    else if (isMcpText(s.text, { sources })) orphans.push(s);
     else foreign.push(s);
   }
   return { total: shapes.length, tracked, orphans, foreign };
@@ -140,9 +175,9 @@ export async function findOrphans() {
  * `dry_run` defaults to TRUE. This deletes things on a live chart, and a tool
  * that deletes by default is a tool that deletes by accident.
  */
-export async function removeOrphans({ dry_run = true } = {}) {
+export async function removeOrphans({ dry_run = true, sources = null } = {}) {
   const api = await getChartApi();
-  const found = await findOrphans();
+  const found = await findOrphans({ sources });
 
   if (dry_run) {
     return {

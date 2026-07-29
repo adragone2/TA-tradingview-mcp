@@ -66,9 +66,9 @@ Each maps to a skill in this repo.
 | `momentum` | chart-analysis | `agreement`, `horizons`, `fifty_two_week_ratio`, `moving_average_distance` |
 | `relative_strength` | chart-analysis | `leadership`, `high_warning` |
 | `volume_analysis` | chart-analysis | `poc`, `value_area_*`, `price_vs_value_area`, `effort_vs_result` |
-| `divergence` | chart-analysis | `agreement`, `count` |
+| `divergence` | chart-analysis | `agreement`, `count`, `total_found`, `indicators_checked`, `indicators_agreeing`, `agreement_direction` |
 | `wyckoff` | chart-analysis | `phase`, `springs_upthrusts`, `interpretive: true` |
-| `elliott` | chart-analysis | `valid_counts`, `agreement` |
+| `elliott` | chart-analysis | `valid_counts`, `distinct_recent_counts`, `sensitivities_run`, `agreement` |
 | `fibonacci` | chart-analysis | `retraced_pct`, `in_golden_zone`, `targets`, `targets_refused_reason` |
 | `liquidity` | supply-demand-setup | `anchored_vwap`, `price_vs_avwap`, `fair_value_gaps` |
 | `volatility_contraction` | chart-analysis | `vcp_qualifies`, `contractions`, `pivot`, `failed_checks` |
@@ -130,6 +130,22 @@ Three rules for a consumer:
 **`rr` is arithmetic on the levels and is not evidence.** Read it beside
 `base_rate`: a rising wedge can show R:R 5.46 while failing to move 5% **51%**
 of the time.
+
+### `divergence` and `elliott` — read the agreement, not the count
+
+Both blocks gained fields when a key-name mismatch was fixed on 2026-07-28.
+Until then `divergence.count` and `elliott.valid_counts` were **0 on every
+row** — the script read keys the modules do not return, and a missing key
+landing on `.length` or behind `?? 0` produces a plausible zero rather than a
+null. The `agreement` prose in the same block said otherwise the whole time.
+
+**`indicators_agreeing` is the field that matters.** A lone divergence appears
+on **99%** of random walks, 7 times per walk; two or more indicators agreeing
+appears on **13.5%**. Filter on the agreement count, never on `count > 0`.
+
+**`distinct_recent_counts` is the Elliott finding.** Rule-valid counts exist on
+**70.5%** of random walks. Disagreement across sensitivities is the reading,
+not the count itself.
 
 ## `our_view` — the independent call
 
