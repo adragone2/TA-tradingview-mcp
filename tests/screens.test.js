@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { offHighPct, daysToEarnings, movedSinceBar, UNIVERSES, DEFAULT_UNIVERSE, LIQUIDITY_FILTER } from '../src/core/scanner.js';
+import { parseSections, flattenSections, buildWithPreserved } from '../src/core/watchlist_rewrite.js';
 import { SCREENS, veto, VETO_DEFAULTS, mergeByConfluence, overlapMatrix, DEFAULT_SLOTS } from '../src/core/screens.js';
 
 const row = (o = {}) => ({
@@ -193,5 +194,62 @@ describe('mergeByConfluence — direction-aware, because global confluence erase
   test('the default slots leave room for the reversal side', () => {
     assert.ok(DEFAULT_SLOTS.reversal >= 1, 'the reversal side would be erased again');
     assert.equal(DEFAULT_SLOTS.continuation + DEFAULT_SLOTS.reversal, 20);
+  });
+});
+
+describe('KEEP — sections survive the daily rewrite', () => {
+  /**
+   * TradingView stores a watchlist as ONE flat array where a section header is
+   * an entry prefixed with `###`. Moving a ticker into KEEP is how the user
+   * tells the morning run to leave it alone: it stays in the list AND its
+   * drawings stay on the chart.
+   */
+  const cur = ['NASDAQ:VLY', 'NYSE:CVS', '###KEEP', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
+
+  test('parses the flat array into a default section plus named ones', () => {
+    const p = parseSections(cur);
+    assert.deepEqual(p.default, ['NASDAQ:VLY', 'NYSE:CVS']);
+    assert.equal(p.sections.length, 1);
+    assert.equal(p.sections[0].name, 'KEEP');
+    assert.deepEqual(p.sections[0].symbols, ['NASDAQ:NVDA', 'NASDAQ:AAPL']);
+  });
+
+  test('a rewrite replaces the default section and preserves KEEP verbatim', () => {
+    const b = buildWithPreserved(cur, ['NYSE:XOM', 'NYSE:WMT'], ['KEEP']);
+    assert.deepEqual(b.entries, ['NYSE:XOM', 'NYSE:WMT', '###KEEP', 'NASDAQ:NVDA', 'NASDAQ:AAPL']);
+    assert.deepEqual(b.protected_symbols, ['NASDAQ:NVDA', 'NASDAQ:AAPL']);
+  });
+
+  test('a name in KEEP that also screens today appears ONCE, in KEEP', () => {
+    // TradingView 422s the entire write on a duplicate, so this is not
+    // cosmetic — it would fail the whole run.
+    const b = buildWithPreserved(cur, ['NASDAQ:NVDA', 'NYSE:XOM'], ['KEEP']);
+    assert.equal(b.entries.filter((e) => e === 'NASDAQ:NVDA').length, 1);
+    assert.ok(b.entries.indexOf('NASDAQ:NVDA') > b.entries.indexOf('###KEEP'));
+  });
+
+  test('section matching is case-insensitive', () => {
+    const b = buildWithPreserved(['A', '###keep', 'B'], ['C'], ['KEEP']);
+    assert.deepEqual(b.entries, ['C', '###keep', 'B']);
+  });
+
+  test('a list with no sections rewrites cleanly', () => {
+    const b = buildWithPreserved(['A', 'B'], ['C', 'D'], ['KEEP']);
+    assert.deepEqual(b.entries, ['C', 'D']);
+    assert.deepEqual(b.protected_symbols, []);
+  });
+
+  test('an empty KEEP section is preserved so the user does not lose the header', () => {
+    const b = buildWithPreserved(['A', '###KEEP'], ['C'], ['KEEP']);
+    assert.deepEqual(b.entries, ['C', '###KEEP']);
+  });
+
+  test('sections NOT on the preserve list are reported, not silently dropped', () => {
+    const b = buildWithPreserved(['A', '###OLD', 'X'], ['C'], ['KEEP']);
+    assert.deepEqual(b.dropped_sections, ['OLD']);
+  });
+
+  test('flatten is the inverse of parse', () => {
+    assert.deepEqual(flattenSections(parseSections(cur)), cur);
   });
 });

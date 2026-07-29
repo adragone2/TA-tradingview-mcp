@@ -34,6 +34,59 @@ import { evaluate } from '../connection.js';
 
 const TV = 'https://www.tradingview.com';
 
+/**
+ * TradingView stores a watchlist as ONE flat ordered array in which a section
+ * header is an entry prefixed with `###`. Everything after a header belongs to
+ * that section until the next one.
+ *
+ *   ["NASDAQ:VLY", "NYSE:CVS", "###KEEP", "NASDAQ:NVDA"]
+ *    \_____ default section _____/         \__ KEEP __/
+ */
+const SECTION_PREFIX = '###';
+
+/** Split the flat array into a default section plus named ones. PURE. */
+export function parseSections(entries) {
+  const out = { default: [], sections: [] };
+  let current = null;
+  for (const e of entries || []) {
+    if (String(e).startsWith(SECTION_PREFIX)) {
+      current = { name: String(e).slice(SECTION_PREFIX.length), header: String(e), symbols: [] };
+      out.sections.push(current);
+    } else if (current) current.symbols.push(e);
+    else out.default.push(e);
+  }
+  return out;
+}
+
+/** Flatten back, preserving section order. PURE. */
+export function flattenSections({ default: def, sections }) {
+  return [...def, ...sections.flatMap((s) => [s.header, ...s.symbols])];
+}
+
+/**
+ * Build the array to write: today's names in the default section, every
+ * PRESERVED section carried through untouched.
+ *
+ * A symbol sitting in a preserved section is dropped from today's list rather
+ * than appearing twice — TradingView rejects the whole write with 422 on a
+ * duplicate, and the user putting it in KEEP is the stronger statement.
+ */
+export function buildWithPreserved(currentEntries, todaysSymbols, preserve = ['KEEP']) {
+  const parsed = parseSections(currentEntries);
+  const keepNames = new Set(preserve.map((p) => p.toUpperCase()));
+  const preserved = parsed.sections.filter((s) => keepNames.has(s.name.toUpperCase()));
+  const protectedSymbols = new Set(preserved.flatMap((s) => s.symbols));
+  return {
+    entries: flattenSections({
+      default: todaysSymbols.filter((s) => !protectedSymbols.has(s)),
+      sections: preserved,
+    }),
+    protected_symbols: [...protectedSymbols],
+    preserved_sections: preserved.map((s) => ({ name: s.name, count: s.symbols.length })),
+    dropped_sections: parsed.sections.filter((s) => !keepNames.has(s.name.toUpperCase())).map((s) => s.name),
+  };
+}
+
 /** Run a fetch inside the page, where the session cookie applies. */
 async function pageFetch(expr) {
   const res = await evaluate(expr, { awaitPromise: true });

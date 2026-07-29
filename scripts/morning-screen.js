@@ -31,11 +31,15 @@ import { scan, BASE_COLUMNS, DEFAULT_UNIVERSE, UNIVERSES, movedSinceBar, offHigh
 import { SCREENS, mergeByConfluence, DEFAULT_SLOTS } from '../src/core/screens.js';
 import { assess, ourAssessment } from '../src/core/assessment.js';
 import { drawFindings } from '../src/core/assessment_draw.js';
-import { rewrite, listContents, refreshPanel } from '../src/core/watchlist_rewrite.js';
+import { rewrite, listContents, refreshPanel, buildWithPreserved, parseSections } from '../src/core/watchlist_rewrite.js';
 import { removeOrphans } from '../src/core/orphans.js';
 
 export const SCHEMA_VERSION = '1.0';
 const WATCHLIST_NAME = 'Swing Opportunities';
+// Sections whose contents survive the daily rewrite untouched — not removed
+// from the list, and their charts are not cleared. Moving a ticker into KEEP in
+// TradingView is how you tell this run to leave it alone.
+const PRESERVE_SECTIONS = ['KEEP'];
 
 const args = process.argv.slice(2);
 const argVal = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
@@ -105,8 +109,17 @@ if (DRAW) {
   try { previous = await listContents(WATCHLIST_NAME); }
   catch (e) { log(`  could not read "${WATCHLIST_NAME}": ${e.message}`); }
 
+  // Symbols in a preserved section are OFF LIMITS: they stay in the list and
+  // their drawings stay on the chart. Section headers ("###KEEP") are entries
+  // in the same flat array and are never symbols.
+  const parsed = parseSections(previous || []);
+  const keptSyms = new Set(parsed.sections
+    .filter((s) => PRESERVE_SECTIONS.some((p) => p.toUpperCase() === s.name.toUpperCase()))
+    .flatMap((s) => s.symbols));
+  if (keptSyms.size) log(`  ${keptSyms.size} symbol(s) in ${PRESERVE_SECTIONS.join('/')} — left untouched`);
+
   const todays = new Set(merged.candidates.map((c) => c.symbol));
-  const dropped = (previous || []).filter((s) => !todays.has(s));
+  const dropped = parsed.default.filter((s) => !todays.has(s) && !keptSyms.has(s));
   if (dropped.length) {
     log(`\n  clearing ${dropped.length} chart(s) dropping out of the list...`);
     let cleared = 0;
@@ -219,9 +232,14 @@ log(`  our bias: ${JSON.stringify(report.our_bias_summary)}`);
 // ── watchlist ───────────────────────────────────────────────────────────────
 if (WRITE_LIST && ok.length) {
   try {
+    const current = await listContents(WATCHLIST_NAME);
+    const built = buildWithPreserved(current, ok.map((t) => t.symbol), PRESERVE_SECTIONS);
+    if (built.preserved_sections.length) {
+      log(`  preserving ${built.preserved_sections.map((s) => `${s.name}(${s.count})`).join(', ')}`);
+    }
     const res = await rewrite({
       name: WATCHLIST_NAME,
-      symbols: ok.map((t) => t.symbol),
+      symbols: built.entries,
       dry_run: DRY,
     });
     log(`  watchlist "${WATCHLIST_NAME}": ${res.dry_run
