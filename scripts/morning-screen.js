@@ -31,7 +31,7 @@ import { scan, BASE_COLUMNS, DEFAULT_UNIVERSE, UNIVERSES, movedSinceBar, offHigh
 import { SCREENS, mergeByConfluence, DEFAULT_SLOTS } from '../src/core/screens.js';
 import { assess, ourAssessment } from '../src/core/assessment.js';
 import { drawFindings } from '../src/core/assessment_draw.js';
-import { rewrite, findByName, listContents } from '../src/core/watchlist_rewrite.js';
+import { rewrite, listContents, refreshPanel } from '../src/core/watchlist_rewrite.js';
 import { removeOrphans } from '../src/core/orphans.js';
 
 export const SCHEMA_VERSION = '1.0';
@@ -227,6 +227,14 @@ if (WRITE_LIST && ok.length) {
     log(`  watchlist "${WATCHLIST_NAME}": ${res.dry_run
       ? `DRY RUN — would write ${res.would_write} (currently ${res.currently})`
       : `wrote ${res.entries_after} (was ${res.entries_before}), backup ${res.backup}`}`);
+
+    // The panel caches and nothing invalidates it on a REST write. The app is
+    // open during EVERY run — the MCP writes by running JS inside the page —
+    // so without this the list reads empty or stale every single morning.
+    if (!res.dry_run) {
+      const p = await refreshPanel({ expect: res.entries_after });
+      log(`  panel refresh: ${p.success ? `${p.rows} rows after ${Math.round(p.waited_ms / 1000)}s` : p.note}`);
+    }
   } catch (e) {
     log(`  watchlist FAILED: ${e.message}`);
   }

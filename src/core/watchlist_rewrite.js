@@ -202,3 +202,49 @@ export async function rewrite({ name, symbols, dry_run = true, backup_dir = 'bac
     note: 'Full replace. Only the list matching this exact name was touched.',
   };
 }
+
+/**
+ * Force TradingView's watchlist panel to show what the server actually holds.
+ *
+ * ── Why this is required, not cosmetic ──
+ *
+ * The panel caches its contents and there is no event that invalidates them
+ * when the list changes through REST. The MCP writes by running JS INSIDE the
+ * TradingView page, so the app is by definition open during every write — this
+ * is not an occasional condition that resolves itself, it happens on every
+ * single run.
+ *
+ * Proven rather than assumed:
+ *
+ *   before write   panel 20   server 20     in sync
+ *   after write    panel 20   server 15     stale
+ *   after reload   panel 15                 correct, ~4s
+ *
+ * A reload is safe. Drawings persist server-side — the evidence is that 545
+ * orphaned shapes survived TradingView restarts, which is the entire reason
+ * clear-orphans exists. Verified again here: a chart carrying 21 shapes still
+ * had all 21 afterwards.
+ */
+export async function refreshPanel({ expect = null, timeout_ms = 45_000 } = {}) {
+  const started = Date.now();
+  try { await evaluate('location.reload()'); } catch { /* the page goes away mid-call */ }
+
+  while (Date.now() - started < timeout_ms) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const n = await evaluate("document.querySelectorAll('[class*=\"symbolNameText\"]').length");
+      if (typeof n === 'number' && n > 0) {
+        return {
+          success: true, rows: n, waited_ms: Date.now() - started,
+          matches_expected: expect == null ? null : n === expect,
+          ...(expect != null && n !== expect
+            ? { note: `Panel shows ${n} but ${expect} were written — it may still be settling.` }
+            : {}),
+        };
+      }
+    } catch { /* still reloading */ }
+  }
+  return { success: false, waited_ms: Date.now() - started,
+    note: 'The panel did not come back in time. The list IS written; re-select it in TradingView to see it.' };
+}
+
