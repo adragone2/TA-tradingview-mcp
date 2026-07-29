@@ -100,3 +100,49 @@ retired formats must stay, because an orphan was by definition written by older
 code. `tests/orphans.test.js` lifts every label template out of the review
 source and asserts the matcher recognises it.
 
+## `git commit` fails with "unable to write file .git/objects/... Permission denied"
+
+**Symptom:** an intermittent `error: unable to write file
+.git/objects/xx/... : Permission denied` followed by `failed to insert into
+database`. Re-running the same commit usually succeeds, and `git fsck` reports
+no corruption — only dangling blobs from the aborted attempt.
+
+**Cause:** a real-time antivirus scanner opening each newly created loose
+object before git can rename it into place. On Windows a file with an open
+handle cannot be renamed, which surfaces as `Permission denied`. This machine
+runs **Norton 360** (Windows Defender is disabled), and the failure only
+appears when git writes MANY loose objects at once — a large `git add -A`.
+
+**Measured**, with a throwaway repo on the same volume, 250 files per commit,
+4 commits per trial, 3 trials each:
+
+| Configuration | Permission-denied per ~3000 objects |
+|---|---|
+| default | 4, 3, 4 — **11 total** |
+| `core.fsync=none` | 3 (no better) |
+| **`core.fsync=loose-object` + `core.fsyncMethod=batch`** | 0, 0, 0 — **0 total** |
+
+Sequential single-file commits never failed under any configuration, which is
+why this looked random for so long: it tracks the SIZE of the commit.
+
+**Applied** in this repo's `.git/config`:
+
+```bash
+git config core.fsync loose-object
+git config core.fsyncMethod batch
+```
+
+Batch mode writes all loose objects and then issues one bulk flush, instead of
+syncing each object as it is written. Fewer per-file flush-and-close events
+means fewer moments for the scanner to grab a file mid-rename. It is a
+supported Git mode (2.36+) built for exactly this, and git still syncs before
+updating refs — the residual risk is losing very recently written objects to a
+system crash, not repository corruption.
+
+**The root-cause fix is a Norton exclusion for the repository**, which has to
+be done in Norton's own UI: *Settings → Antivirus → Scans and Risks →
+Exclusions / Low Risks → Items to Exclude from Auto-Protect, SONAR and Download
+Intelligence Detection → Configure → Add Folder →* `E:\git-repos`. The git
+setting above makes the failure stop; the exclusion stops the scanner competing
+for the files at all, and also speeds up every git operation in the repo.
+
