@@ -232,8 +232,19 @@ export function alignment(screens) {
 
   let state, verdict;
   if (c === 0) {
-    state = 'context_unclear';
-    verdict = `${context.label} is a range, so it grants no directional permission. A setup on ${structure.label} is a range trade, not a trend trade — size and target it accordingly.`;
+    state = 'context_ranging';
+    /**
+     * This used to read "grants no directional permission", which overstated it.
+     * A ranging higher timeframe is a SPECIFIC regime, not an absence of
+     * information: Grimes (Waverly, 2013) reports that many of the best
+     * lower-timeframe trends occur inside higher-timeframe consolidation, and
+     * that a ranging HTF is where sharp, violent LTF trends appear. Treating it
+     * as "no signal" discards that.
+     */
+    verdict = `${context.label} is a range. That is not an absence of information — a ranging higher timeframe `
+      + `is where sharp lower-timeframe trends tend to appear, and a range on ${structure.label} inside it is `
+      + `usually a continuation pattern for the range rather than a failure. What it does NOT give you is a `
+      + `directional bias to lean on, so the trade has to stand on its own structure and its own levels.`;
   } else if (s === 0) {
     state = 'structure_consolidating';
     verdict = `${context.label} is ${context.trend} and ${structure.label} is consolidating inside it. That is the normal shape of a pullback — it is where continuation setups form, and it is also what a top looks like before it becomes one.`;
@@ -244,7 +255,24 @@ export function alignment(screens) {
     state = 'structure_consolidating';
   } else {
     state = 'opposed';
-    verdict = `${context.label} is ${context.trend} but ${structure.label} is ${structure.trend}. A setup here is COUNTERTREND to its own context. Elder's rule is to take signals only in the direction of the higher timeframe — if you take this, say out loud that it is countertrend and that the higher timeframe is against it.`;
+    /**
+     * Elder's rule used to be stated here as settled doctrine. It is contested,
+     * and by a source that measured it: Grimes (Waverly, 2013) ran a triple
+     * moving-average trend indicator over 973,087 observations WITH a random
+     * control, and on 903,586 equity observations the indicator was inverted —
+     * excess return of -157.9 when it read up against +166.9 when it read down,
+     * with next-bar direction at ~50% in every category including random.
+     *
+     * What survives is the weaker, useful claim: setups aligned with a trending
+     * higher timeframe resolve more easily, and against it they fail more often.
+     * What does not survive is "only ever trade with the higher timeframe",
+     * because trend indicators lag and hand you the wrong side at the turn.
+     */
+    verdict = `${context.label} is ${context.trend} but ${structure.label} is ${structure.trend}. A setup here is `
+      + `COUNTERTREND to its own context, and setups against a trending higher timeframe do fail more often. `
+      + `Say out loud that it is countertrend. But do not treat the higher timeframe as automatically right: a `
+      + `trend read is lagging by construction, and on ~900k equity observations a triple-MA trend indicator was `
+      + `INVERTED (Grimes 2013). The higher timeframe is context, not a verdict.`;
   }
 
   const choppy = screens.filter((x) => x.regime === 'choppy').map((x) => x.label);
@@ -256,7 +284,21 @@ export function alignment(screens) {
     context: { timeframe: context.label, trend: context.trend, regime: context.regime },
     structure: { timeframe: structure.label, trend: structure.trend, regime: structure.regime },
     ...(trigger ? { trigger: { timeframe: trigger.label, trend: trigger.trend, regime: trigger.regime } } : {}),
-    permitted_direction: c > 0 ? 'long' : c < 0 ? 'short' : 'neither — context is a range',
+    // "neither" was the old wording and read as a prohibition. A ranging context
+    // withholds a directional LEAN; it does not forbid the trade.
+    permitted_direction: c > 0 ? 'long' : c < 0 ? 'short'
+      : 'no directional lean — context is ranging, so the setup must stand on its own structure',
+    /**
+     * Grimes's "Timeframe Justification System": bumping a losing position up a
+     * timeframe until some chart agrees with it. This tool hands back three
+     * timeframes at once, which makes it the ideal instrument for exactly that,
+     * so the warning ships with the output rather than living in a doc.
+     */
+    focus_timeframe_warning:
+      `Trade the timeframe you came here with — ${structure.label}. If you find yourself consulting a timeframe `
+      + 'you do not normally use while a position is open, or moving up a timeframe to find a reason to keep a '
+      + 'loser, that is post-hoc justification rather than analysis. Moving a WINNER up is defensible; moving a '
+      + 'loser up is how a small loss becomes a large one.',
     // Timeframes are a FILTER, not a scoring system. Failing a screen is not a
     // weaker trade, it is not a trade yet.
     action: state === 'aligned' ? 'look for a setup on the trigger timeframe'

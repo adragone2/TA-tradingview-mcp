@@ -128,10 +128,44 @@ describe('alignment — Elder\'s permission rule', () => {
     assert.equal(a.permitted_direction, 'short');
   });
 
-  it('grants no permission when the context is a range', () => {
+  it('withholds a directional LEAN when the context ranges, without forbidding the trade', () => {
+    /**
+     * This used to assert state 'context_unclear' and "neither", which read as a
+     * prohibition. A ranging higher timeframe is a specific regime, not missing
+     * information: Grimes (Waverly, 2013) reports that many of the best
+     * lower-timeframe trends occur inside higher-timeframe consolidation, and
+     * that a ranging HTF is where sharp LTF trends appear. Calling it "no
+     * signal" threw that away.
+     */
     const a = alignment([s('1W', 'range'), s('1D', 'uptrend')]);
-    assert.equal(a.state, 'context_unclear');
-    assert.match(a.permitted_direction, /neither/);
+    assert.equal(a.state, 'context_ranging');
+    assert.match(a.permitted_direction, /no directional lean/);
+    assert.ok(!/neither/.test(a.permitted_direction));
+    // It must say what a range DOES imply, not merely what it withholds.
+    assert.match(a.verdict, /not an absence of information/);
+  });
+
+  it('does not state Elder\'s rule as settled when opposed', () => {
+    /**
+     * Grimes measured a triple-MA trend indicator over 973,087 observations with
+     * a random control; on ~903k equity observations it was INVERTED. The useful
+     * claim survives (against-trend setups fail more often); "the higher
+     * timeframe is always right" does not.
+     */
+    const a = alignment([s('1W', 'uptrend'), s('1D', 'downtrend')]);
+    assert.equal(a.state, 'opposed');
+    assert.match(a.verdict, /COUNTERTREND/);
+    assert.match(a.verdict, /context, not a verdict/);
+    assert.ok(!/Elder's rule is to take signals only/.test(a.verdict),
+      'the unqualified Elder assertion is back');
+  });
+
+  it('ships the timeframe-justification warning with every reading', () => {
+    // This tool hands back three timeframes at once, which makes it the ideal
+    // instrument for finding one that agrees with a losing position.
+    const a = alignment([s('1W', 'uptrend'), s('1D', 'uptrend')]);
+    assert.match(a.focus_timeframe_warning, /post-hoc justification/);
+    assert.match(a.focus_timeframe_warning, /moving a loser up/i);
   });
 
   it('reads a consolidating structure inside a trend as a pullback, with the caveat', () => {

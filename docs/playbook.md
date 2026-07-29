@@ -308,3 +308,35 @@ for all of it.
 Use it as CONTEXT — "this market is coiled, expect a bigger bar" — and take the
 direction from structure. Anything more is trading an artefact of ranges.
 
+---
+
+## Five sources studied 2026-07-29 — verdicts
+
+Triaged for NEW CAPABILITY versus renamed vocabulary. Two produced code; three did not.
+
+| Source | Verdict |
+|---|---|
+| **Grimes / Waverly Advisors**, *Multiple Timeframe Analysis* (2013, 57 slides) | **Highest value of the five.** Quantitative. Produced `timeframe_scale` (sqrt law), the `mtf_analyze` corrections, and the timeframe-justification guard. |
+| **Shannon**, *Technical Analysis Using Multiple Timeframes* (2008, 198p, SCANNED) | Fig. 10.4 produced the linear lookback law. Framework is Weinstein stage analysis = the Wyckoff phases we already ship, and ours carries a measured noise floor his does not. |
+| **Farley**, *The Master Swing Trader* (2000, 377p) | Corroboration, no new capability. Reaches our horizon-and-cost doctrine independently — "trend relativity errors steal more profits than any other trading mistake". For a 1-3 day hold: reward from the daily, execution from the 60-minute (a horizon our Weeks/Months split excludes). |
+| **Aziz**, *How to Day Trade for a Living* (116p) | Adds nothing here. Day-trading horizon; one statistical mention in the whole book; the ABCD pattern is a pullback `fib_levels` and the momentum-pullback screen already cover. |
+| **Bellafiore**, *The PlayBook* (42p EXCERPT) | Excerpt is front matter, the Introduction, and the Index — no method. But its index surfaced `Reasons2Sell`: a DISJUNCTIVE exit list closing on whichever condition fires first, one of which is a TIME stop. See the open gap below. |
+
+### What Grimes measured, and why it changed our code
+
+A triple moving-average trend indicator over **973,087 observations** with a **random control column** — the same discipline this repo runs on. Across ~903,586 equity observations the indicator was **inverted**: excess return −157.9 when it read up against +166.9 when it read down, with next-bar direction at ~50% in every category *including random*. The random column showed the opposite sign pattern, so the framework flatters the indicator and real equities reverse that.
+
+Consequences, both now in code:
+
+- `mtf_analyze` no longer states Elder's rule as settled. The surviving claim is the weaker one — against-trend setups fail more often — not "the higher timeframe is always right".
+- A ranging context now withholds a directional **lean** instead of returning "neither". A ranging higher timeframe is a specific regime, not missing information: it is where sharp lower-timeframe trends appear, and lower-timeframe ranges inside it are usually continuation patterns for the range.
+
+### The self-fulfilling-prophecy problem
+
+Four of these sources justify moving averages by crowd self-fulfilment — Farley ("the crowd perpetrates a self-fulfilling event"), Aziz ("self-fulfilling prophecy effect"), and the video material studied earlier ("a self-fulfilling magnet"). Shannon, the most careful, warns the opposite: treating moving averages as literal entry levels is the amateur error that gets traders trapped. Grimes measured the thing and found it inverted on ~900k equity observations.
+
+They agree on the mechanism, contradict each other on what to do with it, and the only one who measured found the opposite of what three of them teach. Treat the mechanism as unfalsifiable and prefer `scaling_exponent`, which measures persistence directly.
+
+### Open gap: a disjunctive exit list
+
+`labeling.js` implements triple-barrier labelling — profit, stop, and **time** — but only for building training sets. Nothing in the trade-management layer takes a time barrier. `MONTHS_EXIT` is effectively one (the monthly rebalance) but it is implicit rather than enumerated beside the others. Bellafiore's `Reasons2Sell` is the framing: list every independent reason to close, and close on whichever fires first. Not built.

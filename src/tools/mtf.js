@@ -4,6 +4,7 @@ import * as core from '../core/mtf.js';
 import * as data from '../core/data.js';
 import { normalizeBars, findSwings, alternateSwings, classifyStructure } from '../core/structure.js';
 import { regime } from '../core/context.js';
+import { scaleTimeframe, scalingExponent } from '../core/timeframe.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -121,6 +122,33 @@ export function registerMtfTools(server) {
         method: 'Higher timeframes are aggregated from the loaded bars — the chart was not switched. This only works upward; a trigger timeframe below the loaded one has to be looked at directly.',
         caveat: 'Each timeframe reads its trend from CONFIRMED swings, so each lags by its own lookback. The higher the timeframe, the longer that lag in calendar time.',
       };
+    }),
+  );
+
+  server.tool(
+    'timeframe_scale',
+    'Translate a method from one timeframe to another. Two quantities scale DIFFERENTLY and conflating them is how "the same setup on a faster chart" becomes a different strategy: LOOKBACKS scale linearly with the timeframe ratio (Shannon 2008 — 65 bars on 30min and 195 on 10min both span 5 sessions), while STOPS, TARGETS and RANGES scale as its SQUARE ROOT (Grimes 2013 — a 1.5pt stop on 5min becomes 5.2 on hourly). Scaling a stop linearly is the common error and makes it several times too wide.',
+    {
+      from: z.string().describe('Source resolution, e.g. "1D", "60", "5"'),
+      to: z.string().describe('Target resolution'),
+      lookback_bars: z.coerce.number().optional().describe('An indicator lookback to translate (scales linearly)'),
+      price_distance: z.coerce.number().optional().describe('A stop/target distance to translate (scales as sqrt)'),
+    },
+    wrap(({ from, to, lookback_bars, price_distance }) => ({
+      success: true, ...scaleTimeframe({ from, to, lookback_bars, price_distance }),
+    })),
+  );
+
+  server.tool(
+    'scaling_exponent',
+    'The realised volatility scaling exponent on this chart. The sqrt-of-time law assumes 0.5, which holds only under independence — so measuring it tests the assumption. Above 0.5 moves COMPOUND (persistence, the continuation side); below 0.5 they OFFSET (mean reversion, the reversal side). This makes the reversal-versus-continuation boundary a property of the series in front of you rather than a citation. Cross-checks stopping_premium, which measures the same thing via autocorrelation.',
+    {
+      count: z.coerce.number().optional().describe('Bars to examine (default 400)'),
+    },
+    wrap(async ({ count = 400 }) => {
+      const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+      return { success: true, ...scalingExponent(bars) };
     }),
   );
 }

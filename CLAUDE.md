@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-170 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+172 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 169 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 172 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
@@ -47,6 +47,8 @@
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
 | "Any new swing candidates?" | `node scripts/morning-screen.js` — index members to a drawn, watchlisted top 20, split into **Months** (rebalances monthly, hysteresis band) and **Weeks** (daily). Runs weekdays 05:30 PT. Any `KEEP*` section is preserved. `--force-months` overrides the clock |
 | "How far can it run before it halts?" | `luld_band` — 5% Tier 1, 10% Tier 2, doubled at the open and into the close |
+| "Move this setup to another timeframe" | `timeframe_scale` — lookbacks scale LINEARLY, stops and targets as the SQUARE ROOT. Scaling a stop linearly is the common error |
+| "Is this series trending or mean-reverting?" | `scaling_exponent` — measures the exponent the sqrt-of-time law assumes to be 0.5. Cross-checks `stopping_premium` |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
@@ -104,6 +106,12 @@ Each of these exists because it has already gone wrong here.
 **A monthly factor on a daily screen is a different strategy.** MAD, the trend factor and the volume premium are monthly cross-sectional sorts; MAD's ~9% survives costs *at that cadence*. Reranking daily is 252 round trips a year — 50.4% drag at 20bps, 5.6x the whole effect. Months rebalances monthly with a hysteresis band (~0.96%); Weeks rebalances daily. `cadence.js` owns both clocks.
 
 **A stop does not get its price in a halt.** `gap_risk` covers the overnight jump; `luld_band` covers the intraday one. Tier 1 (S&P 500 / Russell 1000) is **5%** above $3, Tier 2 is 10% — retail sources quote the Tier 2 number for large caps and are wrong by half. Bands **double** 09:30–09:45 and 15:35–16:00 ET, and that closing window is where stop-driven exits cluster.
+
+**Two quantities scale differently between timeframes.** Lookbacks scale LINEARLY with the timeframe ratio — 65 bars of 30-minute and 195 of 10-minute both span 5 sessions (Shannon 2008, fig. 10.4). Stops, targets and ranges scale as the SQUARE ROOT — a 1.5pt stop on 5-minute is 5.2 on hourly (Grimes 2013). `timeframe_scale` does both; scaling a stop linearly makes it several times too wide and quietly changes the strategy. A day is **390 session minutes**, not 1440, or every translation is out by 3.7x.
+
+**The sqrt law is the random-walk law, so measuring it is a test.** `scaling_exponent` fits log(stdev) against log(horizon): 0.5 means independent, above means moves compound, below means they offset. That makes the reversal/continuation boundary a property of the series rather than a 1993 citation. It agrees with `stopping_premium` where both have a verdict — PNC 0.619 persistent by both, CYTK 0.369 mean-reverting by both. Drift does NOT move it, and must not: drift is not persistence.
+
+**The higher timeframe is context, not a verdict.** Grimes ran a triple-MA trend indicator over 973,087 observations WITH a random control; across ~903k equity observations it was INVERTED (−157.9 excess when reading up, +166.9 when reading down) and next-bar direction sat at ~50% everywhere. `mtf_analyze` no longer states Elder's rule as settled, and a ranging context now withholds a directional LEAN rather than forbidding the trade — a ranging HTF is where sharp LTF trends appear.
 
 **A noise floor you cannot measure is not a noise floor.** The 1-2-3 (`src/core/ignition.js`) fires on 5.9% of real charts and 22.5% of random walks — *below* its own null. The cause was the ATR gate: ATR counts overnight gaps, bar range does not, so every constructed null shifts the gate rather than the pattern, and estimates span 5.9–39.6% on the same data. It is implemented, tested, and deliberately **not registered as a tool**. One relative finding survives because both arms shared a generator: the top-third clause is load-bearing (22.5% vs 63%).
 
