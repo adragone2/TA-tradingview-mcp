@@ -28,7 +28,20 @@ import { barsFromPath, randomWalk } from '../src/core/synthetic.js';
  * reads off a module must be a key that module actually returns.
  */
 
-const SRC = readFileSync('scripts/sunday-review.js', 'utf8');
+/**
+ * assess() moved to src/core/assessment.js so the morning screen shares one
+ * copy. This test follows it.
+ *
+ * COMMENTS ARE STRIPPED FIRST. That module's header documents the historical
+ * bug by name — "reading `div.divergences` and `ell.total_counts`" — and an
+ * un-stripped scan matches the prose describing the bug and reports the bug as
+ * present. A contract test over source has to read code, not the commentary
+ * about it.
+ */
+const stripComments = (s) => s
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const SRC = stripComments(readFileSync('src/core/assessment.js', 'utf8'));
 
 /** Bars with enough shape for every module to return its full result. */
 const bars = barsFromPath(randomWalk({ n: 300, vol: 0.02, seed: 42 }), { noise: 0.006, seed: 7 });
@@ -57,7 +70,7 @@ function keysReadFor(alias) {
   return [...found];
 }
 
-describe('sunday-review reads only keys its modules actually return', () => {
+describe('the assessment reads only keys its modules actually return', () => {
   for (const [alias, result] of Object.entries(BINDINGS)) {
     test(`${alias}: every key read exists on the result`, () => {
       assert.ok(result && typeof result === 'object', `${alias} produced no object to check against`);
@@ -66,7 +79,7 @@ describe('sunday-review reads only keys its modules actually return', () => {
       assert.ok(read.length > 0, `no keys found for alias "${alias}" — did the extraction break?`);
       const missing = read.filter((k) => !available.has(k));
       assert.deepEqual(missing, [],
-        `scripts/sunday-review.js reads ${alias}.${missing.join(`, ${alias}.`)} — `
+        `src/core/assessment.js reads ${alias}.${missing.join(`, ${alias}.`)} — `
         + `not returned by the module. Available: ${[...available].sort().join(', ')}`);
     });
   }
@@ -86,8 +99,8 @@ describe('the divergence block specifically', () => {
   });
 
   test('the review no longer reads either wrong key', () => {
-    assert.ok(!/div\??\.divergences/.test(SRC), 'sunday-review reads div.divergences again');
-    assert.ok(!/div\??\.indicators_agreeing/.test(SRC), 'sunday-review reads div.indicators_agreeing again');
+    assert.ok(!/div\??\.divergences/.test(SRC), 'assessment.js reads div.divergences again');
+    assert.ok(!/div\??\.indicators_agreeing/.test(SRC), 'assessment.js reads div.indicators_agreeing again');
   });
 
   test('a count and its own prose cannot disagree', () => {

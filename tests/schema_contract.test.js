@@ -29,7 +29,13 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
  */
 const lf = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 const DOC = lf('docs/sunday-review-schema.md');
-const SRC = lf('scripts/sunday-review.js');
+
+/**
+ * The emitting code now spans two files: validateTa is still in the script,
+ * assess() and its trade_plans block moved to src/core/assessment.js. Both are
+ * read, because the doc is a contract over their combined output.
+ */
+const SRC = `${lf('scripts/sunday-review.js')}\n${lf('src/core/assessment.js')}`;
 
 /** Field names quoted inside a doc section's jsonc blocks. */
 function documentedKeys(sectionHeading) {
