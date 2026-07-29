@@ -64,12 +64,54 @@ export const BASE_COLUMNS = [
 ];
 
 /**
+ * Columns the Tier A factors need, on top of BASE_COLUMNS.
+ *
+ * These are a CROSS-SECTIONAL sort's inputs, so the scan that fetches them must
+ * be broad and barely filtered — a decile computed over a screen's survivors is
+ * a decile of an already-selected population, which is not what any of these
+ * papers measured.
+ */
+export const FACTOR_COLUMNS = [
+  'name', 'close', 'market_cap_basic',
+  'SMA10', 'SMA20', 'SMA50', 'SMA100', 'SMA200',
+  'relative_volume_10d_calc', 'average_volume_10d_calc',
+  'Perf.W',
+];
+
+/**
  * Run one scan.
  *
  * `universe` is a list of UNIVERSES keys; pass null to search all US symbols.
  * Returns rows keyed by column name rather than the raw positional array,
  * because a positional array silently misaligns the moment a column is added.
  */
+/**
+ * One column for one named ticker, straight from the scanner.
+ *
+ * Exists for VIX, which is not a stock and so never appears in a universe
+ * scan, but which decides whether the short-term reversal factor is active at
+ * all. Returns null rather than throwing: `shortTermReversal` treats an unknown
+ * VIX as NOT favourable, which is the safe reading, and a screen that dies
+ * because an index quote was slow would be a worse outcome than one factor
+ * standing down.
+ */
+export async function tickerQuote(ticker, column = 'close', { timeout_ms = 10_000 } = {}) {
+  try {
+    const res = await fetch(SCANNER, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbols: { tickers: [ticker], query: { types: [] } }, columns: [column] }),
+      signal: AbortSignal.timeout(timeout_ms),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const v = json?.data?.[0]?.d?.[0];
+    return Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function scan({
   filter = [],
   columns = BASE_COLUMNS,

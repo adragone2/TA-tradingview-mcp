@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **169 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **170 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -324,6 +324,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### gap_* (1)
 
 - **`gap_risk`** — How often price GAPPED past a given stop distance on this chart
+
+### luld_* (1)
+
+- **`luld_band`** — The Limit Up-Limit Down band around a price — how far it can run before trading halts
 
 ### portfolio_* (1)
 

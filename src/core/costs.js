@@ -256,6 +256,88 @@ export function gapRisk(bars, { stop_distance_pct = 2 } = {}) {
 }
 
 /**
+ * Limit Up-Limit Down bands — the INTRADAY twin of overnight gap risk.
+ *
+ * `gapRisk` measures how often price jumped a stop between sessions. This is
+ * the same exposure inside the session: when a stock hits its LULD band and
+ * stays there 15 seconds, trading pauses for at least five minutes, and a stop
+ * resting in that range does not get its price. It gets the resumption
+ * auction, which is exactly where the move continued.
+ *
+ * That matters for the rule this repo already carries from Kaminski & Lo — a
+ * stop is a bet on persistence, not free insurance. A halt is the case where
+ * it is not insurance at all.
+ *
+ * The tier is the part practitioners get wrong. Retail material routinely
+ * quotes 10% above $3, which is TIER 2 — correct for the small caps that
+ * material is about, and twice the real band for anything in the S&P 500 or
+ * Russell 1000.
+ */
+export const LULD_TIERS = Object.freeze({
+  1: { label: 'Tier 1 — S&P 500, Russell 1000 and selected ETPs', above_3: 5 },
+  2: { label: 'Tier 2 — all other NMS securities', above_3: 10 },
+});
+
+/** Bands double in the opening and closing periods, when discovery is widest. */
+export const LULD_DOUBLING_WINDOWS = Object.freeze([
+  { from: '09:30', to: '09:45', why: 'opening price discovery' },
+  { from: '15:35', to: '16:00', why: 'closing auction run-up — and where stop-driven exits cluster' },
+]);
+
+/**
+ * The band around the reference price, as a percentage.
+ *
+ * The reference price is the mean of eligible trades over the preceding five
+ * minutes, so it MOVES: a stock cannot be pinned by one print, but a fast run
+ * outpaces its own reference and halts. That is why a halt is a volatility
+ * event, not a price level you can plan around.
+ */
+export function luldBand({ price, tier = 2, in_doubling_window = false } = {}) {
+  const p = Number(price);
+  if (!(p > 0)) return { available: false, note: 'price must be positive.' };
+  if (!LULD_TIERS[tier]) return { available: false, note: `tier must be 1 or 2, got ${tier}.` };
+
+  let pct;
+  let basis;
+  if (p > 3) {
+    pct = LULD_TIERS[tier].above_3;
+    basis = `${LULD_TIERS[tier].label}, above $3.00`;
+  } else if (p >= 0.75) {
+    pct = 20;
+    basis = '$0.75 to $3.00 — 20% for both tiers';
+  } else {
+    // Below $0.75 the band is the LESSER of 75% and $0.15, expressed as a %.
+    pct = Math.min(75, (0.15 / p) * 100);
+    basis = 'below $0.75 — lesser of 75% and $0.15';
+  }
+  const effective = in_doubling_window ? pct * 2 : pct;
+
+  return {
+    available: true,
+    tier,
+    price: round(p, 4),
+    band_pct: round(pct, 3),
+    effective_band_pct: round(effective, 3),
+    in_doubling_window,
+    band_abs: round((effective / 100) * p, 4),
+    basis,
+    doubling_windows: LULD_DOUBLING_WINDOWS,
+    what_it_means:
+      `A move of ${round(effective, 2)}% from the five-minute reference price triggers a limit state; `
+      + 'holding it for 15 seconds pauses trading for at least five minutes. A stop inside that range '
+      + 'does not fill at its price — it fills at the resumption auction.',
+    stop_implication:
+      'This is the intraday counterpart to gapRisk. Both describe the same failure: a stop is a market '
+      + 'order once touched, and neither an overnight gap nor a halt lets it be anything else. Size the '
+      + 'position so the loss is survivable at the band, not at the stop.',
+    common_error:
+      'Retail sources usually quote 10% above $3. That is TIER 2. An S&P 500 or Russell 1000 name is '
+      + 'Tier 1 at 5% — half the room before it halts.',
+    source: 'LULD Plan (luldplan.com); Nasdaq and Cboe LULD FAQs.',
+  };
+}
+
+/**
  * Cost drag as a function of holding period — the arithmetic that decides
  * whether a swing strategy can exist at all.
  *

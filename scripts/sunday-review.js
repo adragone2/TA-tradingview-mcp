@@ -93,7 +93,11 @@ async function loadSymbol(ticker) {
   const st = await chart.getState();
   if (String(st.resolution) !== '1D') { await chart.setTimeframe({ timeframe: '1D' }); await sleep(350); }
   const series = await data.getOhlcv({ count: 400, summary: false });
-  const bars = S.normalizeBars(series);
+  /**
+   * A no-op on the scheduled Sunday run — the newest bar is Friday's and long
+   * finished. It matters when this is run by hand mid-week, which happens.
+   */
+  const { bars } = S.completeSeries(series);
   if (!bars.length) throw new Error('no bars returned');
 
   // NOT EVERY SYMBOL IS A CHART.
@@ -218,7 +222,7 @@ log('  fetching SPY benchmark once...');
 let spy = null;
 try {
   await chart.setSymbol({ symbol: 'AMEX:SPY' }); await sleep(600);
-  spy = S.normalizeBars(await data.getOhlcv({ count: 400, summary: false }));
+  spy = S.completeSeries(await data.getOhlcv({ count: 400, summary: false })).bars;
   log(`  SPY ${spy.length} bars`);
 } catch (e) { log(`  SPY unavailable: ${e.message}`); }
 

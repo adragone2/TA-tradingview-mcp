@@ -158,6 +158,10 @@ The credible academic content in the vicinity of gap trading is PEAD (section 2.
 
 **Verdict: non-falsifiable as specified.**
 
+[playbook.md](playbook.md) previously listed gap classification as a capability to build, which contradicted this section for as long as both existed. That row now defers here. If the taxonomy is ever revisited it needs a definition that can be applied AT the gap, using only information available then — which is a different scheme, not this one.
+
+What a gap does still carry is *risk*, and that is measurable: `gap_risk` for the overnight jump past a stop, and `luld_band` for the intraday equivalent, where a halt fills a stop at the resumption auction rather than at its price.
+
 ### 4.3 Moving-average market timing as a standalone strategy
 
 Zakamulin (*International Review of Finance* 2018) demonstrated that a widely-cited and widely-downloaded paper reporting extraordinary moving-average timing performance had achieved it through look-ahead bias in the simulation, and that once corrected the strategy's performance is at best marginally better than buy-and-hold and statistically indistinguishable from it. His broader work, using a 155-year dataset, finds no single optimal lookback period in any trading rule and pervasive instability across regimes.

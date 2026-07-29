@@ -153,6 +153,73 @@ export function buildWithPreserved(currentEntries, todaysSymbols, preserve = ['K
   };
 }
 
+/** Symbols under one named section. Case-insensitive. PURE. */
+export function sectionSymbols(entries, name) {
+  const want = String(name).toUpperCase();
+  const found = parseSections(entries).sections.find((s) => s.name.toUpperCase() === want);
+  return found ? found.symbols.slice() : [];
+}
+
+/**
+ * Build a watchlist split by horizon bucket.
+ *
+ * Four sections: `Months` and `Weeks` for the screen's output, plus any section
+ * whose name begins with KEEP, carried through untouched. Prefix matching on
+ * KEEP rather than an exact list means the existing plain `###KEEP` section
+ * survives this change, and so does any future `KEEP swing` the user invents.
+ *
+ * Pass `months: null` on a day the monthly bucket is NOT due — the existing
+ * Months section is then carried forward verbatim. That is the cadence fix
+ * expressed in the watchlist: on 20 of 21 weekdays the Months section is not
+ * touched at all.
+ *
+ * Ordering is deliberate: Months first (slowest, most evidenced), then Weeks,
+ * then the KEEP sections in whatever order they already had.
+ */
+export function buildBucketed(currentEntries, {
+  weeks = [],
+  months = null,
+  keep_prefix = 'KEEP',
+  months_section = 'Months',
+  weeks_section = 'Weeks',
+} = {}) {
+  const parsed = parseSections(currentEntries);
+  const prefix = keep_prefix.toUpperCase();
+  const preserved = parsed.sections.filter((s) => s.name.toUpperCase().startsWith(prefix));
+  const protectedSymbols = new Set(preserved.flatMap((s) => s.symbols));
+
+  const carriedForward = months === null;
+  const monthsWanted = carriedForward ? sectionSymbols(currentEntries, months_section) : months;
+
+  // A symbol the user has pinned in a KEEP section outranks today's screen —
+  // and a duplicate anywhere makes TradingView reject the entire write with 422.
+  const monthsOut = monthsWanted.filter((s) => !protectedSymbols.has(s));
+  const monthsSet = new Set(monthsOut);
+  const weeksOut = weeks.filter((s) => !protectedSymbols.has(s) && !monthsSet.has(s));
+
+  const sections = [
+    { name: months_section, header: `${SECTION_PREFIX}${months_section}`, symbols: monthsOut },
+    { name: weeks_section, header: `${SECTION_PREFIX}${weeks_section}`, symbols: weeksOut },
+    ...preserved,
+  ];
+
+  return {
+    entries: flattenSections({ default: [], sections }),
+    months: monthsOut,
+    weeks: weeksOut,
+    months_carried_forward: carriedForward,
+    protected_symbols: [...protectedSymbols],
+    preserved_sections: preserved.map((s) => ({ name: s.name, count: s.symbols.length })),
+    // Sections that existed and are NOT being kept — surfaced so a rename does
+    // not quietly delete a section full of the user's own symbols.
+    dropped_sections: parsed.sections
+      .filter((s) => !s.name.toUpperCase().startsWith(prefix)
+        && s.name !== months_section && s.name !== weeks_section)
+      .map((s) => ({ name: s.name, count: s.symbols.length })),
+    orphaned_default: parsed.default.slice(),
+  };
+}
+
 /** Run a fetch inside the page, where the session cookie applies. */
 async function pageFetch(expr) {
   const res = await evaluate(expr, { awaitPromise: true });

@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-169 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+170 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -45,7 +45,8 @@
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
-| "Any new swing candidates?" | `node scripts/morning-screen.js` — 4,505 index members to a drawn, watchlisted top 20. Runs weekdays 05:30 PT, an hour before the open. A KEEP section in the watchlist is preserved |
+| "Any new swing candidates?" | `node scripts/morning-screen.js` — index members to a drawn, watchlisted top 20, split into **Months** (rebalances monthly, hysteresis band) and **Weeks** (daily). Runs weekdays 05:30 PT. Any `KEEP*` section is preserved. `--force-months` overrides the clock |
+| "How far can it run before it halts?" | `luld_band` — 5% Tier 1, 10% Tier 2, doubled at the open and into the close |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
@@ -97,6 +98,14 @@ Each of these exists because it has already gone wrong here.
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
 **A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.
+
+**Today's daily bar is not a day.** Extended-hours trade accumulates into it from 04:00 ET, so pre-open every symbol already has a "daily" bar holding a fraction of its eventual volume — SPY measured 6.7M against ~45M. Its `close` is a real quote; its **high, low and volume are not**. `completeSeries` drops it and the unattended scripts use that; `data_get_ohlcv` reports `bar_state` rather than trimming, because interactive callers often want the live bar. The scanner's server-side fields **cannot** be repaired — `scannerTrust()` says which are unsafe, and `relative_volume_10d_calc` is the worst of them, which is why the high-volume premium factor is suppressed pre-open.
+
+**A monthly factor on a daily screen is a different strategy.** MAD, the trend factor and the volume premium are monthly cross-sectional sorts; MAD's ~9% survives costs *at that cadence*. Reranking daily is 252 round trips a year — 50.4% drag at 20bps, 5.6x the whole effect. Months rebalances monthly with a hysteresis band (~0.96%); Weeks rebalances daily. `cadence.js` owns both clocks.
+
+**A stop does not get its price in a halt.** `gap_risk` covers the overnight jump; `luld_band` covers the intraday one. Tier 1 (S&P 500 / Russell 1000) is **5%** above $3, Tier 2 is 10% — retail sources quote the Tier 2 number for large caps and are wrong by half. Bands **double** 09:30–09:45 and 15:35–16:00 ET, and that closing window is where stop-driven exits cluster.
+
+**A noise floor you cannot measure is not a noise floor.** The 1-2-3 (`src/core/ignition.js`) fires on 5.9% of real charts and 22.5% of random walks — *below* its own null. The cause was the ATR gate: ATR counts overnight gaps, bar range does not, so every constructed null shifts the gate rather than the pattern, and estimates span 5.9–39.6% on the same data. It is implemented, tested, and deliberately **not registered as a tool**. One relative finding survives because both arms shared a generator: the top-third clause is load-bearing (22.5% vs 63%).
 
 **Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. It is also rarely what you want: `clear-orphans` recovers drawings lost to a session restart WITHOUT touching anything hand-drawn, and on 2026-07-28 removed 545 stale shapes across 45 symbols while preserving 7 of the user's own. If you add or change a drawing label, append its format to `MCP_TEXT_SIGNATURES` — a label with no signature leaks an orphan that can never be cleaned up. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 

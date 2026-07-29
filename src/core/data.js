@@ -2,6 +2,7 @@
  * Core data access logic.
  */
 import { evaluate, evaluateAsync, KNOWN_PATHS } from '../connection.js';
+import { lastBarState } from './session.js';
 
 const MAX_OHLCV_BARS = 500;
 const MAX_TRADES = 20;
@@ -204,6 +205,14 @@ export async function getOhlcv({ count, summary, settle_timeout_ms } = {}) {
   const data = assessSeriesRead(payload);
   const identity = { symbol: data.symbol, resolution: data.resolution };
 
+  /**
+   * Whether the newest bar has finished forming. Reported rather than removed:
+   * an interactive caller often wants the live bar, and silently trimming it
+   * would change what 39 call sites see. Unattended scripts drop it explicitly
+   * via `normalizeCompleteBars`.
+   */
+  const bar_state = lastBarState(data.bars, { resolution: data.resolution });
+
   if (summary) {
     const bars = data.bars;
     const highs = bars.map(b => b.high);
@@ -221,10 +230,11 @@ export async function getOhlcv({ count, summary, settle_timeout_ms } = {}) {
       change_pct: Math.round(((last.close - first.open) / first.open) * 10000) / 100 + '%',
       avg_volume: Math.round(volumes.reduce((a, b) => a + b, 0) / volumes.length),
       last_5_bars: bars.slice(-5),
+      bar_state,
     };
   }
 
-  return { success: true, ...identity, bar_count: data.bars.length, total_available: data.total_bars, source: data.source, bars: data.bars };
+  return { success: true, ...identity, bar_count: data.bars.length, total_available: data.total_bars, source: data.source, bar_state, bars: data.bars };
 }
 
 export async function getIndicator({ entity_id }) {

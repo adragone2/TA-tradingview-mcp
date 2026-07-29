@@ -109,10 +109,32 @@ describe('stale reports cannot be mistaken for the contract', () => {
     : []);
 
   test('every report in reports/ was produced by the current schema version', () => {
-    const srcVer = SRC.match(/SCHEMA_VERSION\s*=\s*'([\d.]+)'/)?.[1];
+    /**
+     * Each report kind is checked against ITS OWN script.
+     *
+     * This originally compared every file to the Sunday review's version, which
+     * held only while both scripts happened to sit at 1.0. The moment the
+     * morning screen went to 2.0 it failed on a perfectly good report — the
+     * test was asserting that two independent schemas never diverge, which was
+     * never true, only untested.
+     */
+    const versionOf = (path) => lf(path).match(/SCHEMA_VERSION\s*=\s*'([\d.]+)'/)?.[1];
+    const byKind = {
+      'morning-screen': versionOf('scripts/morning-screen.js'),
+      'sunday-review': versionOf('scripts/sunday-review.js'),
+    };
+    for (const [kind, ver] of Object.entries(byKind)) {
+      assert.ok(ver, `could not read SCHEMA_VERSION for the ${kind} script`);
+    }
+
     for (const f of reports()) {
       const rep = JSON.parse(readFileSync(`reports/${f}`, 'utf8'));
-      assert.equal(rep.schema_version, srcVer, `reports/${f} is schema ${rep.schema_version}, current is ${srcVer}`);
+      // Older Sunday reports predate the `kind` field; the filename carries it.
+      const kind = rep.kind ?? (f.startsWith('morning-screen') ? 'morning-screen' : 'sunday-review');
+      const want = byKind[kind];
+      assert.ok(want, `reports/${f} has unknown kind "${kind}"`);
+      assert.equal(rep.schema_version, want,
+        `reports/${f} (${kind}) is schema ${rep.schema_version}, current is ${want}`);
     }
   });
 

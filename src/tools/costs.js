@@ -71,6 +71,19 @@ export function registerCostTools(server) {
   );
 
   server.tool(
+    'luld_band',
+    'The Limit Up-Limit Down band around a price — how far it can run before trading halts. The intraday twin of gap_risk: in a halt a stop does not get its price, it gets the resumption auction. Tier 1 (S&P 500 / Russell 1000) is 5% above $3; Tier 2 is 10%. Retail sources routinely quote the Tier 2 number for large caps, which is twice the real band. Bands DOUBLE 09:30-09:45 and 15:35-16:00 ET.',
+    {
+      price: z.coerce.number().describe('Reference price'),
+      tier: z.coerce.number().optional().describe('1 for S&P 500 / Russell 1000 / select ETPs, 2 for everything else (default 2)'),
+      in_doubling_window: z.coerce.boolean().optional().describe('True during 09:30-09:45 or 15:35-16:00 ET, when bands double'),
+    },
+    wrap(({ price, tier = 2, in_doubling_window = false }) => ({
+      success: true, ...costs.luldBand({ price, tier, in_doubling_window }), disclaimer: DISCLAIMER,
+    })),
+  );
+
+  server.tool(
     'portfolio_heat',
     'Total open risk across positions if every stop is hit at once. Per-trade sizing is the wrong unit for the thing that actually ends accounts — six positions risking 1% each is not 1% of risk, especially if they move together. Run position_correlation alongside this.',
     {

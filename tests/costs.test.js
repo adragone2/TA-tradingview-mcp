@@ -16,7 +16,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { tradeCost, applyCostsToEdge, gapRisk, COST_PRESETS } from '../src/core/costs.js';
+import { tradeCost, applyCostsToEdge, gapRisk, luldBand, LULD_DOUBLING_WINDOWS, COST_PRESETS } from '../src/core/costs.js';
 import { portfolioHeat, positionCorrelation, concentration } from '../src/core/portfolio.js';
 
 describe('tradeCost', () => {
@@ -338,5 +338,61 @@ describe('tradeCost — the IBKR schedule, where the minimum is the point', () =
     const large = tradeCost({ entry: 100, stop: 98, shares: 5000, preset: 'ibkr_pro_fixed', atr: 2 });
     assert.ok(small.cost_in_r > large.cost_in_r,
       `a small order must cost proportionally more: ${small.cost_in_r}R vs ${large.cost_in_r}R`);
+  });
+});
+
+describe('LULD bands — the intraday twin of gap risk', () => {
+  it('Tier 1 above $3 is 5%, Tier 2 is 10%', () => {
+    assert.equal(luldBand({ price: 200, tier: 1 }).band_pct, 5);
+    assert.equal(luldBand({ price: 200, tier: 2 }).band_pct, 10);
+  });
+
+  it('the tier error practitioners actually make is called out', () => {
+    /**
+     * Retail material routinely quotes "10% above $3", which is Tier 2. Applied
+     * to an S&P 500 name that is twice the real band — it says a stock can run
+     * 10% before halting when it halts at 5%.
+     */
+    assert.match(luldBand({ price: 200, tier: 1 }).common_error, /TIER 2/);
+    assert.equal(luldBand({ price: 200, tier: 1 }).band_pct * 2,
+      luldBand({ price: 200, tier: 2 }).band_pct);
+  });
+
+  it('bands DOUBLE in the opening and closing windows', () => {
+    const normal = luldBand({ price: 200, tier: 1 });
+    const doubled = luldBand({ price: 200, tier: 1, in_doubling_window: true });
+    assert.equal(doubled.effective_band_pct, normal.effective_band_pct * 2);
+    // The closing window matters most: it is where stop-driven exits cluster.
+    assert.ok(LULD_DOUBLING_WINDOWS.some((w) => w.from === '15:35' && w.to === '16:00'));
+  });
+
+  it('the $0.75-$3.00 band is 20% and does not depend on tier', () => {
+    assert.equal(luldBand({ price: 2, tier: 1 }).band_pct, 20);
+    assert.equal(luldBand({ price: 2, tier: 2 }).band_pct, 20);
+  });
+
+  it('below $0.75 the band is the LESSER of 75% and $0.15', () => {
+    // At $0.40, $0.15 is 37.5% — the binding constraint. At $0.10 it would be
+    // 150%, so 75% binds instead.
+    assert.equal(luldBand({ price: 0.40 }).band_pct, 37.5);
+    assert.equal(luldBand({ price: 0.10 }).band_pct, 75);
+  });
+
+  it('the absolute band is returned, not just a percentage', () => {
+    // A stop is placed in dollars. A percentage alone leaves the arithmetic to
+    // the reader at exactly the moment it matters.
+    assert.equal(luldBand({ price: 200, tier: 1 }).band_abs, 10);
+  });
+
+  it('it says a stop does not get its price in a halt', () => {
+    const r = luldBand({ price: 50, tier: 1 });
+    assert.match(r.what_it_means, /resumption auction/);
+    assert.match(r.stop_implication, /gapRisk/);
+  });
+
+  it('bad input returns unavailable rather than a plausible number', () => {
+    assert.equal(luldBand({ price: 0 }).available, false);
+    assert.equal(luldBand({ price: -5 }).available, false);
+    assert.equal(luldBand({ price: 10, tier: 3 }).available, false);
   });
 });

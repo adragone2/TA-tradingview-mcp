@@ -19,6 +19,7 @@
  * the detection can be tested without a live chart.
  */
 import * as data from './data.js';
+import { completeBars } from './session.js';
 import { COLORS, resolveTime, drawShape } from './drawing.js';
 import { evaluate, getChartApi } from '../connection.js';
 
@@ -53,6 +54,27 @@ export function normalizeBars(raw) {
   }
   out.sort((a, b) => (a.time || 0) - (b.time || 0));
   return out;
+}
+
+/**
+ * Normalised bars with the still-forming one removed.
+ *
+ * `normalizeBars` deliberately stays a pure normaliser — it has 39 call sites
+ * and some of them (quotes, stop checks, screenshots) genuinely want the live
+ * bar. This is the opt-in variant, for unattended runs where nobody is
+ * watching to notice that "today" is 15% of a day.
+ *
+ * Pass the whole `getOhlcv` payload so the resolution travels with the bars;
+ * a bare array cannot say whether it is daily or five-minute, and the answer
+ * differs.
+ */
+export function completeSeries(raw, { now = Date.now(), resolution = null } = {}) {
+  const all = normalizeBars(raw);
+  const res = resolution
+    ?? (raw && !Array.isArray(raw) ? raw.resolution : null)
+    ?? '1D';
+  const { bars, dropped, state, note } = completeBars(all, { resolution: res, now });
+  return { bars, partial_bar: dropped, state, note };
 }
 
 /**
