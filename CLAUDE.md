@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-175 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+180 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 175 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 180 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
@@ -43,6 +43,7 @@
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | `chart-analysis` skill |
 | "Which timeframe?" / swing vs day | `timeframe_plan` then `mtf_analyze` — context grants permission, structure finds the setup |
+| "What do I DO right now?" | `stage_plan` — Shannon's gate. Longer timeframe Stage 2 or 4 or there is NO setup; the shorter one then says ANTICIPATE / PARTICIPATE / EXIT / AVOID |
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
 | "Mark my entry/stop/targets" | `draw_trade_plan` — one call, returns R:R |
 | "What should I look at today?" | `morning_brief`, or `catalyst-aware-brief` for event risk |
@@ -50,6 +51,7 @@
 | "How far can it run before it halts?" | `luld_band` — 5% Tier 1, 10% Tier 2, doubled at the open and into the close |
 | "Move this setup to another timeframe" | `timeframe_scale` — lookbacks scale LINEARLY, stops and targets as the SQUARE ROOT. Scaling a stop linearly is the common error |
 | "Why did I exit?" / journal review | `exit_mix` — splits PLANNED from DISCRETIONARY exits. A backtest can only model a planned exit, so a discretionary majority means the backtest tests a different strategy |
+| "Which trades actually make money?" | `journal_slice` — by direction, share size, share price, holding time. A profitable book can contain net-negative halves; buckets under `min_n` are flagged, never ranked |
 | "Is this series trending or mean-reverting?" | `scaling_exponent` — measures the exponent the sqrt-of-time law assumes to be 0.5. Cross-checks `stopping_premium` |
 | Weekly portfolio review / "validate TA's suggestions" | `sunday-review` skill — full assessment of every TA exit/entry in a fixed schema, drawn on the charts. Scheduled Sundays 08:00 |
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
@@ -63,14 +65,17 @@
 | "Any patterns?" / "analyse this chart" | `chart-patterns` skill — a *forming* pattern is not a signal |
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
 | "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed |
+| "Will this level hold?" | `level_pressure` — where price RETREATED TO between tests, measured at +19.5 points against a null of −1.4. Ignore the touch count; it carries nothing |
 | "Backtest this" / "does it work?" | `backtest-strategy` skill — **always report buy-and-hold** |
 | "How much should I risk?" / "what's my expectancy?" | `risk-sizing` skill — expectancy AND risk of ruin. A win rate means nothing without its payoff |
+| "How many shares?" | `position_size_constrained` (or `position_size` for a drawn plan) — risk budget, concentration cap and liquidity, **minimum wins**. A tighter stop buys MORE shares, so a good entry is when the cap binds |
+| "Where does my trailing stop go?" | `pivot_trail` — a new higher high promotes the stop to the last higher low. One-directional ratchet; it refuses to loosen. Check `stopping_premium` first, a trail is a bet on persistence |
 | "Does this still work after costs?" | `trade_cost` then `costs_vs_edge` — an edge smaller than its costs is a losing strategy |
 | "How much risk am I carrying?" | `portfolio_heat` + `position_correlation` — six 1% positions are not 6% if they move together |
 | "Count the waves" / "Elliott" | `elliott_survey` — returns EVERY rule-valid count, never one. Disagreement across sensitivities is the finding |
 | "What is this candle saying?" | `candle_read` — every candle is momentum, reaction or indecision. `patterns_detect` for named patterns |
 | "Any divergence?" / "RSI divergence" | `divergence_survey` — agreement across indicators is the only thing that makes one worth reading |
-| "Is this an impulse or a pullback?" | `legs_classify` — three measurements per leg, and it flags a stale last leg |
+| "Is this an impulse or a pullback?" | `legs_classify` — three measurements per leg, and it flags a stale last leg. Also returns TIME corrections, the digestion a depth rule scores as "no pullback" |
 | "Is it trending?" / "how strong is the move?" | `momentum_read` — 12m/6m/3m/1m at once. The best-replicated effect here; horizons disagreeing IS the answer |
 | "Is it coiled?" / "narrow range?" / "squeeze?" | `volatility_state` — 2BNR/3BNR/4BNR/8BNR, the multi-bar coils NR4 and NR7 cannot see. A volatility STATE, never a direction: every pattern in it fires on 100% of random walks |
 | "Is this a proper base?" / "VCP?" | `vcp_check` — every clause a number, and a near miss names the clause that failed |
@@ -100,6 +105,14 @@ Each of these exists because it has already gone wrong here.
 
 **Crabel's contraction/expansion principle is arithmetic, not an edge.** A narrow range IS followed by a wider one — 76.4% of the time on real data. But a random walk does it **80.2%** of the time, against a 50% base in both. Real data shows LESS lift than noise. `src/core/crabel.js` implements the daily-bar-reachable half (2BNR/3BNR/4BNR/8BNR, hooks, 3DHR) as a **volatility state with its floor attached**; every one of them fires on 100% of random walks. Opening Range Breakout needs the first thirty seconds of trade and is deliberately absent. See [docs/research-evidence.md](docs/research-evidence.md).
 
+**Position size has THREE constraints and the smallest wins.** Risk budget, concentration cap (15–20% of equity in one name), and liquidity (% of ADV). Under fixed risk a TIGHTER stop buys MORE shares, so the concentration cap binds precisely when the entry looks best — Shannon's own worked example turns a 1% risk budget on $100,000 into a $66,650 position, 65% of capital in one idea. `position_size_constrained` returns the minimum and names which bound; without `adv` the liquidity constraint reports NOT CHECKED, because unknown is not satisfied. Reporting a constraint is not applying it.
+
+**Touch count is not level strength — and it is not weakness either.** Measured over 20 symbols and 554 levels: the break hazard rose 14.5 points from test 1 to test 5, against **40.3 points on random walks**. More tests simply means more exposure. But the *pressure* clause survived cleanly: levels whose interim retreat extremes moved toward the level broke **73.8%** of the time against **54.3%** when they did not — a +19.5-point lift against a random-walk lift of **−1.4** (z = 3.36, clearing a three-test Bonferroni correction). `level_pressure` reads that; `level_test_history` has the sequence. One universe, no out-of-sample arm. Do NOT invert `levels_find` on a null result.
+
+**A gate must be able to close.** `stage_plan` implements Shannon's universe restriction — only Stage 2 or Stage 4 on the longer timeframe is tradeable — and it is built from his moving-average clauses (position, slope, **stacking**, which is a separate clause) precisely because those can DISAGREE. It abstains on 54% of random walks where Wyckoff's `classifyPhase` abstains on none. The honest limit: it opens on 25% of real symbols against 36% of random walks, so it is a CONSISTENCY filter, not evidence of trend. And "not enough bars" is reported as `INSUFFICIENT_DATA`, never as a considered abstention.
+
+**Corrections come in two kinds and a depth rule sees one.** A PRICE correction retraces; a TIME correction digests horizontally at low volatility. `legs_classify` returns both, because a pullback detector measuring depth scores a time correction as "no pullback" and skips a live setup — and a broken trendline predicts exactly that kind. Measured: fires on 88% of random walks and 83.3% of real symbols, so it is descriptive. Shannon's claim that it resolves with the primary trend does NOT survive — real 50% against a 52.8% null.
+
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
 **A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud. FINRA short interest is the opposite case: it settles **twice a month** on an ~8-business-day lag, so 1–3 weeks old is the resolution of the measurement, not a delay — calling it stale there is the error.
@@ -118,7 +131,7 @@ Each of these exists because it has already gone wrong here.
 
 **The higher timeframe is context, not a verdict.** Grimes ran a triple-MA trend indicator over 973,087 observations WITH a random control; across ~903k equity observations it was INVERTED (−157.9 excess when reading up, +166.9 when reading down) and next-bar direction sat at ~50% everywhere. `mtf_analyze` no longer states Elder's rule as settled, and a ranging context now withholds a directional LEAN rather than forbidding the trade — a ranging HTF is where sharp LTF trends appear.
 
-**A backtest can only model an exit that was specifiable before entry.** `target`/`stop`/`time` are exactly the modellable set, which is why recording only those teaches nothing — they cannot separate an exit the plan called for from one decided while the position was live. `exit_mix` splits them using the twelve-key Reasons2Sell taxonomy and counts the ones driven by the INDEX, which no single-symbol backtest can see. If discretionary exits are the majority, every benchmark, trial count and deflated Sharpe in the test describes a different strategy that merely shares an entry signal.
+**A backtest can only model an exit that was specifiable before entry.** `target`/`stop`/`time` are exactly the modellable set, which is why recording only those teaches nothing — they cannot separate an exit the plan called for from one decided while the position was live. `exit_mix` splits them using the fifteen-key exit taxonomy and counts the ones driven by the INDEX, which no single-symbol backtest can see. If discretionary exits are the majority, every benchmark, trial count and deflated Sharpe in the test describes a different strategy that merely shares an entry signal.
 
 **A noise floor you cannot measure is not a noise floor.** The 1-2-3 (`src/core/ignition.js`) fires on 5.9% of real charts and 22.5% of random walks — *below* its own null. The cause was the ATR gate: ATR counts overnight gaps, bar range does not, so every constructed null shifts the gate rather than the pattern, and estimates span 5.9–39.6% on the same data. It is implemented, tested, and deliberately **not registered as a tool**. One relative finding survives because both arms shared a generator: the top-third clause is load-bearing (22.5% vs 63%).
 

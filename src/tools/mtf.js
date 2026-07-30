@@ -5,6 +5,7 @@ import * as data from '../core/data.js';
 import { normalizeBars, findSwings, alternateSwings, classifyStructure } from '../core/structure.js';
 import { regime } from '../core/context.js';
 import { scaleTimeframe, scalingExponent } from '../core/timeframe.js';
+import * as stages from '../core/stages.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -149,6 +150,76 @@ export function registerMtfTools(server) {
       const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
       if (!bars.length) throw new Error('No price bars came back from the chart.');
       return { success: true, ...scalingExponent(bars) };
+    }),
+  );
+
+  server.tool(
+    'stage_plan',
+    'Shannon\'s four-stage ACTION machine: what to DO right now, from two timeframes. The longer one is a GATE — "the only stocks which should be of ANY interest are those in an established Stage 2 Uptrend or a Stage 4 Decline", so Stages 1 and 3 return NO_SETUP rather than a weaker signal. The shorter one then decides: on a Stage 2 gate, short-TF Stage 1 = ANTICIPATE (stalk, set an alert, do not buy), Stage 2 = PARTICIPATE, Stage 3 = EXIT, Stage 4 = AVOID. The short side is the same wheel rotated by two. Each stage is Shannon\'s own three-clause definition — price above/below all three averages, all three sloping the same way, and correctly STACKED 10>20>50 (stacking is a separate clause: all three can rise while still crossed) — so the clauses can DISAGREE and the classifier abstains. That abstention is the point: measured, it declines to name a stage on 54% of random walks, where Wyckoff\'s classifyPhase names one on 100% and therefore cannot filter at all. Honest limit, also measured: the gate opens on 25% of real symbols against 36% of random walks, so it finds no more tradeable structure in real data than in noise. It is a CONSISTENCY filter, not evidence of trend. The chart is never switched — the loaded timeframe is the TRIGGER and the gate is built by aggregating it.',
+    {
+      count: z.coerce.number().optional().describe('Bars of the loaded timeframe to use (default 600 — the gate needs 50 aggregated bars)'),
+      gate: z.string().optional().describe('How to build the gate timeframe from the loaded one: "week"/"month", or a bar multiple. Default "week". Shannon\'s swing row is a DAILY gate with a 30-minute trigger, so from a 30-minute chart pass 13 (13 half-hours = one session).'),
+      side: z.enum(['long', 'short']).optional().describe('Restrict to one side. A side that contradicts the gate returns NO_SETUP rather than obliging.'),
+      periods: z.string().optional().describe('Moving-average triple (default "10,20,50" — Shannon\'s daily set; his weekly set is 10,20,40 because 40 weeks is the 200-day equivalent)'),
+      slope_lookback: z.coerce.number().optional().describe('Bars back to measure each average\'s slope (default 5). A one-bar slope is noise.'),
+    },
+    wrap(async ({ count = 600, gate = 'week', side = null, periods = null, slope_lookback = 5 }) => {
+      const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+
+      const step = /^\d+$/.test(String(gate)) ? Number(gate) : String(gate);
+      const agg = core.resampleBars(bars, step);
+      const mas = periods
+        ? String(periods).split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0)
+        : stages.MA_SETS.daily;
+      if (mas.length !== 3) throw new Error('periods needs exactly three moving-average lengths, e.g. "10,20,50".');
+
+      // The aggregated newest bar is usually still forming. A stage read off a
+      // partial bar is read off a price that has not finished happening.
+      const gateBars = agg.partial_last_bar ? agg.bars.slice(0, -1) : agg.bars;
+
+      const plan = stages.stagePlan({
+        long_bars: gateBars,
+        short_bars: bars,
+        periods: mas,
+        ...(side ? { side } : {}),
+      });
+
+      // A gate too short for the MA set is the commonest way to misuse this:
+      // "week" assumes a DAILY chart, and on a 60-minute chart it collapses to a
+      // handful of bars. Name the fix rather than returning a thin abstention.
+      const needed = Math.max(...mas) + slope_lookback + 1;
+      const gateHint = gateBars.length < needed
+        ? {
+            gate_too_short: `The ${gate} gate produced only ${gateBars.length} bars, and a ${Math.max(...mas)}-period `
+              + `average needs ${needed}. Shannon's swing row is a DAILY gate with an intraday trigger, and "week" `
+              + 'assumes the chart is already daily. From an intraday chart pass the bars-per-session multiple instead '
+              + '(7 for 60-minute, 13 for 30-minute, 39 for 10-minute), or load more bars.',
+          }
+        : {};
+
+      return {
+        success: true,
+        ...gateHint,
+        gate_timeframe: typeof step === 'number' ? `loaded x${step}` : String(step),
+        trigger_timeframe: 'loaded',
+        trigger_bars: bars.length,
+        gate_bars: gateBars.length,
+        ...(agg.partial_warning ? { gate_partial_bar_dropped: agg.partial_warning } : {}),
+        ...plan,
+        // The action names a stop and a target location but computes neither.
+        next_step: plan.action.action === 'PARTICIPATE'
+          ? 'Size it with position_size_constrained (the risk budget alone is not the answer), place the initial stop '
+            + 'beyond the most recent counter-trend pivot, and use pivot_trail to ratchet it. Check ta_trading_context '
+            + 'for an earnings date first — Shannon holds nothing into a report.'
+          : plan.action.action === 'ANTICIPATE'
+            ? 'Set the alert a couple of pennies INSIDE the trigger level, not at it. levels_find gives the level; '
+              + 'alert_create places it. Do not enter yet.'
+            : plan.action.action === 'EXIT'
+              ? 'Two triggers, and legs_classify reports both: the counter-trend pivot violated (a PRICE correction) or '
+                + 'the short average crossing the intermediate one (a TIME correction).'
+              : 'Nothing to do on this symbol right now.',
+      };
     }),
   );
 }

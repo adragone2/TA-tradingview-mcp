@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { EXIT_REASONS, EXIT_KEYS, exitMix, isModellable } from '../src/core/exits.js';
+import { EXIT_REASONS, EXIT_KEYS, exitMix, isModellable, sliceTrades } from '../src/core/exits.js';
 
 describe('the exit taxonomy', () => {
   test('covers all ten Reasons2Sell plus an honest unknown', () => {
@@ -37,6 +37,28 @@ describe('the exit taxonomy', () => {
     assert.equal(isModellable('target_hit'), true);
     assert.equal(isModellable('tape_seller'), false);
     assert.equal(isModellable('nonsense'), null);
+  });
+
+  test('carries Shannon\'s two exits that Bellafiore\'s ten do not cover', () => {
+    /**
+     * Both are PLANNED. Leaving them out pushed modellable exits into
+     * discretionary_other, which understates the share of trading a backtest
+     * can actually represent — the opposite of the error exit_mix exists to
+     * catch.
+     */
+    for (const k of ['gap_against_trend', 'ma_crossover']) {
+      assert.ok(EXIT_REASONS[k], `${k} missing`);
+      assert.equal(EXIT_REASONS[k].planned, true, `${k} should be modellable`);
+    }
+    assert.match(EXIT_REASONS.gap_against_trend.note, /five percent/);
+    // The gap exit must not promise the stop price — that is the gap_risk lesson.
+    assert.match(EXIT_REASONS.gap_against_trend.note, /gap_risk|luld_band/);
+    // The crossover is an EXIT here, never an entry.
+    assert.match(EXIT_REASONS.ma_crossover.note, /INDECISION/);
+  });
+
+  test('the taxonomy now covers all twelve reasons plus the unknown', () => {
+    assert.ok(EXIT_KEYS.length >= 13, `only ${EXIT_KEYS.length} reasons`);
   });
 
   test('trend_broken is planned only conditionally, and says so', () => {
@@ -117,5 +139,122 @@ describe('exitMix', () => {
     assert.ok(src.length > 0);
     const r = exitMix([...many('target_hit', 10)]);
     assert.match(r.source, /Bellafiore/);
+  });
+});
+
+describe('sliceTrades — Shannon Figure 16.2', () => {
+  /** Reproduce the two net-negative buckets from his own broker report. */
+  const trade = (o) => ({ pnl: 0, ...o });
+  const many = (n, o) => Array.from({ length: n }, (_, i) => trade({ ...o, i }));
+
+  test('finds a losing bucket inside a PROFITABLE book', () => {
+    /**
+     * The load-bearing case, and the reason the tool exists. Shannon's report
+     * was net positive while stocks over $100 averaged -3.82 across 159 trades.
+     * An aggregate win rate cannot show this.
+     */
+    const trades = [
+      ...many(160, { pnl: -4, price: 150, direction: 'long' }),
+      ...many(60, { pnl: 30, price: 20, direction: 'long' }),
+    ];
+    const r = sliceTrades(trades);
+    assert.equal(r.available, true);
+    assert.ok(r.overall.total_pnl > 0, 'the book must be net positive for the point to land');
+    assert.ok(r.net_negative_buckets.length >= 1);
+    assert.ok(r.net_negative_buckets.some((b) => b.dimension === 'price' && b.bucket.startsWith('> 100')));
+    assert.match(r.headline, /net positive/);
+    assert.match(r.headline, /−3\.82|-3\.82/);
+  });
+
+  test('slices holding time, where his other negative bucket was', () => {
+    const trades = [
+      ...many(44, { pnl: -18, minutes_held: 20 }),
+      ...many(168, { pnl: 23, minutes_held: 3 }),
+    ];
+    const r = sliceTrades(trades);
+    assert.ok(r.slices.minutes_held['15-30m']);
+    assert.ok(r.slices.minutes_held['15-30m'].total_pnl < 0);
+    assert.ok(r.slices.minutes_held['<= 5m'].total_pnl > 0);
+  });
+
+  test('reports direction separately, because shorts can beat longs', () => {
+    // Shannon's shorts won 56.4% against his longs' 52.0%.
+    const trades = [
+      ...many(101, { pnl: 14.83, direction: 'short' }),
+      ...many(256, { pnl: 17.68, direction: 'long' }),
+    ];
+    const r = sliceTrades(trades);
+    assert.equal(r.slices.direction.short.n, 101);
+    assert.equal(r.slices.direction.long.n, 256);
+    assert.match(r.why_slice_at_all, /56\.4% vs 52\.0%/);
+  });
+
+  test('every bucket carries its own n, win rate and averages', () => {
+    const r = sliceTrades(many(30, { pnl: 5, direction: 'long', shares: 300, price: 40, minutes_held: 10 }));
+    const b = r.slices.direction.long;
+    for (const k of ['n', 'total_pnl', 'avg_pnl', 'win_rate_pct']) {
+      assert.ok(k in b, `bucket missing ${k}`);
+    }
+    assert.equal(b.n, 30);
+    assert.equal(b.win_rate_pct, 100);
+  });
+
+  test('UNDERPOWERED buckets are flagged and never ranked as findings', () => {
+    /**
+     * The guard against fitting noise. Six losing trades is a coin landing
+     * tails six times, and ranking it beside a 160-trade bucket would invite
+     * exactly the error the rest of this repo measures against.
+     */
+    const trades = [
+      ...many(6, { pnl: -50, price: 200 }),
+      ...many(40, { pnl: 10, price: 20 }),
+    ];
+    const r = sliceTrades(trades, { min_n: 10 });
+    assert.equal(r.slices.price['> 100'].underpowered, true);
+    assert.ok(!r.net_negative_buckets.some((b) => b.bucket === '> 100'),
+      'an underpowered losing bucket must not be reported as a finding');
+  });
+
+  test('states how many buckets were examined, so the comparison count is visible', () => {
+    const r = sliceTrades(many(40, { pnl: 3, direction: 'long', shares: 400, price: 30, minutes_held: 20 }));
+    assert.ok(r.buckets_examined > 1);
+    assert.match(r.multiple_comparisons_warning, /buckets were examined/);
+    assert.match(r.multiple_comparisons_warning, /HYPOTHESIS/);
+    assert.match(r.multiple_comparisons_warning, /survives on later trades/);
+  });
+
+  test('splits planned from discretionary when a reason is supplied', () => {
+    const r = sliceTrades([
+      ...many(12, { pnl: 20, reason: 'target_hit' }),
+      ...many(12, { pnl: -30, reason: 'tape_seller' }),
+    ]);
+    assert.equal(r.slices.exit_planned.planned.n, 12);
+    assert.equal(r.slices.exit_planned.discretionary.n, 12);
+    assert.ok(r.slices.exit_reason.target_hit);
+  });
+
+  test('an unrecognised reason does not create a phantom bucket', () => {
+    const r = sliceTrades(many(12, { pnl: 5, reason: 'vibes' }));
+    assert.equal(r.slices.exit_reason, undefined);
+    assert.equal(r.slices.exit_planned, undefined);
+  });
+
+  test('trades without a numeric pnl are unusable, and it says so', () => {
+    assert.equal(sliceTrades([{ direction: 'long' }]).available, false);
+    assert.match(sliceTrades([{ direction: 'long' }]).note, /numeric pnl/);
+    assert.equal(sliceTrades([]).available, false);
+    assert.equal(sliceTrades(null).available, false);
+  });
+
+  test('a missing dimension is simply absent, not bucketed as zero', () => {
+    // Trades with no `shares` must not all land in a "<= 200" bucket.
+    const r = sliceTrades(many(20, { pnl: 5, direction: 'long' }));
+    assert.equal(r.slices.shares, undefined);
+    assert.equal(r.slices.minutes_held, undefined);
+    assert.ok(r.slices.direction);
+  });
+
+  test('cites the figure it came from', () => {
+    assert.match(sliceTrades(many(12, { pnl: 1 })).source, /Figure 16\.2/);
   });
 });

@@ -35,12 +35,15 @@ export function registerPositionToolTools(server) {
 
   server.tool(
     'position_size',
-    'Position size for a trade already drawn on the chart, given an account size and risk percent. Reports TradingView\'s own quantity alongside, and flags when the drawing is configured for a different account size. Arithmetic on the levels drawn — not advice, and it places no order.',
+    'Position size for a trade already drawn on the chart, under ALL THREE constraints — risk budget, concentration cap, and liquidity — returning the MINIMUM and naming which one bound. A fixed-risk formula alone is unsafe: under fixed risk a TIGHTER stop buys MORE shares, so the concentration cap binds precisely when the entry looks best. Shannon\'s own worked example turns a 1% risk budget on a $100,000 account into a $66,650 position — 65% of capital in one idea — because the stop was only 75 cents away. Pass adv to apply the liquidity constraint; without it that constraint is reported as NOT CHECKED rather than silently passing. Reports TradingView\'s own quantity alongside, and flags when the drawing is configured for a different account size. Arithmetic on the levels drawn — not advice, and it places no order.',
     {
       account_size: z.coerce.number().describe('Account size'),
-      risk_percent: z.coerce.number().describe('Percent of account to risk'),
+      risk_percent: z.coerce.number().describe('Percent of account to risk (Shannon: 1%, never more than 2%)'),
       entity_id: z.string().optional().describe('Which position tool (required when more than one is on the chart)'),
+      adv: z.coerce.number().optional().describe('Average daily volume in shares. Without it the liquidity constraint cannot be applied and is reported as unchecked.'),
+      max_position_pct: z.coerce.number().optional().describe('Concentration cap as percent of account in one position (default 20 — Shannon says 15-20)'),
+      max_adv_pct: z.coerce.number().optional().describe('Liquidity cap as percent of average daily volume (default 2 — this repo\'s choice, not Shannon\'s; he names no number)'),
     },
-    wrap(({ account_size, risk_percent, entity_id }) => core.sizePosition({ account_size, risk_percent, entity_id })),
+    wrap((args) => core.sizePosition(args)),
   );
 }

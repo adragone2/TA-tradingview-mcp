@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/risk.js';
-import { exitMix, EXIT_REASONS } from '../core/exits.js';
+import { exitMix, EXIT_REASONS, sliceTrades, DEFAULT_BUCKETS } from '../core/exits.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -68,11 +68,49 @@ export function registerRiskTools(server) {
   );
 
   server.tool(
+    'position_size_constrained',
+    'Position size under all THREE constraints at once — risk budget, concentration cap, and liquidity — returning the MINIMUM and naming which one bound. Use this when you have prices but nothing drawn on the chart; position_size does the same for a plan already drawn. The reason it exists: a fixed-risk formula alone is unsafe, because under fixed risk a TIGHTER stop buys MORE shares. So the concentration cap binds exactly when the entry looks best. Shannon\'s worked example: a $50 stock with the stop 75 cents away, 1% of a $100,000 account, gives 1,333 shares — $66,650, or 65% of capital in one idea. His second example binds on liquidity instead: a $2.50 stock with support 15 cents away gives 6,666 shares, which is 2.2% of a 300,000-share ADV. Reports what the risk budget alone would have bought, so the difference is visible. Without adv the liquidity constraint is reported as NOT CHECKED — unknown is not the same as satisfied.',
+    {
+      account_size: z.coerce.number().describe('Account size'),
+      entry: z.coerce.number().describe('Entry price'),
+      stop: z.coerce.number().describe('Stop price'),
+      risk_percent: z.coerce.number().optional().describe('Percent of account to risk (default 1 — Shannon says never more than 2)'),
+      adv: z.coerce.number().optional().describe('Average daily volume in shares. Omit and the liquidity constraint is reported as unchecked, not passed.'),
+      max_position_pct: z.coerce.number().optional().describe('Concentration cap as percent of account in one position (default 20 — Shannon says 15-20)'),
+      max_adv_pct: z.coerce.number().optional().describe('Liquidity cap as percent of average daily volume (default 2 — this repo\'s choice; Shannon names no number)'),
+    },
+    wrap((args) => ({ success: true, ...core.sizeWithConstraints(args), caps: core.SIZING_CAPS, disclaimer: DISCLAIMER })),
+  );
+
+  server.tool(
     'exit_mix',
-    "Split a set of journalled exits into PLANNED versus DISCRETIONARY, using the twelve-key Reasons2Sell taxonomy. The point is not discipline: a backtest can only model an exit that was specifiable before entry, so if most real exits were decided while the position was live, the backtest is measuring a different strategy that merely shares an entry signal. Also counts exits driven by the INDEX rather than the position, which no single-symbol backtest can see. Pass reason keys from EXIT_REASONS.",
+    "Split a set of journalled exits into PLANNED versus DISCRETIONARY, using the fifteen-key taxonomy (Bellafiore's Reasons2Sell plus Shannon's gap-against-trend and moving-average-crossover exits, both of which are planned). The point is not discipline: a backtest can only model an exit that was specifiable before entry, so if most real exits were decided while the position was live, the backtest is measuring a different strategy that merely shares an entry signal. Also counts exits driven by the INDEX rather than the position, which no single-symbol backtest can see. Pass reason keys from EXIT_REASONS.",
     {
       exits: z.array(z.string()).describe('Exit reason keys, one per closed trade'),
     },
     wrap(({ exits }) => ({ success: true, ...exitMix(exits), taxonomy: Object.keys(EXIT_REASONS) })),
+  );
+
+  server.tool(
+    'journal_slice',
+    'Slice closed trades by direction, share size, share price and holding time, and report P&L per bucket. The reason is Shannon\'s Figure 16.2 — his own broker\'s report over three weeks of real trading — where TWO buckets were net NEGATIVE inside a profitable book: stocks over $100 averaged −3.82 across 159 trades, and trades held 16–30 minutes averaged −17.93 across 44. Neither is visible in an aggregate win rate, and both are actionable in a way "improve your discipline" is not. His shorts also won MORE often than his longs (56.4% vs 52.0%). exit_mix answers whether a backtest can represent a book; this answers which parts of it make the money. Guards the obvious hazard: every bucket reports its own n, buckets under min_n are flagged underpowered and never ranked, and the result states how many buckets were examined — cut a small book enough ways and one looks terrible by chance. A losing bucket is a hypothesis about where to look, not a conclusion.',
+    {
+      trades: z.array(z.object({
+        pnl: z.coerce.number().describe('Realised P&L. Required — nothing can be computed without it.'),
+        direction: z.string().optional().describe('"long" or "short"'),
+        shares: z.coerce.number().optional().describe('Position size in shares'),
+        price: z.coerce.number().optional().describe('Entry price'),
+        minutes_held: z.coerce.number().optional().describe('Holding time in minutes'),
+        reason: z.string().optional().describe('An EXIT_REASONS key, so planned and discretionary can be split too'),
+        setup_tier: z.string().optional().describe('Your own grade for the setup, e.g. "A"'),
+      })).describe('Closed trades, one object each'),
+      min_n: z.coerce.number().optional().describe('Trades a bucket needs before it is ranked rather than flagged underpowered (default 10)'),
+    },
+    wrap(({ trades, min_n = 10 }) => ({
+      success: true,
+      ...sliceTrades(trades, { min_n }),
+      bucket_edges: DEFAULT_BUCKETS,
+      disclaimer: DISCLAIMER,
+    })),
   );
 }

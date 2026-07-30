@@ -273,6 +273,184 @@ export function recoveryTable(levels = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90]) 
  * between them is the useful part: a manual stop far tighter than the ATR stop
  * is one the instrument's normal noise will hit.
  */
+/* ------------------- sizing: three constraints, not one ----------------- */
+
+/**
+ * Shannon's caps (ch. 16). The risk figure is his and widely shared; the
+ * concentration cap is his and much less often stated; the liquidity cap is
+ * OURS, and labelled as such below because he gives no number for it.
+ */
+export const SIZING_CAPS = Object.freeze({
+  risk_pct_default: 1,
+  risk_pct_max: 2,
+  /**
+   * "exposing more than 15 to 20 percent of your account equity to any one
+   * position can result in disastrous effects on your account balance if
+   * something unexpected goes wrong."
+   */
+  max_position_pct_default: 20,
+  /**
+   * Shannon raises liquidity as a constraint — 6,666 shares of a 300,000-ADV
+   * stock, "would you feel comfortable buying 6,000 shares?" — but never names
+   * a threshold. 2% of average daily volume is a conventional low-impact
+   * participation rate, not a figure from the book, and it is the default only
+   * so the constraint is present rather than absent.
+   */
+  max_adv_pct_default: 2,
+  source: 'Shannon, Technical Analysis Using Multiple Timeframes (2008), ch. 16. The ADV cap is this repo\'s choice.',
+});
+
+/**
+ * Position size under ALL THREE constraints, returning the binding one.
+ *
+ * A fixed-risk formula on its own is unsafe, and Shannon's own worked example
+ * is the demonstration. A $50 stock with a stop just below support at 49.25 has
+ * $0.75 of risk per share. A $1,000 risk budget on a $100,000 account therefore
+ * buys 1,333 shares — $66,650, or **65% of the account** in one idea. His own
+ * comment: "But would you really want to commit 65% of your trading capital to
+ * just one idea?"
+ *
+ * The mechanism is worth stating because it is counterintuitive: under fixed
+ * risk, a TIGHTER stop buys MORE shares. So the better the entry, the more
+ * likely the concentration cap binds — exactly when a trader feels most
+ * justified in sizing up.
+ *
+ * His second example shows the third constraint binding instead: a $2.50 stock
+ * with support 15 cents away gives 6,666 shares on the same $1,000 risk, which
+ * is 2.2% of a 300,000-share ADV.
+ *
+ * So the answer is the MINIMUM of the three, and which one bound is the useful
+ * part of the output. `sizePosition` already reported notional_pct_of_account
+ * and then returned the risk-derived quantity anyway — reporting a constraint
+ * is not applying it.
+ *
+ * `adv` is optional: without it the liquidity constraint is reported as
+ * unavailable rather than silently passing.
+ */
+export function sizeWithConstraints({
+  account_size,
+  risk_percent = SIZING_CAPS.risk_pct_default,
+  entry,
+  stop,
+  adv = null,
+  max_position_pct = SIZING_CAPS.max_position_pct_default,
+  max_adv_pct = SIZING_CAPS.max_adv_pct_default,
+} = {}) {
+  const acct = Number(account_size);
+  const riskPct = Number(risk_percent);
+  const px = Number(entry);
+  const sl = Number(stop);
+
+  if (!(acct > 0)) return { available: false, note: 'account_size must be positive.' };
+  if (!(riskPct > 0 && riskPct <= 100)) return { available: false, note: 'risk_percent must be between 0 and 100.' };
+  if (!(px > 0)) return { available: false, note: 'entry must be positive.' };
+  if (!(sl > 0)) return { available: false, note: 'stop must be positive.' };
+
+  const perUnit = Math.abs(px - sl);
+  if (!(perUnit > 0)) {
+    return { available: false, note: 'Entry and stop are the same price, so risk per share is zero and size is undefined.' };
+  }
+
+  const riskAmount = acct * (riskPct / 100);
+  const constraints = [];
+
+  // 1. Risk budget.
+  const byRisk = riskAmount / perUnit;
+  constraints.push({
+    name: 'risk_budget',
+    shares: byRisk,
+    limit: `${round(riskPct, 3)}% of ${round(acct, 2)} = ${round(riskAmount, 2)} at risk, over ${round(perUnit, 6)}/share`,
+  });
+
+  // 2. Concentration cap.
+  const maxNotional = acct * (Number(max_position_pct) / 100);
+  const byConcentration = maxNotional / px;
+  constraints.push({
+    name: 'concentration_cap',
+    shares: byConcentration,
+    limit: `${round(Number(max_position_pct), 2)}% of account = ${round(maxNotional, 2)} notional, at ${round(px, 6)}/share`,
+  });
+
+  // 3. Liquidity. Absent ADV this is unknown, and unknown is not a pass.
+  const advNum = Number(adv);
+  const liquidityKnown = Number.isFinite(advNum) && advNum > 0;
+  if (liquidityKnown) {
+    constraints.push({
+      name: 'liquidity',
+      shares: advNum * (Number(max_adv_pct) / 100),
+      limit: `${round(Number(max_adv_pct), 2)}% of ${round(advNum, 0)} average daily volume`,
+    });
+  }
+
+  const binding = constraints.reduce((a, b) => (b.shares < a.shares ? b : a));
+  const shares = binding.shares;
+  const notional = shares * px;
+  const actualRisk = shares * perUnit;
+
+  // What the naive answer would have been, so the difference is visible.
+  const suppressedBy = binding.name === 'risk_budget' ? null : round(byRisk - shares, 4);
+
+  return {
+    available: true,
+    direction: px > sl ? 'long' : 'short',
+    account_size: round(acct, 2),
+    entry: round(px, 6),
+    stop: round(sl, 6),
+    risk_per_share: round(perUnit, 6),
+
+    shares: round(shares, 4),
+    shares_rounded: Math.floor(shares),
+    notional: round(notional, 2),
+    notional_pct_of_account: round((notional / acct) * 100, 2),
+    risk_amount: round(actualRisk, 2),
+    risk_pct_of_account: round((actualRisk / acct) * 100, 3),
+
+    binding_constraint: binding.name,
+    constraints: constraints
+      .map((c) => ({
+        name: c.name,
+        shares: round(c.shares, 4),
+        notional: round(c.shares * px, 2),
+        limit: c.limit,
+        binding: c.name === binding.name,
+      }))
+      .sort((a, b) => a.shares - b.shares),
+
+    ...(liquidityKnown
+      ? { pct_of_adv: round((shares / advNum) * 100, 3) }
+      : {
+          liquidity_constraint: 'NOT CHECKED — no adv supplied. This is unknown, not satisfied. Pass adv (from '
+            + 'data_get_ohlcv or short_interest) to apply it.',
+        }),
+
+    ...(suppressedBy
+      ? {
+          risk_budget_would_have_bought: round(byRisk, 4),
+          suppressed_shares: suppressedBy,
+          why: binding.name === 'concentration_cap'
+            ? `The ${round(riskPct, 3)}% risk budget alone would have bought ${round(byRisk, 4)} shares — `
+              + `${round(((byRisk * px) / acct) * 100, 1)}% of the account in one position. Under fixed risk a TIGHTER stop `
+              + 'buys MORE shares, so the concentration cap binds precisely when the entry looks best. '
+              + 'Shannon\'s own example produced 65% of capital this way.'
+            : `The ${round(riskPct, 3)}% risk budget alone would have bought ${round(byRisk, 4)} shares, which is `
+              + `${round(((byRisk / advNum) * 100), 2)}% of average daily volume. A position that size moves the price `
+              + 'it is trying to get, and it is harder to exit than to enter.',
+        }
+      : {
+          why: 'The risk budget is the tightest of the three constraints here, so it sets the size.',
+        }),
+
+    caps_applied: {
+      risk_percent: round(riskPct, 3),
+      max_position_pct: round(Number(max_position_pct), 2),
+      ...(liquidityKnown ? { max_adv_pct: round(Number(max_adv_pct), 2) } : {}),
+    },
+    source: SIZING_CAPS.source,
+    note: 'Arithmetic on numbers supplied. The answer is the MINIMUM across constraints — reporting a constraint is not '
+      + 'applying it. Not advice, and it places no order.',
+  };
+}
+
 export function sizeByVolatility({
   account_size,
   risk_percent,

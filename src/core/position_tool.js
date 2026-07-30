@@ -17,6 +17,7 @@
  */
 import { evaluate, getChartApi, KNOWN_PATHS } from '../connection.js';
 import * as registry from './drawing_registry.js';
+import { sizeWithConstraints } from './risk.js';
 
 const POSITION_SHAPES = { long: 'long_position', short: 'short_position' };
 
@@ -242,7 +243,10 @@ export async function readPosition({ entity_id } = {}) {
  * qty alongside, so a mismatch with the tool's configured account size is
  * visible rather than silently different.
  */
-export async function sizePosition({ entity_id, account_size, risk_percent } = {}) {
+export async function sizePosition({
+  entity_id, account_size, risk_percent,
+  adv = null, max_position_pct, max_adv_pct,
+} = {}) {
   const read = await readPosition({ entity_id });
   const pos = entity_id ? read : (read.positions || [])[0];
   if (!pos) throw new Error('No position tool on the chart to size. Draw one, or pass entity_id.');
@@ -259,7 +263,21 @@ export async function sizePosition({ entity_id, account_size, risk_percent } = {
   const perUnit = pos.risk_per_unit;
   if (!perUnit) throw new Error('The position tool has no distance between entry and stop, so size is undefined.');
 
-  const qty = riskAmount / perUnit;
+  // The risk budget alone is not the answer. A tighter stop buys MORE shares
+  // under fixed risk, so a good entry is exactly when the concentration cap
+  // binds — Shannon's own example turns a 1% budget into 65% of the account.
+  // sizeWithConstraints returns the MINIMUM across constraints and names which.
+  const constrained = sizeWithConstraints({
+    account_size: acct,
+    risk_percent: pct,
+    entry: pos.entry,
+    stop: pos.stop,
+    adv,
+    ...(max_position_pct !== undefined ? { max_position_pct } : {}),
+    ...(max_adv_pct !== undefined ? { max_adv_pct } : {}),
+  });
+
+  const qty = constrained.available ? constrained.shares : riskAmount / perUnit;
   const notional = qty * pos.entry;
 
   return {
@@ -277,6 +295,18 @@ export async function sizePosition({ entity_id, account_size, risk_percent } = {
     quantity: Math.round(qty * 1e8) / 1e8,
     notional: Math.round(notional * 100) / 100,
     notional_pct_of_account: Math.round((notional / acct) * 1000) / 10,
+    ...(constrained.available
+      ? {
+          binding_constraint: constrained.binding_constraint,
+          constraints: constrained.constraints,
+          why: constrained.why,
+          ...(constrained.risk_budget_would_have_bought
+            ? { risk_budget_would_have_bought: constrained.risk_budget_would_have_bought }
+            : {}),
+          ...(constrained.liquidity_constraint ? { liquidity_constraint: constrained.liquidity_constraint } : {}),
+          ...(constrained.pct_of_adv !== undefined ? { pct_of_adv: constrained.pct_of_adv } : {}),
+        }
+      : {}),
     tool_qty: pos.qty,
     tool_account_size: pos.account_size,
     ...(pos.account_size && Math.abs(pos.account_size - acct) > 0.01

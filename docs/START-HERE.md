@@ -8,7 +8,7 @@ They do different jobs. Confusing them produces confident nonsense.
 
 | Layer | What it is | Use it for |
 |-------|-----------|------------|
-| **TradingView MCP** (this repo) | 175 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
+| **TradingView MCP** (this repo) | 180 tools driving a live TradingView Desktop chart over CDP | Charts, levels, entries, drawings, Pine. **Trading.** |
 | **Tactical Alpha (TA)** | The master system on a VPS, reached through `ta_*` tools | Portfolio, earnings, regime, gamma walls, watchlists. **Investing.** |
 | **WRDS** (separate `wrds-mcp` server) | Read-only SQL over academic market data | Historical research and validating whether a rule ever worked. |
 
@@ -97,7 +97,7 @@ wrds-mcp/      separate MCP server for historical research
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
 - [screening.md](screening.md) — morning screening design: the TV scanner reaches 19,672 symbols in one request
-- [tools-reference.md](tools-reference.md) — all 175 tools by group
+- [tools-reference.md](tools-reference.md) — all 180 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows
 - [plugins.md](plugins.md) — the FSI plugin skills, and how to feed them data

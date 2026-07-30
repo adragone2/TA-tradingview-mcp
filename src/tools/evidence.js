@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as data from '../core/data.js';
-import { normalizeBars } from '../core/structure.js';
+import { normalizeBars, findSwings, alternateSwings, classifyStructure } from '../core/structure.js';
 import * as momentum from '../core/momentum.js';
 import * as vcp from '../core/vcp.js';
 import * as kernel from '../core/kernel.js';
@@ -220,6 +220,38 @@ export function registerEvidenceTools(server) {
         ...stops.stoppingPremium(bars, lagList ? { lags: lagList } : {}),
         ...(backtest_threshold_pct
           ? { backtest: stops.backtestStop(bars, { threshold_pct: backtest_threshold_pct, cooldown_bars }) }
+          : {}),
+      };
+    }),
+  );
+
+  server.tool(
+    'pivot_trail',
+    'Where a trailing stop goes when the rule is the DEFINITION of the trend rather than a distance. Shannon (ch. 16, figs 16.4/16.5): a new higher high promotes the stop to just below the most recent higher LOW, because "breaking the series of higher lows is a violation of the trend"; shorts mirror it off lower highs. Two properties that separate this from an ATR or percentage trail: the trigger is a new EXTREME, not the pullback itself, so the stop moves only once a higher high CONFIRMS the prior higher low held; and it is a one-directional RATCHET — any step that would loosen the stop is refused and counted, since "the only time stops should be changed is when the market moves in your favor." Reads confirmed pivots only, so it deliberately lags the last few bars rather than inventing structure. Reports the pending pivot the next new high would promote to, and flags when a lower low has invalidated the trend the trail is defined by. A trail is a bet on PERSISTENCE — run stopping_premium on the same series before treating it as an edge; Shannon\'s justification is definitional, not empirical.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      direction: z.enum(['long', 'short']).optional().describe('Trade direction (default long)'),
+      lookback: z.coerce.number().optional().describe('Swing lookback in bars (default 5). Larger finds fewer, more significant pivots'),
+      initial_stop: z.coerce.number().optional().describe('The protective stop already in place. The trail will never loosen it.'),
+      buffer_pct: z.coerce.number().optional().describe('Place the stop this percent beyond the pivot (default 0). A stop exactly ON the low is hit by a tick that equals it.'),
+      with_persistence: z.coerce.boolean().optional().describe('Also measure stopping_premium on the same bars, so the trail comes with the persistence it assumes (default true)'),
+    },
+    wrap(async ({ count = 300, direction = 'long', lookback = 5, initial_stop = null, buffer_pct = 0, with_persistence = true }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const alt = alternateSwings(findSwings(bars, { lookback }));
+      const labelled = classifyStructure(alt);
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        structure_trend: labelled.trend,
+        swings_used: labelled.swings.length,
+        ...stops.pivotTrail(labelled.swings, {
+          direction,
+          ...(Number.isFinite(initial_stop) ? { initial_stop } : {}),
+          buffer_pct,
+        }),
+        // The trail assumes persistence, so measure it rather than assume it.
+        ...(with_persistence
+          ? { persistence: stops.stoppingPremium(bars) }
           : {}),
       };
     }),

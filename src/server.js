@@ -48,7 +48,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 175 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 180 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains

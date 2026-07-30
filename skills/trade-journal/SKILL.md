@@ -55,7 +55,9 @@ Add these columns. They are the difference between a diary and a dataset:
 
 `target` / `stop` / `time` are the only three exits a backtest can model, which is precisely why those three alone teach nothing: they cannot separate an exit the **plan** called for from one **decided while the position was live**.
 
-Use the twelve-key taxonomy in [src/core/exits.js](../../src/core/exits.js) (Bellafiore's Reasons2Sell) and run `exit_mix` over the column periodically. It splits planned from discretionary and counts the ones driven by the **index** rather than the position — which no single-symbol backtest can see at all.
+Use the fifteen-key taxonomy in [src/core/exits.js](../../src/core/exits.js) — Bellafiore's Reasons2Sell plus Shannon's two, `gap_against_trend` (a gap of 5% or more against the position) and `ma_crossover` (the moving averages crossing, which Shannon reads as indecision and therefore as an exit and never an entry). Both are **planned**, so leaving them out was pushing modellable exits into `discretionary_other` and understating how much of the book a backtest can represent.
+
+Run `exit_mix` over the column periodically. It splits planned from discretionary and counts the ones driven by the **index** rather than the position — which no single-symbol backtest can see at all.
 
 The reason to bother is not discipline. It is that **a backtest can only model a planned exit**, so if most real exits are discretionary the backtest is measuring a different strategy that merely shares an entry signal. Every rule in this repo about benchmarks, trial counts and deflated Sharpe is void if the exit in the test is not the exit in the account.
 
@@ -88,6 +90,21 @@ When asked to review rather than log, read the sheet and report:
 - Any pattern by symbol, timeframe, or day
 
 State the sample size next to every statistic. Eleven trades is not a win rate. If the sample is too small to conclude anything, say that instead of reporting a percentage that reads as meaningful.
+
+### Slice it — a profitable book can contain losing halves
+
+Run `journal_slice` over the rows. It cuts by **direction, share size, share price and holding time** and reports P&L per bucket, because an aggregate win rate hides the two things worth knowing: which parts of the book pay, and which quietly do not.
+
+The dimensions are Shannon's, from Figure 16.2 — his own broker's report over three weeks of real trading. Two of its buckets were net **negative** inside a book that made money overall:
+
+| Bucket | Trades | Winners | Average |
+|---|---|---|---|
+| Share price over $100 | 159 | 47.2% | **−3.82** |
+| Held 16–30 minutes | 44 | 50.0% | **−17.93** |
+
+Neither is visible in a headline win rate, and both are actionable in a way "improve your discipline" is not. His shorts also won *more* often than his longs (56.4% vs 52.0%), which is the opposite of what most traders assume about themselves.
+
+**A losing bucket is a hypothesis, not a conclusion.** Cut forty trades four ways and one bucket will look terrible by chance. `journal_slice` reports every bucket's `n`, flags buckets under `min_n` as `underpowered` and refuses to rank them, and states how many buckets it examined so the multiple-comparison problem is visible. Before acting on one, ask whether it has a mechanism, and check whether it survives on the next batch of trades.
 
 ## Guardrails
 

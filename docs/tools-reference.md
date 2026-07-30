@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **175 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **180 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -199,12 +199,13 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`ui_find_element`** — Find UI elements by text, aria-label, or CSS selector and return their positions
 - **`ui_evaluate`** — Execute JavaScript code in the TradingView page context for advanced automation
 
-### position_* (6)
+### position_* (7)
 
 - **`position_draw`** — Draw TradingView's native Long/Short Position tool — shaded risk and reward boxes with entry, stop and target, and a size TradingView computes from ac
 - **`position_read`** — Read Long/Short Position tools off the chart as plain prices — entry, stop, target, R:R and quantity
-- **`position_size`** — Position size for a trade already drawn on the chart, given an account size and risk percent
+- **`position_size`** — Position size for a trade already drawn on the chart, under ALL THREE constraints — risk budget, concentration cap, and liquidity — returning the MINI
 - **`position_size_atr`** — Position size from volatility instead of from a fixed price stop
+- **`position_size_constrained`** — Position size under all THREE constraints at once — risk budget, concentration cap, and liquidity — returning the MINIMUM and naming which one bound
 - **`position_correlation`** — How much open positions actually move together, from their return series
 - **`position_concentration`** — How open RISK is distributed across a bucket — sector, direction, or any tag on the positions
 
@@ -216,6 +217,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`levels_find`** — Support and resistance levels computed from price history, each carrying the evidence that earned it: how many SEPARATE times price tested it, how man
 - **`levels_draw`** — Draw computed key levels on the chart — horizontal lines for tight levels, shaded rectangles for zones — green for support, red for resistance, thickn
+
+### level_* (2)
+
+- **`level_test_history`** — The full test-by-test history of a level: every separate approach, where price RETREATED TO between them, and whether the level eventually broke
+- **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier and the le
 
 ### backtest_* (4)
 
@@ -242,10 +248,6 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### breakout_* (1)
 
 - **`breakout_check`** — Score a breakout of a price level against five measurable criteria: momentum (body vs recent average), how far beyond the level it CLOSED, volume vs a
-
-### level_* (1)
-
-- **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier and the le
 
 ### market_* (1)
 
@@ -301,7 +303,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 ### exit_* (1)
 
-- **`exit_mix`** — Split a set of journalled exits into PLANNED versus DISCRETIONARY, using the twelve-key Reasons2Sell taxonomy
+- **`exit_mix`** — Split a set of journalled exits into PLANNED versus DISCRETIONARY, using the fifteen-key taxonomy (Bellafiore's Reasons2Sell plus Shannon's gap-agains
+
+### journal_* (1)
+
+- **`journal_slice`** — Slice closed trades by direction, share size, share price and holding time, and report P&L per bucket
 
 ### elliott_* (2)
 
@@ -350,6 +356,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`scaling_exponent`** — The realised volatility scaling exponent on this chart
 
+### stage_* (1)
+
+- **`stage_plan`** — Shannon's four-stage ACTION machine: what to DO right now, from two timeframes
+
 ### relative_* (1)
 
 - **`relative_strength`** — Performance against a benchmark — the "compared to what" question no single-symbol tool can answer
@@ -389,6 +399,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### stopping_* (1)
 
 - **`stopping_premium`** — Does a stop-loss ADD expected return on this chart, or just cost you? Kaminski & Lo (2014) prove the stopping premium is ALWAYS NEGATIVE under a rando
+
+### pivot_* (1)
+
+- **`pivot_trail`** — Where a trailing stop goes when the rule is the DEFINITION of the trend rather than a distance
 
 ### edge_* (1)
 

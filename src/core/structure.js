@@ -327,6 +327,278 @@ export function classifyLegs(bars, swings, { min_bars = 2 } = {}) {
   };
 }
 
+/* --------------------------- time corrections ---------------------------- */
+
+/**
+ * Corrections come in TWO kinds, and a depth-based detector can only see one.
+ *
+ * Shannon (ch. 8) splits them:
+ *
+ *   - a **PRICE correction** moves against the trend — a pullback in an uptrend,
+ *     a snapback in a downtrend. It has a retracement percentage.
+ *   - a **TIME correction** is where "the stock digests the move in a
+ *     horizontal, low-volatility, trendless manner."
+ *
+ * Both are digestion. Only the first shows up as depth. `classifyLegs` measures
+ * bar quality between swings, so a horizontal stretch produces either no legs
+ * at all or tiny offsetting ones — and a caller looking for a pullback entry
+ * concludes "no pullback" and skips a setup that is digesting perfectly well.
+ * That is the gap this closes.
+ *
+ * It also matters for the trendline finding in the same book: a broken trendline
+ * "typically signals only that the RATE OF CHANGE has slowed, and that the
+ * stock is likely to experience a correction THROUGH TIME." So the thing a
+ * trendline break predicts is precisely the kind of correction a depth rule
+ * cannot detect.
+ *
+ * Four clauses, each a number, each reported with its threshold:
+ *
+ *   1. **prior impulse** — this is a digestion OF something. Without a move to
+ *      digest, a quiet stretch is just a quiet stretch.
+ *   2. **horizontal** — net drift across the window is small.
+ *   3. **low volatility** — mean true range contracted against the prior move.
+ *   4. **trendless** — efficiency (net distance / path walked) is low.
+ *
+ * ── Honesty ──
+ *
+ * This overlaps Crabel's narrow-range coils almost exactly, and `volatility_state`
+ * already detects those with the humbling measurement attached: every Crabel
+ * pattern fires on 100% of random walks, and a narrow range is followed by a
+ * wider one LESS often on real data (76.4%) than on noise (80.2%). A time
+ * correction is a volatility STATE, not a direction — the same verdict. Shannon
+ * claims resolution "in the direction of the primary trend"; `resolution` below
+ * measures which way each completed correction actually broke, so the claim can
+ * be checked rather than repeated. `TIME_CORRECTION_NOISE_BASELINE` carries the
+ * random-walk floor.
+ *
+ * Pure.
+ */
+export function findTimeCorrections(bars, {
+  window = 10,
+  prior_window = 20,
+  min_prior_impulse_pct = 4,
+  max_drift_pct = 3,
+  max_vol_ratio = 0.7,
+  max_efficiency = 0.35,
+  resolution_bars = 10,
+} = {}) {
+  const W = Math.max(3, Math.floor(window));
+  const P = Math.max(3, Math.floor(prior_window));
+  if (!Array.isArray(bars) || bars.length < W + P + 2) {
+    return {
+      available: false,
+      corrections: [],
+      note: `Need at least ${W + P + 2} bars to measure a ${W}-bar window against a ${P}-bar prior move; got ${bars?.length || 0}.`,
+    };
+  }
+
+  const trueRange = (i) => (i > 0
+    ? Math.max(
+        bars[i].high - bars[i].low,
+        Math.abs(bars[i].high - bars[i - 1].close),
+        Math.abs(bars[i].low - bars[i - 1].close),
+      )
+    : bars[i].high - bars[i].low);
+
+  const meanTR = (from, to) => {
+    let sum = 0; let n = 0;
+    for (let i = from; i <= to; i += 1) { sum += trueRange(i); n += 1; }
+    return n ? sum / n : 0;
+  };
+
+  const candidates = [];
+
+  for (let end = P + W - 1; end < bars.length; end += 1) {
+    const start = end - W + 1;
+    const priorStart = start - P;
+    if (priorStart < 1) continue;
+
+    // 1. Was there a move to digest?
+    const priorFrom = bars[priorStart].close;
+    const priorTo = bars[start - 1].close;
+    const priorImpulsePct = ((priorTo - priorFrom) / Math.abs(priorFrom)) * 100;
+    if (Math.abs(priorImpulsePct) < min_prior_impulse_pct) continue;
+
+    // 2. Horizontal: net drift across the window.
+    const driftPct = ((bars[end].close - bars[start].close) / Math.abs(bars[start].close)) * 100;
+    if (Math.abs(driftPct) > max_drift_pct) continue;
+
+    // 3. Volatility contracted against the impulse it is digesting.
+    const windowTR = meanTR(start, end);
+    const priorTR = meanTR(priorStart, start - 1);
+    const volRatio = priorTR > 0 ? windowTR / priorTR : null;
+    if (volRatio === null || volRatio > max_vol_ratio) continue;
+
+    // 4. Trendless: net distance over path walked.
+    let path = 0;
+    for (let i = start + 1; i <= end; i += 1) path += Math.abs(bars[i].close - bars[i - 1].close);
+    const net = Math.abs(bars[end].close - bars[start].close);
+    const efficiency = path > 0 ? net / path : 0;
+    if (efficiency > max_efficiency) continue;
+
+    let hi = -Infinity; let lo = Infinity;
+    for (let i = start; i <= end; i += 1) { hi = Math.max(hi, bars[i].high); lo = Math.min(lo, bars[i].low); }
+
+    candidates.push({
+      start_index: start,
+      end_index: end,
+      prior_impulse_pct: round(priorImpulsePct, 2),
+      drift_pct: round(driftPct, 2),
+      range_pct: round(((hi - lo) / ((hi + lo) / 2)) * 100, 2),
+      vol_ratio: round(volRatio, 3),
+      efficiency: round(efficiency, 3),
+      high: round(hi, 6),
+      low: round(lo, 6),
+    });
+  }
+
+  // Merge overlapping windows: one digestion, not one per sliding position.
+  const merged = [];
+  for (const c of candidates) {
+    const last = merged[merged.length - 1];
+    if (last && c.start_index <= last.end_index) {
+      last.end_index = Math.max(last.end_index, c.end_index);
+      last.high = Math.max(last.high, c.high);
+      last.low = Math.min(last.low, c.low);
+      // Keep the extreme readings across the merged stretch, not the last ones.
+      last.vol_ratio = Math.min(last.vol_ratio, c.vol_ratio);
+      last.efficiency = Math.min(last.efficiency, c.efficiency);
+      if (Math.abs(c.prior_impulse_pct) > Math.abs(last.prior_impulse_pct)) last.prior_impulse_pct = c.prior_impulse_pct;
+      last.windows += 1;
+      continue;
+    }
+    merged.push({ ...c, windows: 1 });
+  }
+
+  const corrections = merged.map((c) => {
+    const direction = c.prior_impulse_pct > 0 ? 'up' : 'down';
+    const barsIn = c.end_index - c.start_index + 1;
+
+    // Which way did it actually break? Only for corrections with enough bars
+    // after them — an unresolved one must say so rather than be scored.
+    const after = c.end_index + resolution_bars;
+    let resolution = null;
+    if (after < bars.length) {
+      const from = bars[c.end_index].close;
+      const movePct = ((bars[after].close - from) / Math.abs(from)) * 100;
+      const brokeUp = bars[after].close > c.high;
+      const brokeDown = bars[after].close < c.low;
+      resolution = {
+        bars_after: resolution_bars,
+        move_pct: round(movePct, 2),
+        broke: brokeUp ? 'up' : brokeDown ? 'down' : 'still_inside',
+        with_prior_trend: brokeUp || brokeDown
+          ? ((brokeUp ? 'up' : 'down') === direction)
+          : null,
+      };
+    }
+
+    return {
+      kind: 'time_correction',
+      start_index: c.start_index,
+      end_index: c.end_index,
+      start_time: bars[c.start_index].time,
+      end_time: bars[c.end_index].time,
+      bars: barsIn,
+      // How many sliding windows merged into this one. >1 means the digestion
+      // outlasted the scan window rather than qualifying at a single position.
+      windows_merged: c.windows,
+      digesting: { direction, move_pct: c.prior_impulse_pct },
+      high: round(c.high, 6),
+      low: round(c.low, 6),
+      measurements: {
+        drift_pct: c.drift_pct,
+        range_pct: c.range_pct,
+        vol_ratio: c.vol_ratio,
+        efficiency: c.efficiency,
+      },
+      thresholds: {
+        max_drift_pct, max_vol_ratio, max_efficiency, min_prior_impulse_pct,
+      },
+      evidence: `${barsIn} bars digesting a ${c.prior_impulse_pct}% move: drift ${c.drift_pct}% (max ${max_drift_pct}), `
+        + `true range ${c.vol_ratio}x the impulse's (max ${max_vol_ratio}), efficiency ${c.efficiency} (max ${max_efficiency}).`,
+      ...(resolution ? { resolution } : { resolution_pending: `Fewer than ${resolution_bars} bars have passed since this ended.` }),
+    };
+  });
+
+  const resolved = corrections.filter((c) => c.resolution && c.resolution.broke !== 'still_inside');
+  const withTrend = resolved.filter((c) => c.resolution.with_prior_trend).length;
+
+  return {
+    available: true,
+    corrections,
+    count: corrections.length,
+    windows_scanned: bars.length - (P + W - 1),
+    ...(resolved.length
+      ? {
+          resolution_summary: {
+            resolved: resolved.length,
+            unresolved_or_still_inside: corrections.length - resolved.length,
+            broke_with_prior_trend: withTrend,
+            broke_with_prior_trend_pct: round((withTrend / resolved.length) * 100, 1),
+            note: `Shannon: a time correction "often will be resolved in the direction of the primary trend". On this `
+              + `series ${withTrend} of ${resolved.length} did. A count this small proves nothing — it is here so the `
+              + 'claim is measured rather than repeated, and 50% is the coin-flip baseline.',
+          },
+        }
+      : {}),
+    what_this_is:
+      'A volatility STATE, never a direction. Shannon\'s time correction is the same phenomenon as Crabel\'s '
+      + 'narrow-range coils, and volatility_state carries the measurement: every Crabel pattern fires on 100% of '
+      + 'random walks, and contraction is followed by expansion LESS often on real data (76.4%) than on noise (80.2%). '
+      + 'Treat this as "digesting, setup may be live", not as a signal.',
+    why_it_matters:
+      'A pullback detector that measures DEPTH scores a time correction as "no pullback" and skips the setup. '
+      + 'legs_classify measures bar quality between swings, so a horizontal stretch produces no legs or tiny '
+      + 'offsetting ones. This is the correction it cannot see.',
+    source: 'Shannon, Technical Analysis Using Multiple Timeframes (2008), ch. 8.',
+  };
+}
+
+/**
+ * Measured floor for `findTimeCorrections`, both arms.
+ * `node scripts/time-correction-noise.js` re-measures.
+ *
+ * Two findings, and the second is the one that matters:
+ *
+ *  1. The detector fires on 88% of random walks and 83.3% of real symbols. A
+ *     horizontal, low-volatility stretch after a move is one of the most common
+ *     shapes a price series makes. So this is DESCRIPTIVE — "digesting" — and
+ *     the near-identical rates mean it carries no information about which data
+ *     it is looking at.
+ *
+ *  2. Shannon's resolution claim does not survive. He says a time correction
+ *     "often will be resolved in the direction of the primary trend." Measured:
+ *     real data 50%, random walk 52.8%. A LOWER figure on real data than on
+ *     noise, and the null itself is a coin flip — so there is no room for the
+ *     claim to be true in the way it is stated.
+ *
+ * This is the same shape as the Crabel result in `crabel.js`: real data showing
+ * less lift than noise, on a claim that reads as a market tendency but is
+ * arithmetic. Report the state; refuse to predict the break.
+ */
+export const TIME_CORRECTION_NOISE_BASELINE = Object.freeze({
+  status: 'MEASURED',
+  detection: {
+    random_walk: { walks: 200, bars: 300, fires_pct: 88.0, mean_per_walk: 1.66, mean_duration_bars: 11.8 },
+    real_data: { symbols: 12, bars: 300, fires_pct: 83.3, mean_per_symbol: 1.67, mean_duration_bars: 13.3 },
+    verdict: 'DESCRIPTIVE ONLY. Real data fires slightly LESS often than noise, so the detection itself '
+      + 'distinguishes nothing.',
+  },
+  resolution_claim: {
+    claim: 'Shannon ch. 8: a time correction "often will be resolved in the direction of the primary trend."',
+    random_walk: { resolved: 214, with_prior_trend_pct: 52.8 },
+    real_data: { resolved: 14, with_prior_trend_pct: 50.0 },
+    lift_points: -2.8,
+    verdict: 'NO EDGE. Real data is BELOW its own null, and the null is a coin flip. The real-data sample (n=14) '
+      + 'is far too small to stand alone — but the null at 52.8% (n=214) is well estimated, and it leaves no room '
+      + 'for a directional claim regardless.',
+  },
+  note: 'A time correction is a volatility STATE, never a direction — the same verdict as every Crabel pattern. '
+    + 'Its use is to stop a depth-based pullback rule from scoring a digesting chart as "no pullback".',
+  script: 'scripts/time-correction-noise.js',
+});
+
 /**
  * Is `price` sitting on a psychologically round number, and how significant is
  * the roundness? Step scales with magnitude — 100 is round for a $95 stock and

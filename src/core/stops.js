@@ -154,6 +154,170 @@ export function stoppingPremium(bars, { lags = [1, 5, 10, 20], sampling_note = n
  * from entry that triggers the exit; after stopping out the policy stays in
  * cash for `cooldown_bars` before re-entering.
  */
+/* ----------------------- the pivot ratchet (Shannon) --------------------- */
+
+/**
+ * Shannon's HARD TRAILING STOP (ch. 16, Figures 16.4 and 16.5), as an algorithm.
+ *
+ * Every trailing stop in common use is a distance rule — an ATR multiple, a
+ * percentage, a moving average. This one is not. It is a *definition* rule:
+ *
+ *   "A hard trailing stop is based on the very definition of the trends from
+ *    which you are attempting to extract money. As we know, the definition of
+ *    an uptrend is 'a series of higher highs and higher lows.' This implies
+ *    that breaking the series of higher lows is a violation of the trend, and
+ *    that is a reason to sell."
+ *
+ * So the mechanic, from his own figure caption: "the trailing stop is raised to
+ * a level just below the higher low (even numbers) after the stock establishes
+ * new highs (odd numbers). For example, as the stock clears point 5, the stop
+ * is raised from point 4 to point 6. This process is repeated until the stock
+ * establishes a lower low." Shorts mirror it: a new lower LOW promotes the stop
+ * to just above the most recent lower HIGH.
+ *
+ * Two properties that matter and are easy to get wrong:
+ *
+ *   1. **A new extreme is the trigger, not the pullback itself.** The stop moves
+ *      only once a higher high CONFIRMS that the prior higher low held. Moving
+ *      it on every new low would be a distance rule wearing a pivot costume.
+ *
+ *   2. **It is a one-directional ratchet.** Shannon: "the ONLY time stops should
+ *      be changed on short trades is when the market moves in your favor and you
+ *      are reducing risk." A step that would loosen the stop is refused and
+ *      counted, because a loosening trail is the failure mode this replaces.
+ *
+ * ── The honest caveat ──
+ *
+ * A trailing stop is a bet on PERSISTENCE. Kaminski & Lo prove the stopping
+ * premium is always negative under a random walk, and `stoppingPremium` in this
+ * same module measures whether a given series has any. On 9 of 12 of this
+ * account's real holdings it found none. So this function computes where the
+ * stop goes; it makes no claim that trailing pays. Shannon's justification is
+ * definitional rather than empirical — the stop moves to where the trend
+ * definition would break — which is a cleaner argument than "protect profits"
+ * and is worth keeping distinct from an edge claim.
+ *
+ * `swings` is an alternating high/low sequence from `alternateSwings`, ideally
+ * already labelled by `classifyStructure`. Only CONFIRMED pivots exist, so the
+ * stop necessarily lags the last few bars — that lag is the cost of not
+ * inventing structure that has not happened.
+ *
+ * Pure.
+ */
+export function pivotTrail(swings, { direction = 'long', initial_stop = null, buffer_pct = 0 } = {}) {
+  const long = direction !== 'short';
+  const alt = Array.isArray(swings) ? swings.filter((s) => s && Number.isFinite(s.price)) : [];
+  if (alt.length < 3) {
+    return {
+      available: false,
+      note: `Need at least 3 alternating swings to trail; got ${alt.length}. `
+        + 'A pivot stop cannot exist before the structure it is defined by.',
+    };
+  }
+
+  const buf = Math.max(0, Number(buffer_pct) || 0) / 100;
+  // "Just below" the higher low for a long; "just above" the lower high for a
+  // short. Zero buffer sits exactly on the pivot, which is a real choice — a
+  // stop AT the low is hit by a tick that equals it.
+  const place = (price) => (long ? price * (1 - buf) : price * (1 + buf));
+
+  const steps = [];
+  let stop = Number.isFinite(initial_stop) ? Number(initial_stop) : null;
+  let bestExtreme = null;   // highest high so far (long) / lowest low (short)
+  let anchor = null;        // the pullback pivot the stop would move to
+  let refusedLoosenings = 0;
+  let invalidated = null;
+
+  for (const s of alt) {
+    const isExtremeKind = long ? s.kind === 'high' : s.kind === 'low';
+
+    if (isExtremeKind) {
+      const extends_ = bestExtreme === null
+        || (long ? s.price > bestExtreme.price : s.price < bestExtreme.price);
+      if (extends_) {
+        bestExtreme = s;
+        // A new extreme CONFIRMS the prior pullback pivot held, so promote to it.
+        if (anchor) {
+          const candidate = place(anchor.price);
+          const tighter = stop === null || (long ? candidate > stop : candidate < stop);
+          if (tighter) {
+            steps.push({
+              trigger: { kind: s.kind, price: round(s.price, 6), time: s.time ?? null, label: s.label ?? null },
+              stop_moved_to: round(candidate, 6),
+              from_pivot: { kind: anchor.kind, price: round(anchor.price, 6), time: anchor.time ?? null },
+              ...(stop === null ? {} : { previous_stop: round(stop, 6) }),
+            });
+            stop = candidate;
+          } else {
+            // Refusing this is the ratchet. Counted rather than hidden, because
+            // a trail that ever loosens is not the rule Shannon states.
+            refusedLoosenings += 1;
+          }
+        }
+      }
+    } else {
+      // A pullback pivot. It becomes the next anchor only while the trend holds.
+      const breaks = anchor !== null
+        && (long ? s.price < anchor.price : s.price > anchor.price);
+      if (breaks && bestExtreme) {
+        // A lower low in an uptrend: "This process is repeated UNTIL the stock
+        // establishes a lower low."
+        invalidated = invalidated || {
+          at: { kind: s.kind, price: round(s.price, 6), time: s.time ?? null },
+          reason: long
+            ? 'A LOWER LOW broke the series of higher lows, so the uptrend definition is violated and the trail stops here.'
+            : 'A HIGHER HIGH broke the series of lower highs, so the downtrend definition is violated and the trail stops here.',
+        };
+      }
+      anchor = s;
+    }
+  }
+
+  const lastPivotHeld = anchor && stop !== null
+    ? (long ? place(anchor.price) <= stop : place(anchor.price) >= stop)
+    : null;
+
+  return {
+    available: stop !== null,
+    direction: long ? 'long' : 'short',
+    stop: round(stop, 6),
+    ...(stop === null
+      ? {
+          note: 'No new extreme confirmed a pullback pivot, so the stop never moved. Hold the initial protective stop — '
+            + 'Shannon places that "just under the most recent higher low" for a long, "just above the most recent lower high" for a short.',
+        }
+      : {}),
+    steps,
+    steps_taken: steps.length,
+    buffer_pct: round(buf * 100, 4),
+    ...(Number.isFinite(initial_stop) ? { initial_stop: round(Number(initial_stop), 6) } : {}),
+    anchor_pivot: anchor ? { kind: anchor.kind, price: round(anchor.price, 6), time: anchor.time ?? null } : null,
+    best_extreme: bestExtreme ? { kind: bestExtreme.kind, price: round(bestExtreme.price, 6), time: bestExtreme.time ?? null } : null,
+    // A pending pivot the trail has not yet promoted: the next new extreme will.
+    ...(anchor && stop !== null && !lastPivotHeld
+      ? {
+          pending_promotion: {
+            to: round(place(anchor.price), 6),
+            waiting_for: long ? 'a new higher high to confirm this higher low held' : 'a new lower low to confirm this lower high held',
+          },
+        }
+      : {}),
+    ratchet_refusals: refusedLoosenings,
+    ...(refusedLoosenings
+      ? {
+          ratchet_note: `${refusedLoosenings} candidate step(s) would have LOOSENED the stop and were refused. `
+            + 'Shannon: the only time a stop should change is when the market moves in your favour.',
+        }
+      : {}),
+    ...(invalidated ? { trend_invalidated: invalidated } : {}),
+    persistence_caveat:
+      'A trailing stop is a bet on persistence. Kaminski & Lo prove the stopping premium is always NEGATIVE under a '
+      + 'random walk — run stoppingPremium on this series before treating the trail as an edge. Shannon\'s own '
+      + 'justification is definitional, not empirical: the stop sits where the trend definition would break.',
+    source: 'Shannon, Technical Analysis Using Multiple Timeframes (2008), ch. 16, Figures 16.4 and 16.5.',
+  };
+}
+
 export function backtestStop(bars, { threshold_pct = 8, cooldown_bars = 5, entry_index = 0 } = {}) {
   if (!Array.isArray(bars) || bars.length < entry_index + 10) {
     return { available: false, note: 'Not enough bars after the entry index.' };

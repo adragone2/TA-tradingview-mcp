@@ -2,7 +2,10 @@ import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/divergence.js';
 import * as data from '../core/data.js';
-import { normalizeBars, findSwings, alternateSwings, classifyLegs } from '../core/structure.js';
+import {
+  normalizeBars, findSwings, alternateSwings, classifyLegs,
+  findTimeCorrections, TIME_CORRECTION_NOISE_BASELINE,
+} from '../core/structure.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -69,22 +72,31 @@ export function registerDivergenceTools(server) {
 
   server.tool(
     'legs_classify',
-    'Classify each leg between swings as an IMPULSE or a PULLBACK, with the measurements behind it — body share, colour agreement, and where bars closed in their range. This is the unit the trend is built from (impulse, pullback, impulse) and underlies flags, pennants and every pullback entry. Also marks whether a pullback is simple or complex; a complex one looks like a reversal while forming, which is why traders abandon them early.',
+    'Classify each leg between swings as an IMPULSE or a PULLBACK, with the measurements behind it — body share, colour agreement, and where bars closed in their range. This is the unit the trend is built from (impulse, pullback, impulse) and underlies flags, pennants and every pullback entry. Also marks whether a pullback is simple or complex; a complex one looks like a reversal while forming, which is why traders abandon them early. ALSO returns TIME CORRECTIONS, which leg classification structurally cannot see: Shannon (ch. 8) splits corrections into PRICE (a retracement, with depth) and TIME ("the stock digests the move in a horizontal, low-volatility, trendless manner"). A depth-based reading scores a time correction as "no pullback" and skips a setup that is digesting perfectly well — and a broken trendline predicts precisely that kind. Both are digestion; only one has a percentage. Measured floor: fires on 88% of random walks and 83.3% of real symbols, so it is DESCRIPTIVE. Shannon\'s claim that a time correction resolves with the primary trend does NOT survive — real data 50%, noise 52.8%.',
     {
       count: z.coerce.number().optional().describe('Bars to load (default 300)'),
       lookback: z.coerce.number().optional().describe('Swing sensitivity (default 5)'),
       max_legs: z.coerce.number().optional().describe('Most recent legs to return (default 10)'),
+      time_corrections: z.coerce.boolean().optional().describe('Also scan for time corrections (default true). Turning this off restores the depth-only reading that misses them.'),
+      correction_window: z.coerce.number().optional().describe('Bars a time correction must span (default 10)'),
     },
-    wrap(async ({ count = 300, lookback = 5, max_legs = 10 }) => {
+    wrap(async ({ count = 300, lookback = 5, max_legs = 10, time_corrections = true, correction_window = 10 }) => {
       const bars = await loadBars(count);
       const swings = alternateSwings(findSwings(bars, { lookback }));
       const r = classifyLegs(bars, swings);
+      const tc = time_corrections ? findTimeCorrections(bars, { window: correction_window }) : null;
       return {
         success: true,
         last_price: bars[bars.length - 1].close,
         ...r,
         legs: r.legs.slice(-max_legs).reverse(),
         ...(r.legs.length > max_legs ? { note: `${r.legs.length} legs found; showing the ${max_legs} most recent.` } : {}),
+        ...(tc
+          ? {
+              time_corrections: tc,
+              time_correction_noise_baseline: TIME_CORRECTION_NOISE_BASELINE,
+            }
+          : {}),
       };
     }),
   );

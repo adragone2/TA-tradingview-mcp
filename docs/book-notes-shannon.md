@@ -22,15 +22,29 @@ is duration-based; see s103–s104).
 | The timeframe-justification trap, named by the source | `mtf_analyze`'s `focus_timeframe_warning` |
 | Extended-hours data is for exits, not entries — stated four separate times | `src/core/session.js` partial-bar guard |
 
-## Still unbuilt, in rough order of value
+## All seven follow-ups are now built — and three of Shannon's claims died in the process
 
-1. **The four-stage ACTION state machine** (ch 12/13) — short-timeframe stage → ANTICIPATE / PARTICIPATE / EXIT / AVOID, conditioned on the daily stage. The most implementable thing in the book and we have no equivalent.
-2. **The three position-size constraints** (ch 16) — risk %, concentration cap, liquidity. His own worked example produces a **65% of capital** position from a 1% risk budget, because a tight stop inflates share count. Check `position_size` returns the binding constraint, not just the risk one.
-3. **The touch-count inversion** (ch 7) — more tests of a level makes a BREAK more likely, not less, with an absorption mechanism and two supporting clauses (rising pullback lows, shrinking inter-test interval). Needs a random-walk floor: more touches also means more chances to break.
-4. **The two exits our taxonomy lacks** (ch 16) — gap-against-trend ≥5%, and the MA-crossover time-correction exit. Both planned and modellable; see `src/core/exits.js`.
-5. **The pivot-based hard trailing stop** (Figures 16.4/16.5) — fully algorithmic off `structure_analyze` pivots.
-6. **Journal review slices** (Figure 16.2) — his own broker data shows two net-NEGATIVE buckets (stocks over $100, trades held 16–30 min) inside a profitable book. Add direction, share-size, share-price and holding-time slices to `trade-journal`.
-7. **Time corrections** (ch 8) — a depth-based pullback detector scores a horizontal, low-volatility digestion as "no pullback" and misses the setup. `volatility_state` is arguably already this detector.
+Each was implemented with a measurement rather than on his authority. Two of the three that failed did so the same way the Crabel principle did: **real data showed less of the effect than noise.**
+
+| # | Item | Where it went | What the measurement said |
+|---|---|---|---|
+| 1 | Four-stage ACTION machine (ch 12/13) | `stage_plan`, `src/core/stages.js` | **Gate works, forecast does not.** Built from his MA clauses so it can abstain — 54% of random walks, against `classifyPhase`'s 0%. But it opens on 25% of real symbols vs 36% of noise, so it is a CONSISTENCY filter, not evidence of trend |
+| 2 | Three sizing constraints (ch 16) | `position_size_constrained`, `position_size` | **Confirmed and load-bearing.** His own example turns a 1% risk budget into 65% of capital. The minimum across constraints now wins and names itself |
+| 3 | Touch-count inversion (ch 7) | `level_pressure` (already existed), `level_test_history` | **SPLIT.** The count claim FAILED (+14.5 real vs +40.3 noise). The pressure clause SURVIVED (+19.5 real vs -1.4 noise, z = 3.36) |
+| 4 | Two missing exits (ch 16) | `EXIT_REASONS` in `src/core/exits.js` | Both planned and modellable — omitting them understated the share a backtest can represent |
+| 5 | Pivot hard trailing stop (figs 16.4/16.5) | `pivot_trail`, `src/core/stops.js` | Implemented as a one-directional ratchet. Ships with `stopping_premium` beside it, because a trail is a bet on persistence |
+| 6 | Journal slices (fig 16.2) | `journal_slice`, `trade-journal` skill | Reproduces his two net-negative buckets inside a profitable book. Underpowered buckets flagged, never ranked |
+| 7 | Time corrections (ch 8) | `legs_classify`, `findTimeCorrections` | **Detector descriptive, claim FAILED.** Fires on 88% of noise / 83.3% of real. His "resolves with the primary trend" is 50% real against a 52.8% null |
+
+Re-measure any of it: `scripts/stage-noise.js`, `scripts/level-test-inversion.js`, `scripts/time-correction-noise.js`.
+
+**The pattern worth keeping from this exercise.** Shannon's *mechanisms* held up better than his *metrics*. Counting tests of a level measures exposure and carries nothing; measuring where price retreated to between those tests carried 19.5 points over a null that carried none. Same chapter, same figure, opposite results — and only the measurement could tell them apart.
+
+### What is still genuinely open
+
+- **The 1-2-3 / ignition pattern** stays unregistered (`src/core/ignition.js`), because its noise floor cannot be measured — the ATR gate shifts with any constructed null.
+- **The stage gate has no forward test.** It filters, but nothing here shows a Stage 2 gate improves outcomes versus entering without it. That needs a labelled forward-return study, not another detector.
+- **`level_pressure`'s +19.5 points has no out-of-sample arm.** One universe, 20 symbols, one period. It is the strongest single finding in this pass and it is still one study.
 
 ## FINDING 1 — structural short squeeze (ch 15). Genuinely new. Mechanical.
 
