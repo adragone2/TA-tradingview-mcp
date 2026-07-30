@@ -261,66 +261,94 @@ export function levelTestStudy(bars, {
  * `node scripts/level-test-inversion.js` re-measures.
  */
 export const TOUCH_COUNT_FINDING = Object.freeze({
-  status: 'MEASURED',
-  sample: '20 symbols x ~400 daily bars against 200 random walks x 400 bars. 554 real levels reaching test 1.',
+  status: 'MEASURED, WITH AN OUT-OF-SAMPLE ARM THAT KILLED THE HEADLINE',
 
   /**
-   * THE COUNT CLAIM IS DEAD, and it dies the same way Crabel's did: real data
-   * shows LESS of the effect than noise.
+   * Read this first. An earlier version of this constant reported the pressure
+   * clause as a surviving finding worth +19.5 points at z = 3.36. That was
+   * wrong in two ways at once, and both were found by going back and testing it
+   * properly rather than by anything failing:
+   *
+   *   1. It was measured on 60-MINUTE bars and recorded as "daily". The
+   *      measurement script set the symbol but never the timeframe, so it
+   *      inherited whatever the chart was on. `scripts/_real_bars.js` now
+   *      requires an explicit timeframe and echoes back what it actually got.
+   *
+   *   2. It was IN-SAMPLE ONLY. Given a fresh universe it collapses from +39.1
+   *      to +4.6 — on a LARGER sample (251 levels against 103), so this is a
+   *      well-powered failure, not a quiet one.
+   *
+   * The lesson is the one this repo keeps relearning: a single-sample result
+   * with a good z-score is a description of that sample. The trial count and
+   * the noise floor were both attached, and neither was enough — only a
+   * holdout caught it.
    */
+  correction_history: 'A prior version claimed the pressure clause survived (+19.5 points, z = 3.36, n = 272). '
+    + 'Both the timeframe label and the conclusion were wrong. Retained here because a repo that silently rewrites '
+    + 'its own failed claims cannot be audited.',
+
+  timeframes_measured: ['1D', '60'],
+  arms: '1) random walk. 2) IN-SAMPLE: 20 large/mid caps, newest half of the window. 3) OOS-UNIVERSE: 20 different '
+    + 'symbols — ETFs, biotech, high-beta, consumer. 4) OOS-PERIOD: the same 20 large caps, older non-overlapping half.',
+
+  /** THE COUNT CLAIM: dead in every arm, on both timeframes. */
   count_claim: {
     claim: 'Shannon ch. 7, figs 7.4/7.5: "The more times a level of support or resistance is tested, the more likely '
       + 'it is for the stock to VIOLATE that level."',
-    hazard_by_test: {
-      real_data: { 1: 8.1, 2: 24.4, 3: 30.2, 4: 34.1, 5: 22.6 },
-      random_walk: { 1: 1.6, 2: 52.6, 3: 53.1, 4: 48.5, 5: 41.9 },
+    hazard_trend_points: {
+      random_walk: 40.3,
+      hourly: { in_sample: 21.2, oos_universe: 4.5, oos_period: 19.3 },
+      daily: { oos_universe: 18.8, note: 'The other daily arms had too few multi-test levels to produce a trend.' },
     },
-    trend_points_test_1_to_5: { real_data: 14.5, random_walk: 40.3, excess: -25.8 },
-    overall_break_rate_pct: { real_data: 58.8, random_walk: 72.1 },
-    verdict: 'NO EDGE. The hazard rate does rise with test number on real data (+14.5 points), but it rises FAR more '
-      + 'on a random walk (+40.3) — because more tests means more exposure, which is arithmetic. Shannon\'s absorption '
-      + 'mechanism is not visible.',
-    consequence: 'This does NOT mean findKeyLevels has the sign backwards. It means touch count carries no '
-      + 'information about the NEXT test in EITHER direction, so scoring it as strength is unsupported rather than '
-      + 'inverted. Do not invert it on this evidence, and do not defend it either.',
+    verdict: 'DEAD IN EVERY ARM. The hazard rate does rise with test number, but by 4.5-21.2 points where a random '
+      + 'walk rises 40.3. More tests means more exposure; that is arithmetic, and real data shows LESS of it than '
+      + 'noise. The absorption mechanism Shannon describes is not visible anywhere.',
+    consequence: 'Touch count carries no information about the NEXT test in EITHER direction. That is not licence to '
+      + 'invert findKeyLevels — a null result is a null result both ways. Scoring touch count as strength is '
+      + 'unsupported, not backwards.',
   },
 
-  /**
-   * ONE CLAUSE SURVIVES, and cleanly. This is the interesting half: Shannon's
-   * *mechanism* clause carries information where his *count* claim does not.
-   */
+  /** THE PRESSURE CLAUSE: strong in-sample, gone out of sample. */
   aggression_through_price: {
-    clause: 'The interim pullback lows RISING between tests of resistance (his figure: 10.50 -> 9.25 -> 9.50) is '
-      + 'buyers "becoming more aggressive through price". Mirrored for support: falling interim rally highs.',
-    real_data: { with_clause_break_pct: 73.8, n_with: 145, without_clause_break_pct: 54.3, n_without: 127, lift_points: 19.5 },
-    random_walk: { with_clause_break_pct: 83.1, n_with: 1372, without_clause_break_pct: 84.5, n_without: 1109, lift_points: -1.4 },
-    /**
-     * Two-proportion z on the real-data arm: pooled p = 176/272 = 0.647,
-     * SE = 0.0581, z = 3.36, two-tailed p ~ 0.0008. Three clauses were tested
-     * (count, price, time), so Bonferroni-corrected the threshold is 0.0167 and
-     * this clears it. Still ONE study on ONE universe — it is a finding, not a
-     * settled effect.
-     */
-    z_score: 3.36,
-    p_two_tailed: 0.0008,
-    tests_in_family: 3,
-    bonferroni_threshold: 0.0167,
-    verdict: 'SURVIVES. The clause is worth +19.5 points of break rate on real data and NOTHING on noise (-1.4), '
-      + 'which is the separation a real mechanism produces. z = 3.36 over 272 levels, clearing a 3-test Bonferroni '
-      + 'correction. Read the level\'s PRESSURE, not its touch count. One universe, one measurement — it is a finding, '
-      + 'not a settled effect, and it has no out-of-sample arm.',
+    clause: 'The interim retreat extremes moving TOWARD the level between tests — rising pullback lows under '
+      + 'resistance, falling rally highs above support — as buyers or sellers "becoming more aggressive through price".',
+    hourly: {
+      in_sample: { lift_points: 39.1, z: 3.96, n: 103 },
+      oos_universe: { lift_points: 4.6, z: 0.73, n: 251 },
+      oos_period: { lift_points: 3.4, z: 0.31, n: 90 },
+    },
+    daily: {
+      in_sample: { lift_points: 7.1, z: 0.54, n: 29 },
+      oos_universe: { lift_points: 2.4, z: 0.31, n: 85 },
+      oos_period: { lift_points: 3.7, z: 0.22, n: 33 },
+      note: '400 daily bars simply do not produce many levels with three or more tests, so the daily arms are '
+        + 'UNDERPOWERED rather than negative. They cannot refute anything on their own.',
+    },
+    random_walk: { lift_points: -1.4, z: -0.94, n: 2481 },
+    verdict: 'DOES NOT SURVIVE. Holds in 1 of 3 real arms — the one it was found in. The out-of-sample universe has '
+      + 'MORE levels (251 vs 103) and shows +4.6 at z = 0.73, which is indistinguishable from the -1.4 the null carries. '
+      + 'Do not size on this, and do not quote the in-sample number without the holdout beside it.',
+    what_it_is_still_good_for: 'Watching where price retreats to between tests is a reasonable way to DESCRIBE '
+      + 'whether attempts are getting stronger or weaker. level_pressure remains useful as a description. What died '
+      + 'is the claim that it predicts the break.',
   },
 
   aggression_through_time: {
-    clause: 'Tests coming CLOSER TOGETHER is aggression "time-wise".',
-    real_data: { with_clause_break_pct: 68.6, n_with: 102, without_clause_break_pct: 62.4, n_without: 170, lift_points: 6.2 },
-    random_walk: { with_clause_break_pct: 83.8, n_with: 1045, without_clause_break_pct: 83.6, n_without: 1436, lift_points: 0.2 },
-    verdict: 'WEAK. Points the right way (+6.2 real against +0.2 on noise) but the gap is small and the sample is '
-      + '272 levels. Report it; do not act on it alone.',
+    clause: 'Tests coming CLOSER TOGETHER as aggression "time-wise".',
+    hourly: {
+      in_sample: { lift_points: 4.6, z: 0.45 },
+      oos_universe: { lift_points: -16.2, z: -2.57 },
+      oos_period: { lift_points: 17.2, z: 1.62 },
+    },
+    random_walk: { lift_points: 0.2, z: 0.13 },
+    verdict: 'NOISE. It swings from -16.2 (z = -2.57, nominally SIGNIFICANT in the wrong direction) to +17.2 across '
+      + 'arms. A useful illustration: run enough arms and something clears p < 0.05 in both directions by chance. '
+      + 'This is what an unstable estimate looks like, and a single arm would have hidden it.',
   },
 
-  summary: 'Shannon got the mechanism right and the metric wrong. Counting tests measures exposure; measuring where '
-    + 'price RETREATED TO between tests measures pressure. The first is arithmetic, the second carried 19.5 points '
-    + 'of break rate over a null that carried none.',
-  script: 'scripts/level-test-inversion.js',
+  summary: 'The count claim is arithmetic and dies against its null. His pressure clause looked like the '
+    + 'strongest result in this repo on one sample and did not replicate on a larger one. Both the noise floor AND '
+    + 'the trial count were attached to the original, and neither caught it — only the holdout did. Treat every '
+    + 'single-sample finding here as provisional until it has one.',
+  script: 'scripts/level-test-inversion.js  (use --timeframe to pin the resolution)',
 });

@@ -578,25 +578,36 @@ export function findTimeCorrections(bars, {
  * arithmetic. Report the state; refuse to predict the break.
  */
 export const TIME_CORRECTION_NOISE_BASELINE = Object.freeze({
-  status: 'MEASURED',
+  status: 'MEASURED — DETECTOR DESCRIPTIVE, RESOLUTION CLAIM UNTESTED',
   detection: {
     random_walk: { walks: 200, bars: 300, fires_pct: 88.0, mean_per_walk: 1.66, mean_duration_bars: 11.8 },
-    real_data: { symbols: 12, bars: 300, fires_pct: 83.3, mean_per_symbol: 1.67, mean_duration_bars: 13.3 },
-    verdict: 'DESCRIPTIVE ONLY. Real data fires slightly LESS often than noise, so the detection itself '
-      + 'distinguishes nothing.',
+    real_data: { symbols: 12, timeframe: '1D', bars: 300, fires_pct: 91.7, mean_per_symbol: 2.0, mean_duration_bars: 12.8 },
+    verdict: 'DESCRIPTIVE ONLY. A horizontal, low-volatility stretch after a move appears on 88% of random walks and '
+      + '91.7% of real symbols. Firing tells you almost nothing about which data you are looking at. Its use is to stop '
+      + 'a depth-based pullback rule from scoring a digesting chart as "no pullback".',
   },
   resolution_claim: {
     claim: 'Shannon ch. 8: a time correction "often will be resolved in the direction of the primary trend."',
     random_walk: { resolved: 214, with_prior_trend_pct: 52.8 },
-    real_data: { resolved: 14, with_prior_trend_pct: 50.0 },
-    lift_points: -2.8,
-    verdict: 'NO EDGE. Real data is BELOW its own null, and the null is a coin flip. The real-data sample (n=14) '
-      + 'is far too small to stand alone — but the null at 52.8% (n=214) is well estimated, and it leaves no room '
-      + 'for a directional claim regardless.',
+    real_data_1D: { resolved: 18, with_prior_trend_pct: 61.1, lift_points: 8.3, z: 0.68 },
+    real_data_60min: { resolved: 14, with_prior_trend_pct: 50.0, lift_points: -2.8 },
+    /**
+     * The two resolutions DISAGREE IN SIGN on samples of 18 and 14. That is what
+     * a null looks like, and it is why this is recorded as untested rather than
+     * as supported or refuted.
+     */
+    verdict: 'NOT SETTLED. On daily bars the lift is +8.3 points (61.1% of 18); at 60-minute it is -2.8 (50.0% of 14) '
+      + '— opposite signs on tiny samples, against a well-estimated 52.8% null. z = 0.68 on the daily arm. There are '
+      + 'not enough resolved corrections in 300 bars across 12 symbols to distinguish any of this from chance.',
+    what_would_settle_it: 'Several hundred resolved corrections. That needs far more history than the chart serves '
+      + '(~300 bars per symbol) or a much wider universe. Until then report the STATE and refuse to predict the break '
+      + '— because the claim is UNTESTED here, not because it is refuted.',
+    correction_history: 'Previously recorded as "NO EDGE, real 50% vs a 52.8% null, lift -2.8". That arm was measured '
+      + 'at 60-minute resolution and labelled daily, and n=14 never supported the confidence.',
   },
-  note: 'A time correction is a volatility STATE, never a direction — the same verdict as every Crabel pattern. '
-    + 'Its use is to stop a depth-based pullback rule from scoring a digesting chart as "no pullback".',
-  script: 'scripts/time-correction-noise.js',
+  note: 'A time correction is a volatility STATE. Treat it as every Crabel pattern in crabel.js is treated — a '
+    + 'description of digestion, never a direction.',
+  script: 'scripts/time-correction-noise.js  (--timeframe pins the resolution)',
 });
 
 /**

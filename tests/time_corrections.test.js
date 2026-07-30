@@ -124,45 +124,60 @@ describe('findTimeCorrections — resolution is measured, not asserted', () => {
   });
 });
 
-describe('the measured noise floor', () => {
-  test('records BOTH arms with their sample sizes', () => {
+describe('the measured baseline — detector descriptive, claim untested', () => {
+  test('records BOTH arms with their sample sizes and the timeframe', () => {
     const b = TIME_CORRECTION_NOISE_BASELINE;
-    assert.equal(b.status, 'MEASURED');
+    assert.match(b.status, /DETECTOR DESCRIPTIVE, RESOLUTION CLAIM UNTESTED/);
     assert.equal(b.detection.random_walk.fires_pct, 88.0);
-    assert.equal(b.detection.real_data.fires_pct, 83.3);
-    assert.equal(b.detection.random_walk.walks, 200);
-    assert.equal(b.detection.real_data.symbols, 12);
+    assert.equal(b.detection.real_data.fires_pct, 91.7);
+    // The timeframe must be recorded, because an unlabelled one caused the
+    // earlier version of this constant to be wrong.
+    assert.equal(b.detection.real_data.timeframe, '1D');
   });
 
-  test('records that real data fires LESS often than noise, and calls it descriptive', () => {
+  test('calls the detector descriptive — it fires on nearly everything', () => {
     const d = TIME_CORRECTION_NOISE_BASELINE.detection;
-    assert.ok(d.real_data.fires_pct < d.random_walk.fires_pct);
+    assert.ok(d.random_walk.fires_pct > 80 && d.real_data.fires_pct > 80);
     assert.match(d.verdict, /DESCRIPTIVE ONLY/);
+    assert.match(d.verdict, /no pullback/);
   });
 
-  test('KILLS Shannon\'s resolution claim with the numbers, not with an opinion', () => {
+  test('the resolution claim is UNTESTED, not refuted — and the signs disagree', () => {
     /**
-     * Real 50% against a 52.8% null. The same shape as the Crabel result: a
-     * claim that reads as a market tendency, measuring below its own noise.
+     * The correction. An earlier version read "NO EDGE, real data BELOW its own
+     * null". That was the 60-minute arm mislabelled as daily, and n=14 never
+     * supported the confidence. On daily the lift is POSITIVE. Opposite signs on
+     * samples of 18 and 14 is what a null looks like.
      */
     const r = TIME_CORRECTION_NOISE_BASELINE.resolution_claim;
-    assert.equal(r.real_data.with_prior_trend_pct, 50.0);
-    assert.equal(r.random_walk.with_prior_trend_pct, 52.8);
-    assert.equal(r.lift_points, -2.8);
-    assert.ok(r.lift_points < 0);
-    assert.match(r.verdict, /NO EDGE/);
+    assert.match(r.verdict, /NOT SETTLED/);
+    assert.ok(r.real_data_1D.lift_points > 0, 'daily lift is positive');
+    assert.ok(r.real_data_60min.lift_points < 0, '60-minute lift is negative');
+    assert.ok(Math.abs(r.real_data_1D.z) < 1.96, 'and neither is significant');
   });
 
-  test('admits the real-data sample is too small to stand alone', () => {
-    // n=14. Reporting -2.8 points without that would be the trial-count error.
+  test('both real arms are tiny against a well-estimated null', () => {
     const r = TIME_CORRECTION_NOISE_BASELINE.resolution_claim;
-    assert.equal(r.real_data.resolved, 14);
-    assert.match(r.verdict, /too small to stand alone/);
-    assert.match(r.verdict, /null at 52\.8%/);
+    assert.ok(r.real_data_1D.resolved < 40);
+    assert.ok(r.real_data_60min.resolved < 40);
+    assert.ok(r.random_walk.resolved > 200, 'the null is the only well-estimated number here');
+  });
+
+  test('says what WOULD settle it rather than leaving a shrug', () => {
+    const r = TIME_CORRECTION_NOISE_BASELINE.resolution_claim;
+    assert.match(r.what_would_settle_it, /hundred resolved corrections/);
+    assert.match(r.what_would_settle_it, /UNTESTED here, not because it is refuted/);
+  });
+
+  test('keeps the record of the earlier wrong version', () => {
+    // A repo that silently rewrites its failed claims cannot be audited.
+    const r = TIME_CORRECTION_NOISE_BASELINE.resolution_claim;
+    assert.match(r.correction_history, /60-minute resolution and labelled daily/);
+    assert.match(r.correction_history, /n=14 never supported/);
   });
 
   test('the detector reproduces its own measured noise rate', () => {
-    // If this drifts, the recorded baseline is stale and must be re-measured.
+    // If this drifts the recorded baseline is stale and must be re-measured.
     let hits = 0;
     for (let seed = 1; seed <= 60; seed += 1) {
       const bars = normalizeBars(barsFromPath(randomWalk({ n: 300, vol: 0.015, seed })));
@@ -172,8 +187,9 @@ describe('the measured noise floor', () => {
     assert.ok(Math.abs(rate - 88) < 12, `noise rate drifted to ${rate}% from the recorded 88%`);
   });
 
-  test('names the script that re-measures it', () => {
+  test('names the script and says the timeframe is pinnable', () => {
     assert.match(TIME_CORRECTION_NOISE_BASELINE.script, /time-correction-noise/);
+    assert.match(TIME_CORRECTION_NOISE_BASELINE.script, /--timeframe/);
   });
 });
 

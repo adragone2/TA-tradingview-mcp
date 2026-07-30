@@ -165,63 +165,111 @@ describe('levelTestStudy — the hazard table', () => {
   });
 });
 
-describe('the measured finding', () => {
-  test('KILLS the count claim, with real data BELOW its own null', () => {
+describe('the measured finding — after the out-of-sample arm', () => {
+  test('KILLS the count claim in EVERY arm, not just one', () => {
     const c = TOUCH_COUNT_FINDING.count_claim;
-    assert.equal(c.trend_points_test_1_to_5.real_data, 14.5);
-    assert.equal(c.trend_points_test_1_to_5.random_walk, 40.3);
-    assert.ok(c.trend_points_test_1_to_5.excess < 0);
-    assert.match(c.verdict, /NO EDGE/);
-    assert.match(c.verdict, /arithmetic/);
+    const h = c.hazard_trend_points;
+    assert.equal(h.random_walk, 40.3);
+    // Every real arm rises LESS than the null. That is the whole verdict.
+    for (const [arm, v] of Object.entries(h.hourly)) {
+      assert.ok(v < h.random_walk, `hourly ${arm} (${v}) should be below the null`);
+    }
+    assert.match(c.verdict, /DEAD IN EVERY ARM/);
+    assert.match(c.verdict, /exposure/);
   });
 
   test('refuses to INVERT findKeyLevels on a null result', () => {
     /**
-     * The disciplined conclusion. "Touch count is not strength" does not license
-     * "touch count is weakness" — the measurement says it carries nothing either
-     * way, and over-reading a null is the same error as over-reading a hit.
+     * "Touch count is not strength" does not license "touch count is weakness".
+     * Over-reading a null is the same error as over-reading a hit.
      */
     const c = TOUCH_COUNT_FINDING.count_claim;
-    assert.match(c.consequence, /does NOT mean findKeyLevels has the sign backwards/);
     assert.match(c.consequence, /EITHER direction/);
-    assert.match(c.consequence, /do not defend it either/);
+    assert.match(c.consequence, /not licence to invert|not licence/i);
   });
 
-  test('the price-pressure clause SURVIVES, with its null and its significance', () => {
+  test('the price clause DOES NOT SURVIVE, and the holdout is what killed it', () => {
+    /**
+     * The correction that matters. An earlier version of this constant reported
+     * this clause as a surviving finding at +19.5 points, z = 3.36. It held on
+     * one sample and collapsed on a fresh universe.
+     */
     const a = TOUCH_COUNT_FINDING.aggression_through_price;
-    assert.equal(a.real_data.lift_points, 19.5);
-    assert.equal(a.random_walk.lift_points, -1.4);
-    // The separation is the finding: real lift, no lift on noise.
-    assert.ok(a.real_data.lift_points > 15 && Math.abs(a.random_walk.lift_points) < 5);
-    assert.match(a.verdict, /SURVIVES/);
+    assert.match(a.verdict, /DOES NOT SURVIVE/);
+    assert.ok(a.hourly.in_sample.lift_points > 30, 'in-sample was genuinely strong');
+    assert.ok(a.hourly.oos_universe.lift_points < 10, 'out of sample it collapsed');
+    assert.ok(Math.abs(a.hourly.oos_universe.z) < 1.96, 'and the collapse is not significant');
   });
 
-  test('the surviving clause carries a multiple-testing correction', () => {
-    // Three clauses were tested, so an uncorrected p would flatter it.
+  test('the failure is WELL POWERED — the holdout had MORE levels, not fewer', () => {
+    /**
+     * The load-bearing detail. A collapse on a smaller sample would be
+     * inconclusive; a collapse on a LARGER one is a refutation.
+     */
     const a = TOUCH_COUNT_FINDING.aggression_through_price;
-    assert.equal(a.tests_in_family, 3);
-    assert.ok(a.p_two_tailed < a.bonferroni_threshold, 'the finding must clear its own correction');
-    assert.ok(a.z_score > 3);
-    // And it must still be labelled as one study.
-    assert.match(a.verdict, /a finding, not a settled effect/);
+    assert.ok(a.hourly.oos_universe.n > a.hourly.in_sample.n,
+      `holdout n=${a.hourly.oos_universe.n} must exceed in-sample n=${a.hourly.in_sample.n}`);
+    assert.match(a.verdict, /MORE levels/);
   });
 
-  test('the weak clause is labelled weak, not promoted', () => {
+  test('the daily arms are labelled UNDERPOWERED, not negative', () => {
+    // 400 daily bars yield few levels with 3+ tests. Calling that a refutation
+    // would be reading nothing as evidence.
+    const d = TOUCH_COUNT_FINDING.aggression_through_price.daily;
+    assert.ok(d.in_sample.n < 40, 'the daily in-sample arm is tiny');
+    assert.match(d.note, /UNDERPOWERED/);
+    assert.match(d.note, /cannot refute anything/);
+  });
+
+  test('the null still carries nothing, which is what makes the arms comparable', () => {
+    const rw = TOUCH_COUNT_FINDING.aggression_through_price.random_walk;
+    assert.ok(Math.abs(rw.lift_points) < 5);
+    assert.ok(Math.abs(rw.z) < 1.96);
+    assert.ok(rw.n > 2000);
+  });
+
+  test('the time clause is called NOISE, and shows why one arm is not enough', () => {
+    /**
+     * It swings from -16.2 (z = -2.57, nominally significant the WRONG way) to
+     * +17.2 across arms. Run enough arms and something clears p<0.05 in both
+     * directions by chance.
+     */
     const t = TOUCH_COUNT_FINDING.aggression_through_time;
-    assert.match(t.verdict, /WEAK/);
-    assert.match(t.verdict, /do not act on it alone/);
-    assert.ok(t.real_data.lift_points < TOUCH_COUNT_FINDING.aggression_through_price.real_data.lift_points);
+    assert.match(t.verdict, /NOISE/);
+    assert.ok(t.hourly.oos_universe.lift_points < 0 && t.hourly.oos_period.lift_points > 0,
+      'the clause must be recorded as flipping sign across arms');
+    assert.match(t.verdict, /both directions by chance/);
   });
 
-  test('every arm reports its sample size', () => {
+  test('records that the earlier claim was WRONG rather than quietly rewriting it', () => {
+    // A repo that silently replaces its failed claims cannot be audited.
     const f = TOUCH_COUNT_FINDING;
-    assert.match(f.sample, /554/);
-    assert.ok(f.aggression_through_price.real_data.n_with > 100);
-    assert.ok(f.aggression_through_price.random_walk.n_with > 1000);
-    assert.match(f.script, /level-test-inversion/);
+    assert.match(f.status, /KILLED THE HEADLINE/);
+    assert.match(f.correction_history, /19\.5/);
+    assert.match(f.correction_history, /wrong/);
+    assert.match(f.correction_history, /cannot be audited/);
   });
 
-  test('the summary states the distinction the measurement found', () => {
-    assert.match(TOUCH_COUNT_FINDING.summary, /mechanism right and the metric wrong/);
+  test('records the timeframe mislabelling that caused half the error', () => {
+    // The original was measured on 60-minute bars and recorded as daily.
+    assert.deepEqual(TOUCH_COUNT_FINDING.timeframes_measured, ['1D', '60']);
+    assert.match(TOUCH_COUNT_FINDING.correction_history, /timeframe label/);
+  });
+
+  test('names all four arms so no single number can be quoted alone', () => {
+    const f = TOUCH_COUNT_FINDING;
+    assert.match(f.arms, /random walk/);
+    assert.match(f.arms, /IN-SAMPLE/);
+    assert.match(f.arms, /OOS-UNIVERSE/);
+    assert.match(f.arms, /OOS-PERIOD/);
+    assert.match(f.script, /--timeframe/);
+  });
+
+  test('the summary states the lesson: floor and trial count were not enough', () => {
+    const s = TOUCH_COUNT_FINDING.summary;
+    assert.match(s, /noise floor AND/);
+    assert.match(s, /trial count/);
+    assert.match(s, /only the holdout/);
+    assert.match(s, /provisional/);
   });
 });

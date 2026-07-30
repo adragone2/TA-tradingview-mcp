@@ -1,39 +1,71 @@
 #!/usr/bin/env node
 /**
- * Shannon's touch-count inversion, measured against its own null.
+ * Shannon's touch-count inversion, measured against its own null — WITH an
+ * out-of-sample arm.
  *
  * The claim (ch. 7, figs 7.4/7.5): the MORE times a level is tested, the MORE
- * likely it is to break — absorption, not reinforcement. This contradicts how
- * `findKeyLevels` in this repo scores levels, where touch count IS strength. If
- * Shannon is right, that scoring has the sign backwards.
+ * likely it is to break. Plus two mechanism clauses — the interim retreat
+ * extremes moving toward the level ("aggression through price"), and the tests
+ * coming closer together ("time-wise").
  *
- * The trap: more touches means more exposure, so P(break | n tests) rises with n
- * on a random walk with no absorption anywhere. So the only thing that settles
- * it is the SHAPE of the hazard rate on real data against the SAME shape on
- * matched noise — and the two aggression clauses measured as conditionals,
- * because that is where a real mechanism would show up if there is one.
+ * The trap on the count claim: more touches means more exposure, so
+ * P(break | n tests) rises with n on a random walk with no absorption anywhere.
+ * Only the SHAPE against matched noise settles it.
+ *
+ * The trap on the clause: one universe over one period is one study. The first
+ * pass found +19.5 points against a −1.4 null, which is the strongest single
+ * result in this repo — and exactly the kind of number that evaporates out of
+ * sample. So there are three real-data arms:
+ *
+ *   IN-SAMPLE  20 large/mid caps, recent window
+ *   OOS-UNIVERSE  20 DIFFERENT symbols (small caps, ETFs, other sectors), same window
+ *   OOS-PERIOD    the ORIGINAL 20, an EARLIER non-overlapping window of bars
+ *
+ * A finding that holds on one and dies on the others is a finding about that
+ * one sample.
  *
  *   node scripts/level-test-inversion.js
- *   node scripts/level-test-inversion.js --noise
+ *   node scripts/level-test-inversion.js --noise            # skip the chart
+ *   node scripts/level-test-inversion.js --timeframe 60     # measure hourly instead
  */
 import { levelTestStudy } from '../src/core/level_tests.js';
 import { normalizeBars } from '../src/core/structure.js';
 import { randomWalk, barsFromPath } from '../src/core/synthetic.js';
+import { loadRealBars, describeBatch } from './_real_bars.js';
 
+const arg = (name, dflt) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 ? dflt : process.argv[i + 1];
+};
 const NOISE_ONLY = process.argv.includes('--noise');
+const TIMEFRAME = String(arg('timeframe', '1D'));
 const WALKS = 200;
 const BARS = 400;
-const SYMBOLS = [
+
+/** In-sample: large and mid caps. The original 20. */
+const IN_SAMPLE = [
   'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'JPM', 'XOM', 'JNJ', 'PG',
   'HD', 'PNC', 'BAC', 'CVX', 'MRK', 'PFE', 'KO', 'DIS', 'INTC', 'CSCO',
 ];
 
+/**
+ * Out-of-sample universe: deliberately unlike the first set — smaller caps,
+ * higher-beta names, ETFs, and sectors absent above. If the clause is a
+ * property of price behaviour it should not care.
+ */
+const OOS_UNIVERSE = [
+  'SPY', 'QQQ', 'IWM', 'XLE', 'XLU',
+  'CYTK', 'SRPT', 'ALNY', 'BMRN', 'IONS',
+  'PLUG', 'RIOT', 'SOFI', 'HOOD', 'RIVN',
+  'DAL', 'CCL', 'KSS', 'M', 'F',
+];
+
 /** Pool every level across a set of series, then tabulate once. */
 function pool(barSets, label) {
-  const perTest = new Map();   // n -> { reached, broke }
+  const perTest = new Map();
   let levels = 0; let broke = 0;
   const clauses = {
-    price: { withT: [0, 0], withoutT: [0, 0] },   // [broke, total]
+    price: { withT: [0, 0], withoutT: [0, 0] },
     time: { withT: [0, 0], withoutT: [0, 0] },
   };
 
@@ -67,104 +99,115 @@ function pool(barSets, label) {
     .sort((a, b) => a[0] - b[0])
     .map(([n, v]) => ({ n, reached: v.reached, break_rate_pct: pct(v.broke, v.reached) }));
 
+  const clauseOut = (c) => {
+    const w = pct(c.withT[0], c.withT[1]);
+    const o = pct(c.withoutT[0], c.withoutT[1]);
+    return {
+      with: w, n_with: c.withT[1], without: o, n_without: c.withoutT[1],
+      lift: w !== null && o !== null ? Math.round((w - o) * 10) / 10 : null,
+      /** Two-proportion z, so a lift comes with whether it could be chance. */
+      z: (() => {
+        const n1 = c.withT[1]; const n2 = c.withoutT[1];
+        if (!n1 || !n2) return null;
+        const p1 = c.withT[0] / n1; const p2 = c.withoutT[0] / n2;
+        const p = (c.withT[0] + c.withoutT[0]) / (n1 + n2);
+        const se = Math.sqrt(p * (1 - p) * (1 / n1 + 1 / n2));
+        return se > 0 ? Math.round(((p1 - p2) / se) * 100) / 100 : null;
+      })(),
+    };
+  };
+
   return {
-    label,
-    levels,
+    label, levels,
     overall_break_rate_pct: pct(broke, levels),
     hazard,
-    clause_price: {
-      with: pct(clauses.price.withT[0], clauses.price.withT[1]), n_with: clauses.price.withT[1],
-      without: pct(clauses.price.withoutT[0], clauses.price.withoutT[1]), n_without: clauses.price.withoutT[1],
-    },
-    clause_time: {
-      with: pct(clauses.time.withT[0], clauses.time.withT[1]), n_with: clauses.time.withT[1],
-      without: pct(clauses.time.withoutT[0], clauses.time.withoutT[1]), n_without: clauses.time.withoutT[1],
-    },
+    hazard_trend: hazard.length >= 3
+      ? Math.round((hazard[hazard.length - 1].break_rate_pct - hazard[0].break_rate_pct) * 10) / 10
+      : null,
+    clause_price: clauseOut(clauses.price),
+    clause_time: clauseOut(clauses.time),
   };
 }
 
+// ---- noise arm -------------------------------------------------------------
 const noiseSets = [];
 for (let seed = 1; seed <= WALKS; seed += 1) {
   noiseSets.push(normalizeBars(barsFromPath(randomWalk({ n: BARS, vol: 0.015, seed }))));
 }
-const noise = pool(noiseSets, 'random walk');
+const arms = [pool(noiseSets, `random walk (${WALKS} x ${BARS})`)];
 
-let real = null;
+// ---- real arms -------------------------------------------------------------
 if (!NOISE_ONLY) {
-  const data = await import('../src/core/data.js');
-  const chart = await import('../src/core/chart.js');
-  let restore = null;
-  try {
-    restore = (await chart.getState())?.symbol || null;
-    const sets = [];
-    for (const sym of SYMBOLS) {
-      try {
-        await chart.setSymbol({ symbol: sym });
-        const bars = normalizeBars(await data.getOhlcv({ count: BARS + 20, summary: false }));
-        sets.push(bars.slice(0, -1));
-        process.stderr.write(`  ${sym}: ${bars.length}\n`);
-      } catch (err) { process.stderr.write(`  ${sym}: ${err.message}\n`); }
-    }
-    real = pool(sets, 'real data');
-  } catch (err) {
-    process.stderr.write(`\nChart unavailable, noise arm only: ${err.message}\n`);
-  } finally {
-    if (restore) { try { await chart.setSymbol({ symbol: restore }); } catch {} }
+  // Ask for double the window so the period split has two disjoint halves.
+  const batch1 = await loadRealBars(IN_SAMPLE, { timeframe: TIMEFRAME, count: BARS * 2 + 20 });
+  process.stderr.write(`\n${describeBatch(batch1, 'in-sample')}\n`);
+  const batch2 = await loadRealBars(OOS_UNIVERSE, { timeframe: TIMEFRAME, count: BARS + 20 });
+  process.stderr.write(`${describeBatch(batch2, 'oos-universe')}\n\n`);
+
+  // Split the in-sample symbols in TIME. The newest window is in-sample, the
+  // older, non-overlapping window is the period holdout.
+  const recent = []; const older = [];
+  for (const { bars } of batch1.sets) {
+    if (bars.length < 200) continue;
+    const half = Math.floor(bars.length / 2);
+    older.push(bars.slice(0, half));
+    recent.push(bars.slice(half));
   }
+
+  arms.push(pool(recent, `IN-SAMPLE 20 large caps, newest half`));
+  arms.push(pool(batch2.sets.map((s) => s.bars), `OOS-UNIVERSE 20 other symbols`));
+  arms.push(pool(older, `OOS-PERIOD same 20, older half`));
+
+  console.log(`\nResolution actually measured: ${batch1.actual_resolution} (requested ${TIMEFRAME})`);
 }
 
-console.log(`\nShannon's touch-count inversion: does a level weaken with each test?\n`);
-console.log(`  ${WALKS} random walks x ${BARS} bars${real ? `, plus ${SYMBOLS.length} symbols x ~${BARS} daily bars` : ''}\n`);
+// ---- report ---------------------------------------------------------------
+console.log(`\nShannon's touch-count inversion — count claim vs mechanism clause\n`);
 
-const maxN = Math.max(noise.hazard.length, real?.hazard.length || 0);
-console.log('  P(break AT test n | level reached test n)');
-console.log(`  test n  ${'random walk'.padStart(14)}  ${real ? 'real data'.padStart(14) : ''}`);
+console.log('P(break AT test n | level reached test n)');
+const maxN = Math.max(...arms.map((a) => a.hazard.length));
+process.stdout.write('  test n');
+for (const a of arms) process.stdout.write(`  ${a.label.slice(0, 22).padStart(23)}`);
+process.stdout.write('\n');
 for (let i = 0; i < maxN; i += 1) {
-  const nz = noise.hazard[i];
-  const rd = real?.hazard[i];
-  const n = nz?.n ?? rd?.n;
-  console.log(`  ${String(n).padStart(6)}  ${`${nz ? `${nz.break_rate_pct}% (n=${nz.reached})` : '-'}`.padStart(14)}  `
-    + `${real ? `${rd ? `${rd.break_rate_pct}% (n=${rd.reached})` : '-'}`.padStart(14) : ''}`);
+  process.stdout.write(`  ${String(arms[0].hazard[i]?.n ?? i + 1).padStart(6)}`);
+  for (const a of arms) {
+    const h = a.hazard[i];
+    process.stdout.write(`  ${(h ? `${h.break_rate_pct}% (${h.reached})` : '-').padStart(23)}`);
+  }
+  process.stdout.write('\n');
 }
 
-const trend = (h) => (h.length >= 3
-  ? Math.round((h[h.length - 1].break_rate_pct - h[0].break_rate_pct) * 10) / 10
-  : null);
-const nzTrend = trend(noise.hazard);
-const rdTrend = real ? trend(real.hazard) : null;
-
-console.log(`\n  Hazard trend, test 1 -> test ${noise.hazard.at(-1)?.n}:`);
-console.log(`    random walk  ${nzTrend > 0 ? '+' : ''}${nzTrend} points`);
-if (real) console.log(`    real data    ${rdTrend > 0 ? '+' : ''}${rdTrend} points`);
-
-console.log('\n  The aggression clauses (eventual break rate):');
-for (const [name, key] of [['through PRICE (rising interim lows)', 'clause_price'], ['through TIME (tests closer together)', 'clause_time']]) {
-  console.log(`\n    ${name}`);
-  console.log(`      random walk  with ${noise[key].with}% (n=${noise[key].n_with})  without ${noise[key].without}% (n=${noise[key].n_without})  `
-    + `lift ${Math.round((noise[key].with - noise[key].without) * 10) / 10}`);
-  if (real) {
-    console.log(`      real data    with ${real[key].with}% (n=${real[key].n_with})  without ${real[key].without}% (n=${real[key].n_without})  `
-      + `lift ${Math.round((real[key].with - real[key].without) * 10) / 10}`);
-  }
+console.log('\nHazard trend (test 1 -> last), and the two clauses:\n');
+console.log(`  ${'arm'.padEnd(34)}${'levels'.padStart(7)}${'trend'.padStart(8)}${'price lift'.padStart(12)}${'z'.padStart(7)}${'time lift'.padStart(11)}${'z'.padStart(7)}`);
+for (const a of arms) {
+  console.log(`  ${a.label.padEnd(34)}${String(a.levels).padStart(7)}${String(a.hazard_trend).padStart(8)}`
+    + `${String(a.clause_price.lift).padStart(12)}${String(a.clause_price.z).padStart(7)}`
+    + `${String(a.clause_time.lift).padStart(11)}${String(a.clause_time.z).padStart(7)}`);
 }
 
-console.log('\nVerdict:');
-if (!real) {
-  console.log('  Noise arm only. The null alone cannot settle the claim — rerun with the chart up.');
-} else {
-  const excess = (rdTrend ?? 0) - (nzTrend ?? 0);
-  console.log(`  Hazard rises by ${rdTrend} points on real data and ${nzTrend} on noise (excess ${excess > 0 ? '+' : ''}${Math.round(excess * 10) / 10}).`);
-  console.log(`  Overall break rate: real ${real.overall_break_rate_pct}%, noise ${noise.overall_break_rate_pct}%.`);
-  if (excess > 5) {
-    console.log('  -> The inversion has excess over its null. Shannon may be right, and findKeyLevels scoring');
-    console.log('     touch count as STRENGTH would have the sign backwards. Needs a trial count before use.');
-  } else if (excess < -5) {
-    console.log('  -> Real data shows LESS of the effect than noise. The rise in hazard is exposure arithmetic,');
-    console.log('     not absorption. Shannon\'s mechanism is not visible here.');
-  } else {
-    console.log('  -> NO EXCESS over the null. The hazard rises for the trivial reason (more tests = more');
-    console.log('     exposure), so touch count says nothing about the NEXT test in either direction.');
-    console.log('     Do NOT invert findKeyLevels on this evidence, and do not defend it either.');
+if (arms.length > 1) {
+  const [noise, inS, oosU, oosP] = arms;
+  console.log('\nVERDICT — count claim:');
+  console.log(`  hazard trend: noise ${noise.hazard_trend}, in-sample ${inS.hazard_trend}, `
+    + `oos-universe ${oosU.hazard_trend}, oos-period ${oosP.hazard_trend}`);
+  const beats = [inS, oosU, oosP].filter((a) => (a.hazard_trend ?? 0) > (noise.hazard_trend ?? 0) + 5).length;
+  console.log(beats === 0
+    ? '  -> DEAD in every arm. The rise is exposure arithmetic, not absorption.'
+    : `  -> beats the null in ${beats}/3 real arms. Worth another look.`);
+
+  console.log('\nVERDICT — price-pressure clause:');
+  for (const a of [inS, oosU, oosP]) {
+    const c = a.clause_price;
+    const holds = c.lift !== null && c.lift > 5 && Math.abs(c.z ?? 0) > 1.96;
+    console.log(`  ${a.label.padEnd(34)} lift ${String(c.lift).padStart(6)}  z ${String(c.z).padStart(6)}  n ${c.n_with}+${c.n_without}  ${holds ? 'HOLDS' : 'does not hold'}`);
   }
+  const held = [inS, oosU, oosP].filter((a) => a.clause_price.lift > 5 && Math.abs(a.clause_price.z ?? 0) > 1.96).length;
+  console.log(`  noise lift ${noise.clause_price.lift} (z ${noise.clause_price.z}) — the null carries nothing, as it should.`);
+  console.log(held === 3
+    ? '  -> HOLDS OUT OF SAMPLE in all three arms. Promote it.'
+    : held === 0
+      ? '  -> FAILS EVERYWHERE. The first result was this sample, not this market.'
+      : `  -> holds in ${held}/3. Partial. Report the split; do not quote the best arm alone.`);
 }
 console.log();

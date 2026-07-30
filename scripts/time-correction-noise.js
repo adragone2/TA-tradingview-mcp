@@ -23,6 +23,9 @@ import { findTimeCorrections, normalizeBars } from '../src/core/structure.js';
 import { randomWalk, barsFromPath } from '../src/core/synthetic.js';
 
 const NOISE_ONLY = process.argv.includes('--noise');
+const tfIdx = process.argv.indexOf('--timeframe');
+/** Explicit, never inherited. See scripts/_real_bars.js for why. */
+const TIMEFRAME = tfIdx === -1 ? '1D' : String(process.argv[tfIdx + 1]);
 const WALKS = 200;
 const BARS = 300;
 
@@ -74,31 +77,20 @@ const noise = measure(noiseSets, `random walk (${WALKS} x ${BARS} bars)`);
 
 let real = null;
 if (!NOISE_ONLY) {
-  const data = await import('../src/core/data.js');
-  const chart = await import('../src/core/chart.js');
-  let restore = null;
+  // loadRealBars requires an EXPLICIT timeframe. An earlier version of this
+  // script called setSymbol without setTimeframe, inherited the chart's
+  // 60-minute resolution, and recorded the result as "daily bars".
+  const { loadRealBars, describeBatch } = await import('./_real_bars.js');
   try {
-    const state = await chart.getState();
-    restore = state?.symbol || null;
-    const sets = [];
-    for (const sym of SYMBOLS) {
-      try {
-        await chart.setSymbol({ symbol: sym });
-        const series = await data.getOhlcv({ count: BARS + 20, summary: false });
-        // Drop the partial daily bar: its high/low are not a day's.
-        const bars = normalizeBars(series);
-        sets.push(bars.slice(0, -1));
-        process.stderr.write(`  ${sym}: ${bars.length} bars\n`);
-      } catch (err) {
-        process.stderr.write(`  ${sym}: ${err.message}\n`);
-      }
-    }
-    real = measure(sets, `real data (${sets.length} symbols x ~${BARS} daily bars)`);
+    const b = await loadRealBars(SYMBOLS, { timeframe: TIMEFRAME, count: BARS + 20 });
+    process.stderr.write(`
+${describeBatch(b, 'real data')}
+`);
+    real = measure(b.sets.map((x) => x.bars), `real data (${b.sets.length} symbols @ ${b.actual_resolution})`);
   } catch (err) {
-    process.stderr.write(`\nChart unavailable, running the noise arm only: ${err.message}\n`);
-  } finally {
-    // A scan drives the chart and must restore it.
-    if (restore) { try { await chart.setSymbol({ symbol: restore }); } catch {} }
+    process.stderr.write(`
+Chart unavailable, noise arm only: ${err.message}
+`);
   }
 }
 
@@ -119,11 +111,24 @@ if (real) {
   console.log(`    real data  ${real.with_prior_trend_pct}% resolved with the prior trend (n=${real.resolved})`);
   console.log(`    noise      ${noise.with_prior_trend_pct}% (n=${noise.resolved})`);
   console.log(`    lift       ${lift > 0 ? '+' : ''}${Math.round(lift * 10) / 10} points`);
-  console.log(lift > 5
-    ? '  -> Real data beats the null. Worth keeping, still needs a trial count.'
-    : '  -> NO EDGE over noise. Resolution direction is close to a coin flip in both arms,'
-      + '\n     so report the STATE and refuse to predict the break.');
-} else {
+  // n=18 cannot settle anything against a 52.8% null, so the verdict is gated on
+  // POWER rather than on the sign of the lift.
+  const n1 = real.resolved; const n2 = noise.resolved;
+  const p1 = (real.with_prior_trend_pct ?? 0) / 100; const p2 = (noise.with_prior_trend_pct ?? 0) / 100;
+  const pp = (p1 * n1 + p2 * n2) / (n1 + n2);
+  const se = Math.sqrt(pp * (1 - pp) * (1 / n1 + 1 / n2));
+  const z = se > 0 ? Math.round(((p1 - p2) / se) * 100) / 100 : 0;
+  console.log(`    z          ${z} (n=${n1} vs ${n2})`);
+  if (n1 < 40 || Math.abs(z) < 1.96) {
+    console.log(`  -> NOT SETTLED. ${n1} resolved corrections cannot distinguish ${real.with_prior_trend_pct}% from a`);
+    console.log(`     ${noise.with_prior_trend_pct}% null (z = ${z}). At 60-minute this same arm came out BELOW the null,`);
+    console.log('     so the sign is not stable across resolutions. Report the STATE and refuse to predict the');
+    console.log('     break — because the claim is UNTESTED here, not because it is refuted.');
+  } else if (lift > 5) {
+    console.log('  -> Real data beats the null on an adequate sample. Needs an out-of-sample arm before use.');
+  } else {
+    console.log('  -> NO EDGE over noise on an adequate sample.');
+  }
   console.log('\n  Real-data arm not run (no chart). The noise figure alone cannot settle the resolution claim.');
 }
 console.log();

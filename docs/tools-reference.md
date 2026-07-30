@@ -221,7 +221,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### level_* (2)
 
 - **`level_test_history`** — The full test-by-test history of a level: every separate approach, where price RETREATED TO between them, and whether the level eventually broke
-- **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier and the le
+- **`level_pressure`** — Is a level weakening as price approaches it? Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier
 
 ### backtest_* (4)
 

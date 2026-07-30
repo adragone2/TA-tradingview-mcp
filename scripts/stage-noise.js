@@ -19,6 +19,9 @@ import { classifyPhase } from '../src/core/wyckoff.js';
 import { randomWalk, barsFromPath } from '../src/core/synthetic.js';
 
 const NOISE_ONLY = process.argv.includes('--noise');
+const tfIdx = process.argv.indexOf('--timeframe');
+/** Explicit, never inherited. See scripts/_real_bars.js for why. */
+const TIMEFRAME = tfIdx === -1 ? '1D' : String(process.argv[tfIdx + 1]);
 const WALKS = 200;
 const BARS = 300;
 const SYMBOLS = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'JPM', 'XOM', 'JNJ', 'PG', 'HD', 'PNC'];
@@ -63,27 +66,20 @@ const noise = tally(noiseSets, `random walk (${WALKS} x ${BARS} bars)`);
 
 let real = null;
 if (!NOISE_ONLY) {
-  const data = await import('../src/core/data.js');
-  const chart = await import('../src/core/chart.js');
-  let restore = null;
+  // loadRealBars requires an EXPLICIT timeframe. An earlier version of this
+  // script called setSymbol without setTimeframe, inherited the chart's
+  // 60-minute resolution, and recorded the result as "daily bars".
+  const { loadRealBars, describeBatch } = await import('./_real_bars.js');
   try {
-    restore = (await chart.getState())?.symbol || null;
-    const sets = [];
-    for (const sym of SYMBOLS) {
-      try {
-        await chart.setSymbol({ symbol: sym });
-        const bars = normalizeBars(await data.getOhlcv({ count: BARS + 20, summary: false }));
-        sets.push(bars.slice(0, -1)); // drop the partial daily bar
-        process.stderr.write(`  ${sym}: ${bars.length} bars\n`);
-      } catch (err) {
-        process.stderr.write(`  ${sym}: ${err.message}\n`);
-      }
-    }
-    real = tally(sets, `real data (${sets.length} symbols)`);
+    const b = await loadRealBars(SYMBOLS, { timeframe: TIMEFRAME, count: BARS + 20 });
+    process.stderr.write(`
+${describeBatch(b, 'real data')}
+`);
+    real = tally(b.sets.map((x) => x.bars), `real data (${b.sets.length} symbols @ ${b.actual_resolution})`);
   } catch (err) {
-    process.stderr.write(`\nChart unavailable, noise arm only: ${err.message}\n`);
-  } finally {
-    if (restore) { try { await chart.setSymbol({ symbol: restore }); } catch {} }
+    process.stderr.write(`
+Chart unavailable, noise arm only: ${err.message}
+`);
   }
 }
 

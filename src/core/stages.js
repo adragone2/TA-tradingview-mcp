@@ -350,6 +350,7 @@ export function stagePlan({ long_bars, short_bars, periods = MA_SETS.daily, shor
       + 'not by predicting anything — his claim that short timeframes "lead" long ones is an aggregation identity, not '
       + 'a forecast.',
     noise_baseline: STAGE_NOISE_BASELINE,
+    forward_test: STAGE_FORWARD_TEST,
   };
 }
 
@@ -362,6 +363,67 @@ export function stagePlan({ long_bars, short_bars, periods = MA_SETS.daily, shor
  * stage classifier built from clauses that CAN disagree should abstain often,
  * and the tradeable stages should be a minority of readings.
  */
+/**
+ * Does the gate IMPROVE OUTCOMES, or only filter?
+ * `node scripts/stage-forward-test.js` re-measures.
+ *
+ * The answer is no, and it is a well-powered no. Triple-barrier labelling over
+ * 90 symbols, comparing PARTICIPATE bars against EVERY eligible bar in the same
+ * direction with the same barriers on the same series, with no lookahead:
+ *
+ *   LONG   signal 33.5% vs baseline 36.4%   -2.9 points, 198 independent events
+ *   SHORT  signal 21.2% vs baseline 28.9%   -7.7 points, 103 independent events
+ *
+ * Four configurations were run (barrier widths 2x/1x through 4x/2x, holds of 20
+ * and 40 bars, universes of 30 and 90 symbols). Every one came out negative for
+ * longs, and no configuration showed the gate helping.
+ *
+ * ── Why this is coherent rather than surprising ──
+ *
+ * Stage 2 requires price ABOVE three rising, correctly stacked averages. That is
+ * a description of a move that has ALREADY happened. This repo has already
+ * measured that below ~21 trading days the documented effect is REVERSAL, not
+ * continuation — so a 20-bar hold entered on maximum trend agreement is placed
+ * exactly where continuation is weakest. `horizon_prior` says the same thing
+ * from the literature side, and `mtf_analyze` carries the Grimes result where a
+ * triple-MA trend read was INVERTED across ~903k equity observations.
+ *
+ * The gate is therefore a description of alignment, and alignment is not an edge
+ * at this horizon.
+ */
+export const STAGE_FORWARD_TEST = Object.freeze({
+  status: 'MEASURED — WELL POWERED, AND NEGATIVE',
+  method: 'Triple-barrier labelling (Lopez de Prado ch. 3). PARTICIPATE bars against every eligible bar in the SAME '
+    + 'direction, same barriers, same series. No lookahead: the stage at bar i uses bars 0..i only, and the gate '
+    + 'timeframe is aggregated from a fixed origin so truncation cannot shift the grouping.',
+  universe: '90 symbols — mega caps, sector ETFs and higher-beta names — at 1D, ~300 bars each.',
+  barriers: { profit_mult: 3, stop_mult: 1.5, max_bars: 20, basis: 'multiples of rolling return volatility' },
+  long: { signal_win_pct: 33.5, baseline_win_pct: 36.4, lift_points: -2.9, z: -2.18, independent_events: 198, raw_events: 1520 },
+  short: { signal_win_pct: 21.2, baseline_win_pct: 28.9, lift_points: -7.7, z: -4.0, independent_events: 103, raw_events: 595 },
+  configurations_run: 4,
+  configurations_favouring_the_gate: 0,
+  verdict: 'THE GATE DOES NOT IMPROVE OUTCOMES. Both sides came out below a direction-matched baseline on adequate '
+    + 'independent samples, and no configuration reversed that. Use stage_plan to describe alignment and to impose '
+    + 'the universe restriction Shannon states; do NOT treat a PARTICIPATE reading as evidence the trade is better than one '
+    + 'taken arbitrarily in the same direction.',
+  why_it_is_coherent: 'Stage 2 requires price ABOVE three rising stacked averages, which describes a move that has '
+    + 'already happened. Below ~21 trading days the documented effect is REVERSAL — see horizon_prior and the Grimes '
+    + 'result in mtf.js, where a triple-MA trend read was INVERTED over ~903k equity observations. A 20-bar hold '
+    + 'entered on maximum trend agreement sits where continuation is weakest.',
+  caveats: [
+    'The z values are computed on RAW overlapping counts and are optimistic. The independent-event counts are the '
+      + 'honest sample size; the DIRECTION is what carries here, not the p-value.',
+    'Measured with a 5/10/20 triple rather than the 10/20/50 Shannon specifies. On a 5-bar gate his set needs 280 base bars of warm-up '
+      + 'and the chart serves ~300, leaving ~20 testable bars per symbol. HIS OWN PARAMETERS ARE UNTESTABLE on this '
+      + 'history — that is a limit of the data, not a refutation of his numbers specifically.',
+    'This tests the GATE, not his method. He also sizes to three constraints, scales out, trails a pivot stop and '
+      + 'holds nothing into earnings. None of that is in these barriers.',
+    'A filter can still pay by cutting TRADE COUNT and therefore cost, even with no win-rate gain. turnover_cost '
+      + 'prices that separately and this does not measure it.',
+  ],
+  script: 'scripts/stage-forward-test.js',
+});
+
 export const STAGE_NOISE_BASELINE = Object.freeze({
   status: 'MEASURED',
   random_walk: {

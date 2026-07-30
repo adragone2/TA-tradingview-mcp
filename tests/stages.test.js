@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import {
-  classifyStage, stageAction, stagePlan, MA_SETS, STAGES, ACTIONS, STAGE_NOISE_BASELINE,
+  classifyStage, stageAction, stagePlan, MA_SETS, STAGES, ACTIONS, STAGE_NOISE_BASELINE, STAGE_FORWARD_TEST,
 } from '../src/core/stages.js';
 import { normalizeBars } from '../src/core/structure.js';
 import { classifyPhase } from '../src/core/wyckoff.js';
@@ -310,5 +310,93 @@ describe('insufficient data is not an abstention', () => {
     assert.equal(p.available, true);
     assert.equal(p.action.action, 'NO_SETUP');
     assert.equal(p.insufficient_data, undefined);
+  });
+});
+
+describe('the forward test — the gate does not improve outcomes', () => {
+  test('records a WELL POWERED negative result on both sides', () => {
+    /**
+     * The measurement that matters most, and it went against the tool. Both
+     * sides came out below a direction-matched baseline on adequate independent
+     * samples, so this is not an underpowered shrug.
+     */
+    const f = STAGE_FORWARD_TEST;
+    assert.match(f.status, /WELL POWERED, AND NEGATIVE/);
+    assert.ok(f.long.lift_points < 0, `long lift ${f.long.lift_points} should be negative`);
+    assert.ok(f.short.lift_points < 0, `short lift ${f.short.lift_points} should be negative`);
+    assert.ok(f.long.independent_events >= 100);
+    assert.ok(f.short.independent_events >= 100);
+  });
+
+  test('no configuration favoured the gate, and the count is recorded', () => {
+    // One negative run is a run. Four out of four is a finding.
+    const f = STAGE_FORWARD_TEST;
+    assert.ok(f.configurations_run >= 4);
+    assert.equal(f.configurations_favouring_the_gate, 0);
+  });
+
+  test('the verdict tells callers what the tool IS still for', () => {
+    // Killing a claim is not the same as deleting a tool. It still imposes the
+    // universe restriction and describes alignment.
+    const v = STAGE_FORWARD_TEST.verdict;
+    assert.match(v, /DOES NOT IMPROVE OUTCOMES/);
+    assert.match(v, /universe restriction/);
+    assert.match(v, /do NOT treat a PARTICIPATE reading as evidence/);
+  });
+
+  test('explains WHY, consistent with the repo\'s own horizon finding', () => {
+    /**
+     * A negative result with a mechanism is more trustworthy than one without.
+     * Stage 2 describes a move that already happened, and below ~21 days the
+     * documented effect is reversal.
+     */
+    const w = STAGE_FORWARD_TEST.why_it_is_coherent;
+    assert.match(w, /already happened/);
+    assert.match(w, /REVERSAL/);
+    assert.match(w, /horizon_prior/);
+    assert.match(w, /INVERTED/);
+  });
+
+  test('admits the z values are optimistic because events overlap', () => {
+    const c = STAGE_FORWARD_TEST.caveats.join(' ');
+    assert.match(c, /RAW overlapping counts and are optimistic/);
+    assert.match(c, /DIRECTION is what carries/);
+  });
+
+  test('admits Shannon\'s OWN parameters could not be tested', () => {
+    /**
+     * The honest limit. A 5-bar gate with a 50-period average needs 280 base
+     * bars of warm-up and the chart serves ~300. Reporting the 5/10/20 result as
+     * if it refuted 10/20/50 would be the substitution error.
+     */
+    const c = STAGE_FORWARD_TEST.caveats.join(' ');
+    assert.match(c, /UNTESTABLE on this/);
+    assert.match(c, /not a refutation of his numbers specifically/);
+  });
+
+  test('admits it tests the GATE and not the method', () => {
+    const c = STAGE_FORWARD_TEST.caveats.join(' ');
+    assert.match(c, /tests the GATE, not his method/);
+    assert.match(c, /scales out/);
+    // And that a filter can pay through cost even with no win-rate gain.
+    assert.match(c, /TRADE COUNT/);
+    assert.match(c, /turnover_cost/);
+  });
+
+  test('the method statement rules out the two ways this could be faked', () => {
+    const m = STAGE_FORWARD_TEST.method;
+    assert.match(m, /No lookahead/);
+    assert.match(m, /fixed origin/);
+    assert.match(m, /SAME\s+direction/);
+  });
+
+  test('every plan carries the forward test, not just the noise floor', () => {
+    const p = stagePlan({ long_bars: ramp(), short_bars: ramp() });
+    assert.equal(p.forward_test.configurations_favouring_the_gate, 0);
+    assert.match(p.forward_test.status, /NEGATIVE/);
+  });
+
+  test('names the script that re-measures it', () => {
+    assert.match(STAGE_FORWARD_TEST.script, /stage-forward-test/);
   });
 });
