@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-173 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+175 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 173 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 175 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
@@ -54,6 +54,7 @@
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
 | "What's the regime?" | `ta_regime` — also carries position sizing |
+| "How shorted is it?" / "squeeze setup?" | `short_interest` — FINRA, twice a month. Quote the `driver`, never bare days-to-cover, and check `shorts_position`: squeeze fuel needs shorts who are LOSING |
 | "Write a Pine script" | `pine-develop` skill |
 | "What's the trend?" / "key levels?" | `market-structure` skill — `structure_analyze`, `levels_find`. Quote each level's evidence |
 | "Supply/demand zones?" / "order blocks?" / "SMC" | `supply-demand-setup` skill — `zones_find`. A zone is where price DEPARTED from, not where it reversed |
@@ -100,7 +101,9 @@ Each of these exists because it has already gone wrong here.
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
-**A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud.
+**A 200 is not freshness.** TA stamps `age_hours` from the source file's mtime. Walls past ~30h on a trading day mean TA's scan didn't run. Say the age out loud. FINRA short interest is the opposite case: it settles **twice a month** on an ~8-business-day lag, so 1–3 weeks old is the resolution of the measurement, not a delay — calling it stale there is the error.
+
+**A ratio moves when its denominator moves, and days-to-cover is the worst offender here.** Measured over 40 symbols and 1,000 period changes: **93% of days-to-cover moves of 20% or more (426 of 458) were driven by average VOLUME, not by the short position** — 100% of them on ten of those names. Worst case KSS: days-to-cover +351.5% on a +1.59% change in short interest. `short_interest` decomposes every period and names the `driver`; quote that, never the bare ratio. Shannon's own Figure 15.1 falls into this trap. `node scripts/short-interest-driver.js` re-measures. The same failure shape has now appeared three times in this repo — the hysteresis percentile bug, FINRA's clamped days-to-cover, and this — so treat any single reported ratio as suspect until you have seen both its inputs.
 
 **Today's daily bar is not a day.** Extended-hours trade accumulates into it from 04:00 ET, so pre-open every symbol already has a "daily" bar holding a fraction of its eventual volume — SPY measured 6.7M against ~45M. Its `close` is a real quote; its **high, low and volume are not**. `completeSeries` drops it and the unattended scripts use that; `data_get_ohlcv` reports `bar_state` rather than trimming, because interactive callers often want the live bar. The scanner's server-side fields **cannot** be repaired — `scannerTrust()` says which are unsafe, and `relative_volume_10d_calc` is the worst of them, which is why the high-volume premium factor is suppressed pre-open.
 

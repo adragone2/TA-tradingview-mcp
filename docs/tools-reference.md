@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **173 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **175 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -401,6 +401,14 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### tier_* (1)
 
 - **`tier_a_factors`** — The four Tier A cross-sectional factors from the evidence review, computed over the live index universe in one scanner request
+
+### short_* (1)
+
+- **`short_interest`** — FINRA short interest for a symbol — how many shares are sold short and not yet covered, the average daily volume behind it, and days to cover, as a bi
+
+### finra_* (1)
+
+- **`finra_status`** — Whether the FINRA credentials are configured and which short-interest dataset is in use, plus the reporting cadence
 
 ---
 
