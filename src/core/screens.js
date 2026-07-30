@@ -24,11 +24,23 @@
 import { LIQUIDITY_FILTER, offHighPct, daysToEarnings } from './scanner.js';
 
 /**
- * The six screens.
+ * The screens.
  *
  * `filter` is what TradingView evaluates. `refine` is a client-side predicate
  * for things the scanner cannot express as a filter — a ratio between two
  * returned columns, for instance. `rank` orders that screen's own candidates.
+ *
+ * Three optional fields, added when the catalogue outgrew the original five:
+ *
+ *   `columns`  extra columns this screen needs beyond BASE_COLUMNS. A screen that
+ *              reads `industry` or `premarket_change` cannot work without them.
+ *   `post`     a CROSS-ROW step, run after refine. A per-row predicate cannot
+ *              express "keep only the top two of each industry group", because
+ *              that needs the whole result set at once.
+ *   `session`  'settled' means the screen must NOT run pre-open, because it ranks
+ *              on a field that folds the forming day (see scannerTrust).
+ *              'premarket' means the opposite — it is built for pre-open and uses
+ *              premarket-specific fields.
  */
 export const SCREENS = [
   {
@@ -129,6 +141,177 @@ export const SCREENS = [
     ],
     refine: (r) => { const o = offHighPct(r); return o != null && o <= 15; },
     rank: (r) => r['Perf.3M'] ?? -Infinity,
+  },
+
+  /**
+   * BREAKOUT — added because the catalogue pointed `breakout_continuation` at
+   * `momentum_pullback`, which cannot surface a breakout by construction.
+   *
+   * Verified on a live row: a name at RSI 66.8, +17.9% on the month and 1.85%
+   * off its high fails THREE of the pullback screen's clauses — RSI outside
+   * [35,55], Perf.1M outside [-15,+5], and too CLOSE to the high for the 2-25%
+   * band. A pullback screen selects retracements; a breakout screen selects the
+   * opposite. Pointing one strategy at the other's screen means it never fires.
+   */
+  {
+    key: 'breakout',
+    direction: 'continuation',
+    name: 'Breakout at a new high',
+    bet: 'Price pushing through overhead supply, where the sellers who bought the old high are cleared out.',
+    horizon_side: 'CONTINUATION — the weak side under 21 days. Run horizon_prior.',
+    evidence: 'C for the breakout itself: breakout_check has a 32.5% random-walk rate (17.5% passing 3+ checks), so a '
+      + 'bare breakout is close to a coin flip. The SUPPLY mechanism is better evidenced — it is George and Hwang 52-week-high '
+      + 'reasoning, which Livermore arrived at independently in the 1920s.',
+    filter: [
+      ...LIQUIDITY_FILTER,
+      { left: 'market_cap_basic', operation: 'greater', right: 1e9 },
+      { left: 'Perf.6M', operation: 'greater', right: 0 },
+      { left: 'RSI', operation: 'in_range', right: [55, 80] },
+    ],
+    // AT the high, not retracing from it — the mirror of the pullback band.
+    refine: (r) => { const o = offHighPct(r); return o != null && o <= 3; },
+    rank: (r) => -(offHighPct(r) ?? 999),
+  },
+
+  /**
+   * SHORT-TERM REVERSAL — Nagel's liquidity provision, and the ONE documented
+   * effect that belongs in the 2-10 day window rather than fighting it.
+   *
+   * It had no screen: the catalogue pointed it at tier_a_factors, where it is a
+   * factor that stays INACTIVE unless VIX is elevated. That gate is correct and
+   * it is not a screen. The shape here is his — the biggest short-horizon losers
+   * whose long-term trend is still intact.
+   */
+  {
+    key: 'short_term_reversal',
+    direction: 'reversal',
+    name: 'Short-term reversal (liquidity provision)',
+    bet: 'A sharp short-horizon loser whose long-term trend is intact — paid for providing liquidity, not for being cheap.',
+    horizon_side: 'REVERSAL — the side the evidence favours under 21 days, and the only screen here on the strong '
+      + 'side of the boundary.',
+    evidence: 'B. Nagel (2012). CONDITIONAL: it "earns essentially nothing unconditionally" and is only active when '
+      + 'VIX is elevated. The runner must apply that gate — this screen cannot see VIX.',
+    session: 'settled',
+    requires_vix_gate: true,
+    filter: [
+      ...LIQUIDITY_FILTER,
+      { left: 'market_cap_basic', operation: 'greater', right: 2e9 },
+      // BOUNDED on both sides. An unbounded `less than -8` selects the tail, and
+      // the tail is collapses rather than dips — the mistake this module's header
+      // is written about. The repo's own invariant test caught this.
+      { left: 'Perf.1M', operation: 'in_range', right: [-30, -8] },
+      { left: 'Perf.Y', operation: 'greater', right: 0 },
+      { left: 'RSI', operation: 'in_range', right: [10, 35] },
+    ],
+    // Bounded on BOTH sides, for the reason the module header gives: a one-sided
+    // threshold on a reversal screen selects collapses, not dips.
+    refine: (r) => { const o = offHighPct(r); return o != null && o >= 5 && o <= 30; },
+    rank: (r) => r['Perf.1M'] ?? Infinity,
+  },
+
+  /**
+   * GROUP LEADERSHIP — Livermore's Discovery 1 and 2, and the first screen here
+   * that needs a CROSS-ROW step.
+   *
+   * "Trade the leading stocks in the leading groups." rs_leadership finds names
+   * strong against the MARKET, which is a different question from being the
+   * biggest name in a group that is moving as a group. Answering it needs the
+   * whole result set: group by industry, keep groups whose median is positive,
+   * then keep each group's top two by market cap.
+   */
+  {
+    key: 'group_leadership',
+    direction: 'continuation',
+    name: 'Leading stock in a leading group',
+    bet: 'The largest name in an industry group that is moving as a group.',
+    horizon_side: 'CONTINUATION',
+    evidence: 'C. Livermore core, unmeasured here. Note what WAS measured and failed: requiring the SECOND leader to '
+      + 'confirm cost 9.3 points of win rate (21.6% vs 30.9%, z -2.57) and discarded 58% of signals. So this screen '
+      + 'deliberately does NOT require tandem agreement — it only prefers a leader over a laggard.',
+    columns: ['industry', 'description'],
+    filter: [
+      ...LIQUIDITY_FILTER,
+      { left: 'market_cap_basic', operation: 'greater', right: 2e9 },
+      { left: 'Perf.6M', operation: 'greater', right: 0 },
+      { left: 'RSI', operation: 'in_range', right: [45, 75] },
+    ],
+    refine: (r) => !!r.industry,
+    rank: (r) => r.market_cap_basic ?? -Infinity,
+    post: (rows) => {
+      const byGroup = new Map();
+      for (const r of rows) {
+        if (!byGroup.has(r.industry)) byGroup.set(r.industry, []);
+        byGroup.get(r.industry).push(r);
+      }
+      const out = [];
+      for (const [, members] of byGroup) {
+        const moves = members.map((m) => Number(m['Perf.1M'])).filter(Number.isFinite);
+        if (!moves.length) continue;
+        const median = [...moves].sort((a, b) => a - b)[Math.floor(moves.length / 2)];
+        if (median <= 0) continue;                     // the GROUP must be moving
+        out.push(...[...members]
+          .sort((a, b) => Number(b.market_cap_basic || 0) - Number(a.market_cap_basic || 0))
+          .slice(0, 2));                               // its two leaders
+      }
+      return out;
+    },
+    post_note: 'The cross-row step keeps only the top two by market cap inside each group whose MEDIAN member move is '
+      + 'positive. A median rather than a mean, so one runaway name cannot make a group look strong. Dual share classes '
+      + 'are NOT deduped here — call dedupeShareClasses from groups.js if that matters, because GOOG and GOOGL are one '
+      + 'company and treating them as two leaders is a tautology.',
+  },
+
+];
+
+/**
+ * INTRADAY screens — a SEPARATE list, deliberately not part of SCREENS.
+ *
+ * SCREENS feed `mergeByConfluence`, which allocates 15 continuation and 5
+ * reversal slots into a SWING watchlist. A pre-market gap list is a different
+ * product on a different horizon, and putting it in the same merge would hand
+ * swing slots to day-trade gappers. It also cannot declare a `direction`,
+ * because a gap screen takes both sides at once, and the merge needs one.
+ *
+ * So the intraday tier gets its own list, run on its own schedule.
+ */
+export const INTRADAY_SCREENS = [
+/**
+   * PRE-MARKET GAP — the intraday tier had NO screener at all, which was wrong.
+   *
+   * The catalogue said "intraday setups are not screened from daily bars". The
+   * scanner returns `gap`, `premarket_change` and `premarket_volume`, so a
+   * pre-open watchlist is entirely buildable, and it is how day traders build one.
+   *
+   * The session field matters here: `relative_volume_10d_calc` is UNSAFE pre-open
+   * because it folds the forming day, but the premarket_* fields are the RIGHT
+   * ones then — they are ABOUT the pre-market rather than a partial day
+   * masquerading as a whole one.
+   */
+  {
+    key: 'premarket_gap',
+    direction: 'either',
+    name: 'Pre-market gap with volume',
+    bet: 'A name gapping on real pre-market volume, which is where an intraday range break can start.',
+    horizon_side: 'INTRADAY — no academic evidence in this repo either way. Practitioner sources only.',
+    evidence: 'C. Every intraday setup in the catalogue rests on practitioner books. What IS measured and relevant: a '
+      + 'gap of 5% or more against a trend is the trend-invalidation threshold Shannon states three separate times, and '
+      + 'luld_band gives how far a name can travel before it halts — bands DOUBLE between 09:30 and 09:45.',
+    session: 'premarket',
+    columns: ['gap', 'premarket_change', 'premarket_volume', 'float_shares_outstanding'],
+    filter: [
+      { left: 'close', operation: 'in_range', right: [2, 500] },
+      { left: 'average_volume_10d_calc', operation: 'greater', right: 500000 },
+    ],
+    // Gap magnitude AND real participation. A gap on no volume is a quote, not a move.
+    refine: (r) => {
+      const g = Number(r.premarket_change ?? r.gap);
+      const v = Number(r.premarket_volume);
+      return Number.isFinite(g) && Math.abs(g) >= 2 && Number.isFinite(v) && v >= 50000;
+    },
+    rank: (r) => Math.abs(Number(r.premarket_change ?? r.gap) || 0),
+    session_note: 'Pre-open ONLY, and deliberately so. It ranks on premarket_change and premarket_volume, which describe '
+      + 'the pre-market session. It does NOT rank on relative_volume_10d_calc, which scannerTrust marks unsafe pre-open '
+      + 'because a partial day carries a fraction of its eventual volume (SPY measured 6.7M against about 45M).',
   },
 ];
 

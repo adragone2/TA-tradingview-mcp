@@ -97,6 +97,14 @@ export const SCREEN_BUCKET = Object.freeze({
   rs_leadership: 'MONTHS',
   volatility_contraction: 'WEEKS',  // a coil resolves in days; no horizon evidence of its own
   structural_reversal: 'WEEKS',
+  // Added with the four catalogue-coverage screens. The contract test above
+  // caught their absence: an unbucketed screen's candidates go to `unrouted` and
+  // vanish from the watchlist silently.
+  breakout: 'WEEKS',                // a breakout resolves or fails in days, and it is
+                                    // a CONTINUATION bet sitting in the reversal zone
+  short_term_reversal: 'WEEKS',      // Nagel's 2-10 day window, by construction
+  group_leadership: 'MONTHS',        // a cross-sectional group rank, so it inherits the
+                                    // monthly cadence every cross-sectional factor needs
 });
 
 /**

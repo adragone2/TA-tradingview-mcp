@@ -104,12 +104,39 @@ log(`Morning screen — schema ${SCHEMA_VERSION}`);
 log(`  universe: ${DEFAULT_UNIVERSE.map((u) => UNIVERSES[u].name).join(' + ')}`);
 
 // ── stage 1 ─────────────────────────────────────────────────────────────────
+/**
+ * A screen may now declare three things the original five did not need:
+ *   `columns`  extra scanner columns — without them its refine reads undefined
+ *   `post`     a cross-row step (group_leadership keeps two per industry group)
+ *   `session`  'settled' must not run pre-open; 'premarket' runs ONLY pre-open
+ *
+ * Honouring `session` matters most. Skipping the check would let
+ * short_term_reversal rank on fields that fold the forming day, and would run
+ * premarket_gap after the close when premarket_change is stale.
+ */
+const screenTrust = scannerTrust();
 const byScreen = {};
+const skippedScreens = [];
 for (const s of SCREENS) {
-  const r = await scan({ filter: s.filter, columns: BASE_COLUMNS, range: [0, 500] });
-  const kept = r.rows.filter(s.refine).sort((a, b) => s.rank(b) - s.rank(a));
+  if (s.session === 'settled' && !screenTrust.volume_fields_usable) {
+    skippedScreens.push({ key: s.key, why: `needs a settled session; ${screenTrust.reason}` });
+    log(`  ${s.key.padEnd(24)} SKIPPED — ${screenTrust.reason}`);
+    continue;
+  }
+  if (s.session === 'premarket' && screenTrust.volume_fields_usable) {
+    skippedScreens.push({ key: s.key, why: 'pre-open only; the session is over so premarket fields are stale' });
+    log(`  ${s.key.padEnd(24)} SKIPPED — pre-open only, session is over`);
+    continue;
+  }
+
+  const columns = s.columns ? [...BASE_COLUMNS, ...s.columns] : BASE_COLUMNS;
+  const r = await scan({ filter: s.filter, columns, range: [0, 500] });
+  let kept = r.rows.filter(s.refine).sort((a, b) => s.rank(b) - s.rank(a));
+  const beforePost = kept.length;
+  if (typeof s.post === 'function') kept = s.post(kept);
   byScreen[s.key] = kept;
-  log(`  ${s.key.padEnd(24)} ${String(r.total).padStart(5)} raw -> ${String(kept.length).padStart(4)} refined`);
+  log(`  ${s.key.padEnd(24)} ${String(r.total).padStart(5)} raw -> ${String(beforePost).padStart(4)} refined`
+    + (s.post ? ` -> ${String(kept.length).padStart(4)} after cross-row step` : ''));
 }
 
 const merged = mergeByConfluence(byScreen, { top: TOP, slots: DEFAULT_SLOTS });
@@ -344,6 +371,7 @@ const report = {
   generated_at: new Date().toISOString(),
   kind: 'morning-screen',
   universe: DEFAULT_UNIVERSE.map((u) => UNIVERSES[u].name),
+  ...(skippedScreens.length ? { screens_skipped: skippedScreens } : {}),
   screens: SCREENS.map((s) => ({
     key: s.key, name: s.name, direction: s.direction, bet: s.bet,
     horizon_side: s.horizon_side, evidence: s.evidence, candidates: byScreen[s.key].length,

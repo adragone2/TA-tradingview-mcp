@@ -23,7 +23,7 @@
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 18 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
-| [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
+| [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict. **8 swing screens + 1 intraday**, one per strategy family |
 | [docs/screening-parameters.md](docs/screening-parameters.md) | The exact screen parameters (generated — `node scripts/gen-screens-doc.js`) |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
@@ -128,6 +128,10 @@ Each of these exists because it has already gone wrong here.
 **Three confirmation gates measured here, three failures. Stop building them.** `level_pressure` collapsed out of sample (+39.1 → +4.6 on more data). `stage_plan`'s Stage 2 gate made forward outcomes WORSE (long 33.5% vs a 36.4% baseline). Livermore's two-leader **Key Price** discarded 58% of signals and cost **9.3 points** of win rate (21.6% vs 30.9%, z −2.57). The shared mechanism: a confirmation rule describes what has ALREADY happened, and below ~21 trading days the documented effect is reversal. `group_context` is still worth having as a DESCRIPTION — which group, who leads, who lags — but agreement between leaders is not evidence the trade is better.
 
 **Dual share classes are not two stocks.** GOOG/GOOGL were being used as a group's "two leaders" and confirmed each other on **57 of 57** signals — a tautology that diluted the tandem measurement from −9.3 to −5.6. `dedupeShareClasses` collapses them by issuer name *and* by market cap matching to within rounding, because dual classes report the same company cap. Any group, peer or correlation work must dedupe first.
+
+**Every strategy needs a screener that can actually find it.** The catalogue pointed  at  — and measured on the live universe those two screens share **ZERO** of their candidates, because a name at a new high fails the pullback filter three ways (RSI outside 35–55, monthly performance outside −15/+5, and *too close* to the high for the 2–25% band). 97 breakout candidates the pullback screen cannot see. Eight swing screens now, one per strategy family, plus  held separately:  feed a confluence merge that allocates 15 continuation and 5 reversal slots to a **swing** watchlist, so a pre-market gap list would take slots from it.
+
+**A new screen needs a bucket, a session and a both-sided threshold.** Three contract tests exist because each has already gone wrong: an unbucketed screen routes to  and vanishes from the watchlist silently; a  field stops  ranking on fields that fold the forming day and stops  running on stale data after the close; and a ONE-SIDED threshold on RSI or short-horizon performance selects the tail, which is collapses rather than dips. All three caught real mistakes in the screens added for the catalogue.
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 

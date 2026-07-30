@@ -307,7 +307,7 @@
       "evidence_tier": "B",
       "evidence": "Nagel (2012): short-term reversal as compensation for providing liquidity. This is the one documented effect that BELONGS in the 2-10 day window rather than fighting it.",
       "evidence_caveat": "CONDITIONAL. It 'earns essentially nothing unconditionally' — it is only active when VIX is elevated. tier_a_factors keeps it INACTIVE otherwise, and that gate is the strategy.",
-      "screener": "morning-screen:tier_a_factors",
+      "screener": "screens:short_term_reversal (+ morning-screen:tier_a_factors for the VIX gate)",
       "criteria": [
         {
           "left": "rsi(2)",
@@ -478,7 +478,7 @@
       "evidence_tier": "C",
       "evidence": "No positive measurement. breakout_check applies 5 measurements and its noise floor is 32.5% on random walks (17.5% passing 3+ checks), so a bare breakout is close to a coin flip.",
       "evidence_caveat": "A CONTINUATION bet at the horizon where continuation is weakest. Also: the TOUCH COUNT of the level carries nothing — the break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3. 'Tested three times so it is strong' is unsupported in both directions.",
-      "screener": "screens:momentum_pullback",
+      "screener": "screens:breakout",
       "criteria": [
         {
           "left": "close",
@@ -525,7 +525,8 @@
       "risk_rules": [
         "max_risk_per_trade",
         "min_rr"
-      ]
+      ],
+      "screener_note": "Was pointed at screens:momentum_pullback, which cannot surface a breakout: measured ZERO overlap between the two screens, because a name at a new high fails the pullback filter on RSI, monthly performance AND the off-high band."
     },
     "opening_range_break": {
       "label": "Opening range breakout",
@@ -534,7 +535,7 @@
       "evidence_tier": "C",
       "evidence": "Practitioner sources only. Crabel's own ORB needs the first thirty seconds of trade and is deliberately NOT implemented here.",
       "evidence_caveat": "Needs sub-minute data this toolchain does not have. The 5-minute version below is a proxy, not Crabel's rule.",
-      "screener": "none — intraday setups are not screened from daily bars",
+      "screener": "intraday_screens:premarket_gap",
       "criteria": [
         {
           "left": "minutes_since_open",
@@ -587,7 +588,8 @@
       "risk_rules": [
         "max_risk_per_trade",
         "max_daily_loss"
-      ]
+      ],
+      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "vwap_reclaim": {
       "label": "VWAP reclaim continuation (lightning bolt)",
@@ -596,7 +598,7 @@
       "evidence_tier": "C",
       "evidence": "Practitioner source. No measurement.",
       "evidence_caveat": "The intraday U-shaped volume curve is partly SELF-REINFORCING because VWAP-targeting execution algorithms trade a percentage of volume per time bucket. That makes VWAP a real reference point and not a forecast.",
-      "screener": "none — intraday",
+      "screener": "intraday_screens:premarket_gap",
       "criteria": [
         {
           "left": "minutes_since_open",
@@ -638,7 +640,8 @@
       "risk_rules": [
         "max_risk_per_trade",
         "max_daily_loss"
-      ]
+      ],
+      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "parabolic_fade": {
       "label": "Parabolic reversal (fade to the 9 EMA)",
@@ -647,7 +650,7 @@
       "evidence_tier": "C",
       "evidence": "Practitioner source. No measurement.",
       "evidence_caveat": "A counter-trend short. Shannon's rule is that shorts in an uptrend carry 'much higher' risk, and a squeeze can be violent — check short_interest and shorts_position first, since squeeze fuel needs shorts who are LOSING.",
-      "screener": "none — intraday",
+      "screener": "intraday_screens:premarket_gap",
       "criteria": [
         {
           "left": "price",
@@ -686,7 +689,8 @@
       "risk_rules": [
         "max_risk_per_trade",
         "max_daily_loss"
-      ]
+      ],
+      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "REJECTED_candlestick_reversal": {
       "label": "Candlestick reversal patterns",
@@ -830,7 +834,7 @@
       "evidence_tier": "C",
       "evidence": "Livermore's Discovery 1 and 2: trade only the leaders, and group movement is the key to individual stock movement. \"If you cannot make money out of the leading active issues, you are not going to make money out of the stock market.\" No measurement of the LEADER-selection part here either way.",
       "evidence_caveat": "The group-CONFIRMATION half of his rule was measured and FAILED — see REJECTED_tandem_confirmation. What survives untested is the narrower idea of preferring the largest name in a strong group over a laggard. Source is a biographer's reconstruction, n = 1 trader, 1890s-1930s, and Livermore went bankrupt four times.",
-      "screener": "group_context (scanner industry field) + screens:rs_leadership",
+      "screener": "screens:group_leadership",
       "criteria": [
         {
           "left": "close",

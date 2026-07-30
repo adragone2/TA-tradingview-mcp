@@ -107,6 +107,52 @@ and then vetoed — `trade_cost` would eat the edge before it exists.
 
 **Client-side refine:** within 15% of the 52-week high
 
+## Breakout at a new high — `breakout`
+
+**Direction:** continuation  
+**Horizon:** CONTINUATION — the weak side under 21 days. Run horizon_prior.  
+**Bet:** Price pushing through overhead supply, where the sellers who bought the old high are cleared out.  
+**Evidence:** C for the breakout itself: breakout_check has a 32.5% random-walk rate (17.5% passing 3+ checks), so a bare breakout is close to a coin flip. The SUPPLY mechanism is better evidenced — it is George and Hwang 52-week-high reasoning, which Livermore arrived at independently in the 1920s.
+
+| Field | Op | Value |
+|---|---|---|
+| `market_cap_basic` | > | 1000M |
+| `Perf.6M` | > | 0 |
+| `RSI` | in | 55 … 80 |
+
+**Client-side refine:** within 3% of the 52-week high
+
+## Short-term reversal (liquidity provision) — `short_term_reversal`
+
+**Direction:** reversal  
+**Horizon:** REVERSAL — the side the evidence favours under 21 days, and the only screen here on the strong side of the boundary.  
+**Bet:** A sharp short-horizon loser whose long-term trend is intact — paid for providing liquidity, not for being cheap.  
+**Evidence:** B. Nagel (2012). CONDITIONAL: it "earns essentially nothing unconditionally" and is only active when VIX is elevated. The runner must apply that gate — this screen cannot see VIX.
+
+| Field | Op | Value |
+|---|---|---|
+| `market_cap_basic` | > | 2000M |
+| `Perf.1M` | in | -30 … -8 |
+| `Perf.Y` | > | 0 |
+| `RSI` | in | 10 … 35 |
+
+**Client-side refine:** 5–30% below the 52-week high
+
+## Leading stock in a leading group — `group_leadership`
+
+**Direction:** continuation  
+**Horizon:** CONTINUATION  
+**Bet:** The largest name in an industry group that is moving as a group.  
+**Evidence:** C. Livermore core, unmeasured here. Note what WAS measured and failed: requiring the SECOND leader to confirm cost 9.3 points of win rate (21.6% vs 30.9%, z -2.57) and discarded 58% of signals. So this screen deliberately does NOT require tandem agreement — it only prefers a leader over a laggard.
+
+| Field | Op | Value |
+|---|---|---|
+| `market_cap_basic` | > | 2000M |
+| `Perf.6M` | > | 0 |
+| `RSI` | in | 45 … 75 |
+
+**Client-side refine:** (r) => !!r.industry
+
 ## Veto — runs last, on the survivors
 
 | Threshold | Value | Why |

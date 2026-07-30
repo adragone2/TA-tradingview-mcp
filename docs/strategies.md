@@ -63,7 +63,7 @@ Closed out by **the session close**.
 
 | | |
 |---|---|
-| **Screener** | _none — intraday setups are not screened from daily bars_ |
+| **Screener** | `intraday_screens:premarket_gap` |
 | **Entry** | Break of the first 5-minute candle's high, above VWAP. |
 | **Exit** | Loss of VWAP. Flat by the close. |
 | **Exit reason keys** | `stop_hit`, `time_elapsed`, `target_hit` — log these, `exit_mix` reads them |
@@ -94,7 +94,7 @@ Closed out by **the session close**.
 
 | | |
 |---|---|
-| **Screener** | _none — intraday_ |
+| **Screener** | `intraday_screens:premarket_gap` |
 | **Entry** | Fade back toward the 9 EMA once the extension stalls. |
 | **Exit** | Prior candle extreme as the stop. Cover into the 9 EMA. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `too_steep` — log these, `exit_mix` reads them |
@@ -122,7 +122,7 @@ Closed out by **the session close**.
 
 | | |
 |---|---|
-| **Screener** | _none — intraday_ |
+| **Screener** | `intraday_screens:premarket_gap` |
 | **Entry** | Breaks VWAP, pulls back less than half the move, then continues. Volume falls on the pullback and rises on the continuation. |
 | **Exit** | Beyond VWAP. Flat by the close. |
 | **Exit reason keys** | `stop_hit`, `time_elapsed`, `tape_seller` — log these, `exit_mix` reads them |
@@ -159,7 +159,7 @@ Closed out by **within two trading weeks**.
 
 | | |
 |---|---|
-| **Screener** | `morning-screen:tier_a_factors` |
+| **Screener** | `screens:short_term_reversal (+ morning-screen:tier_a_factors for the VIX gate)` |
 | **Entry** | Only when VIX is elevated. Buy the biggest short-horizon losers that are still above their long-term trend. |
 | **Exit** | 2 to 10 days, on mean reversion or the time stop — whichever comes first. |
 | **Exit reason keys** | `target_hit`, `time_elapsed`, `stop_hit` — log these, `exit_mix` reads them |
@@ -215,7 +215,7 @@ Closed out by **within two trading weeks**.
 
 | | |
 |---|---|
-| **Screener** | `screens:momentum_pullback` |
+| **Screener** | `screens:breakout` |
 | **Entry** | A CLOSE beyond the level, with volume at least normal for the period. Shannon is explicit that volume CONFIRMS and never triggers — waiting for expansion produces late entries. |
 | **Exit** | Reclaimed next bar means it failed. Stop just beyond the broken level; measured move as the first target. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `gap_against_trend` — log these, `exit_mix` reads them |
@@ -570,7 +570,7 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 
 | | |
 |---|---|
-| **Screener** | `group_context (scanner industry field) + screens:rs_leadership` |
+| **Screener** | `screens:group_leadership` |
 | **Entry** | Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm — that filter was measured and hurts. |
 | **Exit** | Monthly rerank, or when the name's own trend breaks. His hard rule: never lose more than 10% of the capital committed to a trade, and never average down. |
 | **Exit reason keys** | `time_elapsed`, `trend_broken`, `stop_hit`, `gap_against_trend` — log these, `exit_mix` reads them |

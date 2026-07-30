@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { offHighPct, daysToEarnings, movedSinceBar, UNIVERSES, DEFAULT_UNIVERSE, LIQUIDITY_FILTER } from '../src/core/scanner.js';
 import { parseSections, flattenSections, buildWithPreserved } from '../src/core/watchlist_rewrite.js';
-import { SCREENS, veto, VETO_DEFAULTS, mergeByConfluence, overlapMatrix, DEFAULT_SLOTS } from '../src/core/screens.js';
+import { SCREENS, INTRADAY_SCREENS, veto, VETO_DEFAULTS, mergeByConfluence, overlapMatrix, DEFAULT_SLOTS } from '../src/core/screens.js';
 
 const row = (o = {}) => ({
   symbol: 'NASDAQ:TEST', name: 'TEST', close: 100,
@@ -251,5 +251,122 @@ describe('KEEP — sections survive the daily rewrite', () => {
 
   test('flatten is the inverse of parse', () => {
     assert.deepEqual(flattenSections(parseSections(cur)), cur);
+  });
+});
+
+describe('the four screens added for catalogue coverage', () => {
+  const byKey = (k) => [...SCREENS, ...INTRADAY_SCREENS].find((s) => s.key === k);
+
+  test('every strategy screener now names a screen that exists', () => {
+    // The catalogue pointed breakout_continuation at momentum_pullback, which
+    // cannot surface a breakout. This is the guard against that recurring.
+    for (const k of ['breakout', 'short_term_reversal', 'group_leadership', 'premarket_gap']) {
+      assert.ok(byKey(k), `screen ${k} missing`);
+    }
+    assert.equal(SCREENS.length, 8, 'eight swing screens');
+    assert.equal(INTRADAY_SCREENS.length, 1, 'premarket_gap is intraday and must NOT be in the confluence merge');
+  });
+
+  test('breakout selects the OPPOSITE band from momentum_pullback', () => {
+    /**
+     * Measured: ZERO overlap between the two on the live universe, 97 breakout
+     * candidates the pullback screen cannot see. A name at a new high fails the
+     * pullback filter three ways — RSI, monthly performance, and the off-high band.
+     */
+    const pb = byKey('momentum_pullback');
+    const bo = byKey('breakout');
+    const atHigh = { price_52_week_high: 100, close: 99.5, RSI: 66, 'Perf.1M': 18, 'Perf.6M': 30, 'Perf.Y': 50 };
+    assert.equal(bo.refine(atHigh), true, 'breakout must accept a name at its high');
+    assert.equal(pb.refine(atHigh), false, 'the pullback screen must reject it');
+    const retraced = { price_52_week_high: 100, close: 90, RSI: 45, 'Perf.1M': -8, 'Perf.6M': 20, 'Perf.Y': 40 };
+    assert.equal(pb.refine(retraced), true);
+    assert.equal(bo.refine(retraced), false, 'breakout must reject a name 10% off its high');
+  });
+
+  test('short_term_reversal is the only screen on the STRONG side of the horizon boundary', () => {
+    const s = byKey('short_term_reversal');
+    assert.equal(s.direction, 'reversal');
+    assert.match(s.horizon_side, /only screen here on the strong/);
+    // And it must declare the VIX condition rather than implying it is unconditional.
+    assert.equal(s.requires_vix_gate, true);
+    assert.match(s.evidence, /earns essentially nothing unconditionally/);
+  });
+
+  test('short_term_reversal bounds the drawdown on BOTH sides', () => {
+    // The module header's own lesson: a one-sided threshold selects collapses.
+    const s = byKey('short_term_reversal');
+    assert.equal(s.refine({ price_52_week_high: 100, close: 88 }), true);
+    assert.equal(s.refine({ price_52_week_high: 100, close: 40 }), false, 'a 60% collapse is not a dip');
+    assert.equal(s.refine({ price_52_week_high: 100, close: 99 }), false, 'a 1% dip is not oversold');
+  });
+
+  test('group_leadership keeps two per group, and only groups with a POSITIVE median', () => {
+    const s = byKey('group_leadership');
+    assert.equal(typeof s.post, 'function');
+    const rows = [
+      { symbol: 'A', industry: 'Semis', market_cap_basic: 5e11, 'Perf.1M': 10 },
+      { symbol: 'B', industry: 'Semis', market_cap_basic: 3e11, 'Perf.1M': 8 },
+      { symbol: 'C', industry: 'Semis', market_cap_basic: 1e11, 'Perf.1M': 6 },
+      { symbol: 'D', industry: 'Airlines', market_cap_basic: 5e10, 'Perf.1M': -12 },
+      { symbol: 'E', industry: 'Airlines', market_cap_basic: 4e10, 'Perf.1M': -15 },
+    ];
+    const out = s.post(rows).map((r) => r.symbol);
+    assert.deepEqual(out, ['A', 'B'], 'two leaders of the strong group only');
+    assert.ok(!out.includes('C'), 'the third-largest is not a leader');
+    assert.ok(!out.includes('D'), 'a group with a negative median is excluded entirely');
+  });
+
+  test('group_leadership uses a MEDIAN so one runaway name cannot carry a group', () => {
+    const s = byKey('group_leadership');
+    const rows = [
+      { symbol: 'MOON', industry: 'X', market_cap_basic: 1e10, 'Perf.1M': 300 },
+      { symbol: 'P', industry: 'X', market_cap_basic: 9e11, 'Perf.1M': -5 },
+      { symbol: 'Q', industry: 'X', market_cap_basic: 8e11, 'Perf.1M': -6 },
+    ];
+    assert.equal(s.post(rows).length, 0, 'a median of -5 must exclude the group despite the +300% name');
+  });
+
+  test('group_leadership does NOT require tandem agreement, because that was measured and hurts', () => {
+    assert.match(byKey('group_leadership').evidence, /9\.3 points/);
+    assert.match(byKey('group_leadership').evidence, /does NOT require tandem/);
+    assert.match(byKey('group_leadership').post_note, /GOOG and GOOGL are one/);
+  });
+
+  test('premarket_gap needs BOTH a gap and real pre-market volume', () => {
+    // A gap on no volume is a quote, not a move.
+    const s = byKey('premarket_gap');
+    assert.equal(s.refine({ premarket_change: 6, premarket_volume: 200000 }), true);
+    assert.equal(s.refine({ premarket_change: 6, premarket_volume: 1000 }), false, 'no participation');
+    assert.equal(s.refine({ premarket_change: 0.4, premarket_volume: 900000 }), false, 'not a gap');
+    assert.equal(s.refine({ premarket_change: -7, premarket_volume: 300000 }), true, 'gaps DOWN count too');
+  });
+
+  test('premarket_gap is kept OUT of the swing merge, which allocates 15/5 slots', () => {
+    // Putting it in SCREENS would hand swing watchlist slots to day-trade gappers,
+    // and it cannot declare a single direction because it takes both sides.
+    assert.ok(!SCREENS.some((s) => s.key === 'premarket_gap'));
+    assert.equal(INTRADAY_SCREENS[0].key, 'premarket_gap');
+    assert.equal(INTRADAY_SCREENS[0].direction, 'either');
+  });
+
+  test('the two session-restricted screens declare which side they run on', () => {
+    /**
+     * Honouring this is what stops short_term_reversal ranking on fields that
+     * fold the forming day, and stops premarket_gap running on stale premarket
+     * data after the close.
+     */
+    assert.equal(byKey('short_term_reversal').session, 'settled');
+    assert.equal(byKey('premarket_gap').session, 'premarket');
+    assert.match(byKey('premarket_gap').session_note, /relative_volume_10d_calc/);
+    assert.match(byKey('premarket_gap').session_note, /6\.7M against about 45M/);
+  });
+
+  test('every screen still declares its horizon side and evidence', () => {
+    // The field the module header calls the one that matters most.
+    for (const s of SCREENS) {
+      assert.ok(s.horizon_side && s.horizon_side.length > 10, `${s.key} has no horizon_side`);
+      assert.ok(s.evidence && s.evidence.length > 20, `${s.key} has no evidence`);
+      assert.ok(s.bet && s.filter && s.refine && s.rank, `${s.key} is incomplete`);
+    }
   });
 });
