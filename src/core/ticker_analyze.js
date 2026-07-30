@@ -66,7 +66,17 @@ async function section(results, key, fn) {
     results[key] = { ok: true, value };
     return value;
   } catch (err) {
-    results[key] = { ok: false, error: err.message };
+    /**
+     * `err.notApplicable` marks a definite negative ANSWER, not a breakdown — the
+     * symbol is outside the scanned universe, the prior does not apply at this
+     * resolution. The score counts those as neither a pass nor a failure.
+     *
+     * It has to be set deliberately on the error. Anything that merely throws is a
+     * failure, so this cannot become a way to quietly silence a required section.
+     */
+    results[key] = err.notApplicable
+      ? { ok: false, not_applicable: true, reason: err.message }
+      : { ok: false, error: err.message };
     return null;
   }
 }
@@ -82,6 +92,22 @@ async function section(results, key, fn) {
 export async function analyzeTicker({
   count = 300, lookback = 5, holding_days = 10, days_to_catalyst = null,
   draw = true, shared = null, clear_scope = 'all',
+  /**
+   * TA's own row for this symbol, and the drawing group. BOTH exist for the Sunday
+   * review, and both are the kind of term a unification silently drops.
+   *
+   * `ta_row` carries TA's stop, which `drawFindings` renders as its own line so the
+   * report and TA can be read against each other. This function passed `null` — fine
+   * for a standalone analysis, which has no portfolio row, and a silent regression
+   * the moment a caller that HAS one adopts this function.
+   *
+   * `draw_group` matters because `clear_scope: 'mcp'` clears the named group. The
+   * Sunday run has drawn into `sunday-<TICKER>` for months; switching it to this
+   * function's default `analysis-<SYMBOL>` would leave every previous week's shapes
+   * uncleared, tracked, and invisible to the group clear that was supposed to remove
+   * them.
+   */
+  ta_row = null, draw_group = null,
 } = {}) {
   const results = {};
 
@@ -254,8 +280,46 @@ export async function analyzeTicker({
       range: [0, 2000],
       sort: { sortBy: 'market_cap_basic', sortOrder: 'desc' },
     })).rows || [];
-    const row = rows.find((x) => String(x.symbol).split(':').pop().toUpperCase() === bare);
-    if (!row) throw new Error(`${bare} is not in the scanned universe — "not found", not "no setup"`);
+    /**
+     * A scan that returned NOTHING is a failure. A scan that returned rows without
+     * this symbol is a fact about the INSTRUMENT — the universe is sp500 + nasdaq +
+     * russell2000, so an ETF, an ADR or a small cap outside those indices is simply
+     * not covered. The two must not read the same.
+     */
+    if (!rows.length) throw new Error('the scanner returned no rows at all — the scan itself failed');
+    let row = rows.find((x) => String(x.symbol).split(':').pop().toUpperCase() === bare);
+
+    /**
+     * NOT IN THE POOL IS NOT THE SAME AS NOT EXISTING.
+     *
+     * `rows` is the morning screen's CANDIDATE universe — sp500 + nasdaq +
+     * russell2000. That restriction is right for hunting candidates and wrong for
+     * analysing a named symbol: the Sunday review takes whatever TA holds, with no
+     * exclusions, and a held position outside the index pool still has a scanner row.
+     *
+     * Measured on the 2026-07-30 review, three of the 22 "not covered" names were
+     * ordinary stocks — BE at $61.0B, FTI at $27.5B, MLI at $14.8B — whose screens
+     * could have been evaluated the whole time. NYSE names between the S&P 500 and
+     * the Russell 2000 fall in the gap; the Nasdaq Composite has no such hole.
+     *
+     * So: one targeted lookup, no universe. Only reached when the pool misses.
+     */
+    if (!row) {
+      const direct = await scan({
+        universe: [],
+        filter: [{ left: 'name', operation: 'equal', right: bare }],
+        columns: requiredColumns(),
+        range: [0, 5],
+      });
+      row = (direct.rows || []).find((x) => String(x.symbol).split(':').pop().toUpperCase() === bare) || null;
+    }
+
+    if (!row) {
+      const e = new Error(`${bare} has no scanner row at all — not a US-listed equity or fund the `
+        + 'scanner covers. "Not covered", not "no setup".');
+      e.notApplicable = true;
+      throw e;
+    }
     const trust = scannerTrust();
     return { row, ...screenCheck(row, { volume_fields_usable: trust.volume_fields_usable, include_intraday: true }) };
   });
@@ -283,8 +347,32 @@ export async function analyzeTicker({
 
   // Strategy criteria, evaluated for every strategy the screens named.
   await section(results, 'strategy_check', async () => {
-    const named = (screens?.strategies || []).filter((x) => x.evidence_tier !== 'REJECTED');
-    if (!named.length) throw new Error('no non-REJECTED strategy was named by the screens');
+    /**
+     * "Passes no screen" is a RESULT, not a failure to run.
+     *
+     * This threw, so a held position matching none of our setups scored as an
+     * INCOMPLETE analysis. On the morning screen that never showed, because every
+     * candidate arrives BY passing a screen. On the Sunday review it fires constantly
+     * — the list is whatever TA holds — and "TA holds this and it matches none of our
+     * strategies" is one of the more useful things the review can say.
+     *
+     * A score that cries wolf on a correct answer is a score nobody reads.
+     */
+    if (!screens) {
+      const e = new Error('the screens section did not run, so no strategy could be named');
+      e.notApplicable = true;
+      throw e;
+    }
+    const named = (screens.strategies || []).filter((x) => x.evidence_tier !== 'REJECTED');
+    if (!named.length) {
+      return {
+        matched: 0,
+        strategies: [],
+        verdict: 'passes no screen, so no catalogue strategy applies here',
+        note: 'A real answer, not a gap. For a held position it means the chart matches none of '
+          + 'the 14 non-REJECTED setups in strategies.json.',
+      };
+    }
     const { evaluateCriteria, buildContext } = await import('./strategy.js');
     const ctx = buildContext(bars, {});
     return named.map((st) => ({
@@ -382,9 +470,9 @@ export async function analyzeTicker({
   let drawings = null;
   if (draw) {
     drawings = await section(results, 'drawings', async () => drawFindings(
-      symbol, a, null, verdict?.bias === 'BEARISH' ? 'short' : 'long',
+      symbol, a, ta_row, verdict?.bias === 'BEARISH' ? 'short' : 'long',
       a._raw_patterns, bars, a._raw_channel,
-      `analysis-${String(symbol || '').replace(/^.*:/, '')}`,
+      draw_group || `analysis-${String(symbol || '').replace(/^.*:/, '')}`,
       /**
        * Clear EVERYTHING first — the DEFAULT, and the owner's rule for an analysis.
        * 'mcp' is not enough interactively: it leaves drawings from older code, from
@@ -423,10 +511,63 @@ export async function analyzeTicker({
     /** Every block assess() produced, minus the two raw payloads meant for the drawer. */
     assessment: Object.fromEntries(Object.entries(a).filter(([k]) => !k.startsWith('_'))),
     primary_levels: primary?.shown || null,
-    /** Everything that used to be declared-and-skipped, now measured. */
-    context: Object.fromEntries(Object.entries(results)
-      .filter(([, v]) => v.ok && v.value !== undefined)
-      .map(([k, v]) => [k, v.value])),
+    /**
+     * Everything that used to be declared-and-skipped, now measured.
+     *
+     * ── Two things are deliberately NOT dumped here ──
+     *
+     * This mapped every section's raw value straight out, which duplicated the whole
+     * batch's SHARED objects onto every single ticker. Measured on a 49-ticker Sunday
+     * review: `position_and_calendar` carried the entire TA context (every holding,
+     * every earnings row) at **52KB per ticker**, and `benchmark` carried the SPY bar
+     * ARRAY at **28KB per ticker** — about 4MB of the 13.8MB file was the same two
+     * objects written 49 times. `assessment`, `verdict`, `drawings`,
+     * `entry_hypothesis` and `primary_levels` were duplicated too, since each is
+     * already a top-level key on this same object.
+     *
+     * So: promoted keys are excluded, and the two shared blobs are reduced to THIS
+     * symbol's slice. Nothing measured is lost — `held`, `earnings` and `regime` are
+     * what any reader wants per ticker, and a benchmark's own bars are not a finding.
+     */
+    context: (() => {
+      const PROMOTED = new Set(['assessment', 'verdict', 'drawings', 'entry_hypothesis', 'primary_levels']);
+      const out = {};
+      for (const [k, v] of Object.entries(results)) {
+        if (!v.ok || v.value === undefined || PROMOTED.has(k)) continue;
+        out[k] = v.value;
+      }
+      if (out.benchmark) {
+        out.benchmark = {
+          symbol: out.benchmark.symbol,
+          bars: out.benchmark.bars?.length ?? null,
+          reused: !!out.benchmark.reused,
+          note: 'The benchmark SERIES is not carried per ticker — relative_strength is the finding.',
+        };
+      }
+      if (out.position_and_calendar) {
+        const ctx = out.position_and_calendar;
+        out.position_and_calendar = {
+          held: held || null,
+          earnings: earnings || null,
+          days_to_earnings: daysToEarnings ?? null,
+          /**
+           * The STAGE only, not TA's whole macro view.
+           *
+           * `regime` carries TA's geopolitical read, crypto crash templates, the
+           * recession playbook, Exter's pyramid — 22KB, identical on every ticker,
+           * and it CAME FROM TA, which is the consumer of this report. Sending it
+           * back 49 times is round-tripping. The stage is what a per-ticker analysis
+           * actually uses (it carries the position sizing); the rest is one
+           * `ta_regime` call away for anyone who wants it.
+           */
+          regime_stage: ctx.regime?.stage ?? null,
+          sources: ctx.sources ?? null,
+          note: "This symbol's slice. TA's full context and macro regime are identical across the "
+            + 'batch and are not repeated per ticker — call ta_regime for the full block.',
+        };
+      }
+      return out;
+    })(),
     entry_hypothesis: hypothesis,
     drawings,
     sections: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, {

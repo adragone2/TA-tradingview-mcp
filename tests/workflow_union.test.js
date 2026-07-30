@@ -125,6 +125,38 @@ describe('every fix survives the union', () => {
     assert.match(src('src/core/patterns_draw.js'), /verdict === 'NEUTRAL' && candidates\.length > 1/);
   });
 
+  test('a definite negative ANSWER is not scored as a failure', () => {
+    /**
+     * Two cases surfaced on the first Sunday run, and both would have made every
+     * affected ticker read INCOMPLETE:
+     *
+     *   NUKZ is an ETF, so it is not in sp500 + nasdaq + russell2000 and `screens`
+     *   genuinely cannot run. That is a fact about the INSTRUMENT.
+     *
+     *   LRN passes no screen, so no catalogue strategy applies. That is the ANSWER,
+     *   and for a held position it is a useful one.
+     *
+     * Neither showed on the morning screen, because every candidate there arrives BY
+     * passing a screen. The Sunday list is whatever TA holds, so both fire constantly.
+     */
+    const t = src(ORCH);
+    assert.match(t, /err\.notApplicable\s*\n?\s*\? \{ ok: false, not_applicable: true, reason: err\.message \}/,
+      'section() must honour the flag');
+    assert.match(t, /e\.notApplicable = true;/, 'and something must set it');
+    // "passes no screen" RETURNS a verdict rather than throwing at all.
+    assert.match(t, /verdict: 'passes no screen, so no catalogue strategy applies here'/);
+    // An EMPTY scan is still a failure — the flag must not blur that.
+    assert.match(t, /the scanner returned no rows at all — the scan itself failed/);
+  });
+
+  test('the flag must be set deliberately, never inferred', () => {
+    // If any thrown error counted as not-applicable, a required section could be
+    // silenced by anything that happened to fail — which destroys the score.
+    const t = src(ORCH);
+    assert.ok(!/catch \(err\) \{\s*results\[key\] = \{ ok: false, not_applicable: true/.test(t),
+      'a bare throw must remain a failure');
+  });
+
   test('a null taRow cannot take the whole drawing step down', () => {
     assert.match(src(DRAW), /if \(taRow && taRow\.stop != null/,
       'standalone analysis passes no portfolio row; the unguarded read killed geometry, channel '

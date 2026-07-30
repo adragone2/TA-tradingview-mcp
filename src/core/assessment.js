@@ -245,7 +245,22 @@ export function assess(bars, spy) {
     poc: vp?.point_of_control ?? null,
     value_area_low: vp?.value_area?.low ?? null,
     value_area_high: vp?.value_area?.high ?? null,
-    price_vs_value_area: vp ? (px > vp.value_area.high ? 'above' : px < vp.value_area.low ? 'below' : 'inside') : null,
+    /**
+     * `vp?.value_area?.high`, not `vp.value_area.high`.
+     *
+     * Every other read in this block already used optional chaining; this one did
+     * not, so a profile that came back WITHOUT a value area threw straight out of
+     * `assess()` — past all thirty `safe()` wrappers — and took the entire assessment
+     * with it. The caller then had no `verdict`, and the Sunday review's
+     * `validateTa(a, ours)` crashed a second time on `ours.bias`.
+     *
+     * Found on CRYPTO:BTCUSD, whose bars carry `volume: 0` throughout: a volume
+     * profile with no volume has no value area to report. One unguarded read turned
+     * that into a total failure of a 30-block analysis.
+     */
+    price_vs_value_area: vp?.value_area
+      ? (px > vp.value_area.high ? 'above' : px < vp.value_area.low ? 'below' : 'inside')
+      : null,
     effort_vs_result: evr?.verdict ?? evr?.summary ?? null,
   };
 

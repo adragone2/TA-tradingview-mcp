@@ -26,7 +26,7 @@
  * in the group `sunday-<TICKER>`, so the report and the chart can be read
  * against each other. The prior week's group is cleared first.
  *
- * Run:  node scripts/sunday-review.js [--limit N] [--holdings] [--no-draw]
+ * Run:  node scripts/sunday-review.js [--limit N] [--no-holdings] [--no-draw]
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -57,15 +57,27 @@ import * as costs from '../src/core/costs.js';
 import * as breadth from '../src/core/breadth.js';
 import { findChannels } from '../src/core/channels.js';
 import { tradePlans } from '../src/core/pattern_trades.js';
-// assess() and ourAssessment() live in src/core/assessment.js so the morning
-// screen shares ONE copy with this script. Two copies drift silently — see
-// the module header for the run this already cost.
-import { assess, ourAssessment, CATALYST_EVIDENCE } from '../src/core/assessment.js';
-// Drawing lives in src/core/assessment_draw.js so the morning screen draws
-// the same findings from ONE implementation.
-import { drawFindings } from '../src/core/assessment_draw.js';
+/**
+ * `assess`, `ourAssessment` and `drawFindings` are NO LONGER imported here.
+ *
+ * They were called directly, which is how this script ended up with the 28
+ * measurement blocks and none of the 23 context sections. `analyzeTicker` calls all
+ * three in the right order and scores the result — so importing them again would be
+ * a second path to the same place, which is the drift this repo keeps paying for.
+ *
+ * `CATALYST_EVIDENCE` stays: `validateTa` below is Sunday-specific and grades TA's
+ * stated catalysts, which no other caller does.
+ */
+import { CATALYST_EVIDENCE } from '../src/core/assessment.js';
+import { analyzeTicker } from '../src/core/ticker_analyze.js';
+import { resolveTaSymbol } from '../src/core/ta_symbols.js';
+import { scan } from '../src/core/scanner.js';
+import { requiredColumns } from '../src/core/screen_check.js';
+import { fetchGroupRows } from '../src/core/groups.js';
 
-export const SCHEMA_VERSION = '1.0';
+// 2.0 — every ticker now carries the FULL unified analysis (analyzeTicker) under
+// `analysis`, replacing the flat `assessment` / `our_view` / `drawings` keys.
+export const SCHEMA_VERSION = '2.0';
 
 const args = process.argv.slice(2);
 const argVal = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
@@ -74,7 +86,19 @@ const LIMIT = Number(argVal('--limit', '999'));
 // urgency, so `--limit N` does NOT give a stable set of tickers between runs —
 // use this when you want a particular symbol analysed and drawn.
 const ONLY = (argVal('--tickers', '') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
-const INCLUDE_HOLDINGS = args.includes('--holdings');
+/**
+ * HOLDINGS ARE INCLUDED BY DEFAULT.
+ *
+ * This was opt-in via `--holdings`, and the scheduled task does not pass it — so the
+ * weekly review of the portfolio silently skipped every position TA was not flagging
+ * for action. Measured on 2026-07-30: TA's book held **73 positions**, the actionable
+ * list was 53, and **35 holdings were never queued** — ANET, AVGO, VOO, VXUS, ICVT,
+ * COPX, HYDR, ILIT, RING, SLVP and 25 crypto lines among them.
+ *
+ * The owner's rule: *"The sunday routine analyzes all TA tickers period. no
+ * exclusions."* An opt-in flag on a scheduled job is an exclusion by default.
+ */
+const INCLUDE_HOLDINGS = !args.includes('--no-holdings');
 const DRAW = !args.includes('--no-draw');
 const OUT_DIR = argVal('--out-dir', 'reports');
 // Below this, the structural detectors have nothing to work with — swing
@@ -89,7 +113,16 @@ const safe = (fn, fallback = null) => { try { return fn(); } catch { return fall
 
 /** Load 1D bars, verifying the series identity actually matches. */
 async function loadSymbol(ticker) {
-  await chart.setSymbol({ symbol: ticker });
+  /**
+   * Resolve BEFORE touching the chart.
+   *
+   * TA holds crypto as `BTC-USD`, and TradingView reads the hyphen as a SPREAD
+   * operator — `BTC-USD` silently becomes `CRYPTOCAP:BTC-BATS:USD`, returns 300 bars,
+   * and every detector runs happily on a synthetic series that is not the price of
+   * Bitcoin. It does not fail; it lies. See src/core/ta_symbols.js.
+   */
+  const resolved = resolveTaSymbol(ticker);
+  await chart.setSymbol({ symbol: resolved.symbol });
   await sleep(350);
   const st = await chart.getState();
   if (String(st.resolution) !== '1D') { await chart.setTimeframe({ timeframe: '1D' }); await sleep(350); }
@@ -120,10 +153,24 @@ async function loadSymbol(ticker) {
     throw new Error(`${bars.length - ranged}/${bars.length} bars have no intraday range `
       + '(open == high == low == close) — NAV-priced fund or a non-traded series, not a chart');
   }
+  /**
+   * Verify against the RESOLVED form, not TA's raw ticker.
+   *
+   * `BTC-USD` maps to `CRYPTO:BTCUSD`, so comparing the loaded series to TA's own
+   * string would reject a correct load. Comparing to `resolved.expect` still catches
+   * the thing this guard exists for — the chart handing back a different instrument
+   * than the one asked for, which is how another company's bars reached a report.
+   */
   const got = String(series.symbol || '').replace(/^.*:/, '').toUpperCase();
-  const want = String(ticker).replace(/^.*:/, '').toUpperCase();
-  if (got !== want) throw new Error(`chart returned ${series.symbol}, expected ${ticker}`);
-  return { bars, symbol: series.symbol, resolution: series.resolution };
+  const want = resolved.expect.toUpperCase();
+  if (got !== want) {
+    throw new Error(`chart returned ${series.symbol}, expected ${resolved.symbol}`
+      + (resolved.mapped ? ` (mapped from TA's "${ticker}")` : ''));
+  }
+  // `series` goes out too: analyzeTicker reads `symbol` and `resolution` off the RAW
+  // series to know what it is analysing, and handing it the trimmed bars alone would
+  // make it re-fetch what this function just read.
+  return { bars, symbol: series.symbol, resolution: series.resolution, series, resolved };
 }
 
 /**
@@ -207,7 +254,7 @@ log(`  ${exits.length} exits, ${entries.length} entries`);
 
 let holdings = [];
 if (INCLUDE_HOLDINGS) {
-  const pf = await taApi.get('/api/portfolio').catch(() => null);
+  const pf = await taApi.portfolio().catch(() => null);
   const acted = new Set([...exits, ...entries].map((r) => r.ticker));
   holdings = (pf?.data?.positions || [])
     .filter((p) => !acted.has(p.ticker))
@@ -239,11 +286,50 @@ try {
   log(`  SPY ${spy.length} bars`);
 } catch (e) { log(`  SPY unavailable: ${e.message}`); }
 
+/**
+ * Everything identical across the batch, fetched ONCE.
+ *
+ * `analyzeTicker` will otherwise repeat two 2,000-row scanner round trips, a TA
+ * context call and a portfolio read for every one of ~48 tickers. A failure here
+ * degrades the sections that need it rather than the run: each is wrapped, and
+ * `analyzeTicker` scores a section it could not compute rather than omitting it.
+ */
+const shared = { benchmark_bars: spy, benchmark_symbol: 'AMEX:SPY' };
+log('  fetching the batch-shared data once (scanner, groups, TA, portfolio)...');
+try {
+  shared.scanner_rows = (await scan({
+    columns: requiredColumns(), universe: ['sp500', 'nasdaq', 'russell2000'],
+    range: [0, 2000], sort: { sortBy: 'market_cap_basic', sortOrder: 'desc' },
+  })).rows || [];
+  log(`    scanner ${shared.scanner_rows.length} rows`);
+} catch (e) { log(`    scanner FAILED: ${e.message}`); }
+try {
+  shared.group_rows = (await fetchGroupRows({ universe: ['sp500', 'nasdaq', 'russell2000'], limit: 2000 })).rows;
+  log(`    group rows ${shared.group_rows.length}`);
+} catch (e) { log(`    group rows FAILED: ${e.message}`); }
+try {
+  // Every ticker in the queue at once, so "do I hold it, does it report soon" is
+  // one call rather than 48.
+  shared.ta_context = await taApi.tradingContext({
+    symbols: [...exits, ...entries, ...holdings].map((r) => String(r.ticker).replace(/^.*:/, '')),
+  });
+  log(`    TA context: ${shared.ta_context?.held?.length ?? 0} held, ${shared.ta_context?.earnings?.length ?? 0} earnings`);
+} catch (e) { log(`    TA context FAILED: ${e.message}`); }
+try {
+  // The WHOLE book, for portfolio heat. `tradingContext.held` is filtered to the
+  // symbols asked for, and heat computed from a subset is not a smaller answer.
+  shared.portfolio_response = await taApi.portfolio();
+  const eq = shared.portfolio_response?.data?.summary?.total_value_usd;
+  log(`    TA portfolio ${shared.portfolio_response?.data?.positions?.length ?? 0} positions`
+    + `, equity ${eq ? `$${Math.round(eq).toLocaleString()}` : 'unknown'}`);
+} catch (e) { log(`    TA portfolio FAILED: ${e.message}`); }
+
 let queue = [
   ...exits.map((r) => ({ side: 'exit', taRow: r })),
   ...entries.map((r) => ({ side: 'entry', taRow: r })),
   ...holdings.map((r) => ({ side: 'holding', taRow: r })),
 ];
+
 
 // A ticker can appear on more than one TA list — MRVL, DTCR and EUFN each came
 // back as an exit AND an entry. Analysing it twice doubles the work and, worse,
@@ -273,6 +359,30 @@ if (ONLY.length) {
 }
 
 const tickers = [];
+/**
+ * Split off what this layer does not chart, BEFORE anything is analysed.
+ *
+ * Crypto is TA's book on the investing layer; this is the equity trading layer.
+ * Excluding it is the owner's call, and it is also the safe one — `BTC-USD` handed
+ * to TradingView silently becomes the spread `CRYPTOCAP:BTC-BATS:USD`, which returns
+ * bars that are not the price of Bitcoin.
+ *
+ * EXCLUDED IS NOT FAILED, and both are reported. A name missing from the review with
+ * a stated reason is a fact; a silently shorter list is a bug — which is exactly what
+ * the opt-in `--holdings` flag was producing until now.
+ */
+const excluded = [];
+queue = queue.filter((q) => {
+  const r = resolveTaSymbol(q.taRow.ticker);
+  if (r.chartable) return true;
+  excluded.push({ ticker: String(q.taRow.ticker).replace(/^.*:/, ''), side: q.side, kind: r.kind, why: r.why });
+  return false;
+});
+if (excluded.length) {
+  const byKind = excluded.reduce((m, e) => ({ ...m, [e.kind]: (m[e.kind] || 0) + 1 }), {});
+  log(`  ${excluded.length} not charted here: ${Object.entries(byKind).map(([k, n]) => `${n} ${k}`).join(', ')}`);
+}
+
 let n = 0;
 for (const item of queue) {
   n++;
@@ -296,26 +406,73 @@ for (const item of queue) {
       catalysts: item.taRow.catalysts ?? item.taRow.signals ?? null,
       reason: item.taRow.reason ?? null,
     },
-    assessment: null, our_view: null, ta_validation: null, drawings: null,
+    analysis: null, ta_validation: null,
   };
   try {
-    const { bars, symbol, resolution } = await loadSymbol(t);
-    const a = assess(bars, spy);
-    const ours = ourAssessment(a);
-    row.symbol = symbol; row.resolution = resolution; row.bars = bars.length; row.status = 'ok';
-    const rawPatterns = a._raw_patterns; delete a._raw_patterns;
-    const rawChannel = a._raw_channel; delete a._raw_channel;
-    row.assessment = a; row.our_view = ours;
-    row.ta_validation = validateTa(a, ours, { side: item.side, taRow: item.taRow });
-    if (item.also_listed_as) row.ta_validation.also_listed_as = item.also_listed_as;
-    // `bias` is OUR independent read; `item.side` is the side TA holds. They are
-    // different claims and the drawer needs both — the bias decides which findings
-    // are drawn, the side labels TA's own stop.
-    if (DRAW) {
-      row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars, rawChannel, null,
-        { bias: row.our_view?.bias ?? null });
+    /**
+     * ── ONE analysis workflow, and this is now on it ──
+     *
+     * This used to call `assess()` + `ourAssessment()` + `drawFindings()` directly,
+     * which gave it the 28 measurement blocks and NONE of the 23 context sections
+     * `analyzeTicker` adds. So the review of the owner's actual money was thinner
+     * than the morning candidate screen — missing portfolio_heat, the earnings
+     * calendar, pivot_trail, short_interest, luld_band, entry_hypothesis, sizing,
+     * and the completeness score that makes a skipped section impossible to miss.
+     *
+     * TWO ARGUMENTS BELOW EXIST SO THIS SWAP DOES NOT LOSE ANYTHING, and both were
+     * found by looking rather than by a test failing:
+     *
+     *   ta_row      analyzeTicker passed `null` here, so TA's own stop line would
+     *               have silently stopped being drawn on all 48 charts.
+     *   draw_group  it defaults to `analysis-<SYMBOL>`; the Sunday run has drawn
+     *               into `sunday-<TICKER>` for months, and `clear_scope: 'mcp'`
+     *               clears the NAMED group — so the default would have left every
+     *               previous week's shapes uncleared and untouchable.
+     *
+     * `clear_scope: 'mcp'` for the same reason the morning batch uses it: this is
+     * unattended, walks ~48 charts of the owner's own positions, and 'all' would
+     * delete a walls overlay or anything hand-drawn with nobody present to be asked.
+     */
+    const { bars, symbol, resolution, series } = await loadSymbol(t);
+    row.symbol = symbol; row.resolution = resolution; row.bars = bars.length;
+
+    const r = await analyzeTicker({
+      draw: DRAW,
+      shared: { ...shared, series, bars },
+      ta_row: item.taRow,
+      draw_group: `sunday-${String(t).replace(/^.*:/, '')}`,
+      clear_scope: 'mcp',
+    });
+    row.analysis = r;
+
+    /**
+     * `analyzeTicker` returns a DEGRADED shape when assess() itself fails — no
+     * `verdict`, no `assessment`, just the completeness score and an error. Handing
+     * that to `validateTa` crashed on `ours.bias`, turning one failed block into an
+     * exception that read like a chart problem.
+     *
+     * A run that could not measure the chart cannot validate TA against it. Say so.
+     */
+    if (!r.verdict || !r.assessment) {
+      row.status = 'failed';
+      row.error = r.error || 'the analysis produced no verdict — assess() failed on this series';
+      log(`FAILED (${row.error})`);
+      tickers.push(row);
+      continue;
     }
-    log(`${ours.bias}/${row.ta_validation.agreement}${row.drawings ? ` (${row.drawings.shapes} drawn)` : ''}`);
+    row.status = 'ok';
+
+    /**
+     * The Sunday-specific half, which `analyzeTicker` does not and should not do:
+     * whether OUR independent read supports what TA wants done.
+     */
+    row.ta_validation = validateTa(r.assessment, r.verdict, { side: item.side, taRow: item.taRow });
+    if (item.also_listed_as) row.ta_validation.also_listed_as = item.also_listed_as;
+
+    const c = r.completeness;
+    log(`${r.verdict?.bias}/${row.ta_validation.agreement} ${c.required_done}/${c.required_total}`
+      + `${r.drawings ? ` (${r.drawings.shapes} drawn)` : ''}`
+      + `${c.complete ? '' : ` MISSING: ${c.missing.map((m) => m.section).join(',')}`}`);
   } catch (e) {
     row.error = e.message;
     log(`FAILED (${e.message})`);
@@ -334,10 +491,29 @@ const report = {
   timeframe: '1D',
   benchmark: 'AMEX:SPY',
   drawing_group_pattern: 'sunday-<TICKER>',
+  /**
+   * How complete each analysis was. `analyzeTicker` scores every run against
+   * src/core/analysis_contract.js, so a section that did not run is reported
+   * rather than silently absent — the property the flat 1.0 schema lacked.
+   */
+  completeness_summary: ok.reduce((m, t) => {
+    const c = t.analysis?.completeness;
+    if (!c) return m;
+    const k = c.complete ? 'complete' : 'incomplete';
+    return { ...m, [k]: (m[k] || 0) + 1 };
+  }, {}),
   counts: {
     requested: queue.length, analysed: ok.length, failed: tickers.length - ok.length,
+    /**
+     * EXCLUDED is not FAILED. A failed ticker was attempted and could not be read;
+     * an excluded one is not charted on this layer at all. Collapsing them would
+     * make a deliberate scope boundary look like breakage.
+     */
+    excluded: excluded.length,
     exits: exits.length, entries: entries.length, holdings: holdings.length,
   },
+  /** Everything TA holds that this layer does not chart, each with its reason. */
+  excluded_from_review: excluded,
   ta_validation_summary: {
     CONFIRMED: ok.filter((t) => t.ta_validation?.agreement === 'CONFIRMED').length,
     MIXED: ok.filter((t) => t.ta_validation?.agreement === 'MIXED').length,
@@ -346,9 +522,9 @@ const report = {
     NO_SIGNAL: ok.filter((t) => t.ta_validation?.agreement === 'NO_SIGNAL').length,
   },
   our_bias_summary: {
-    BULLISH: ok.filter((t) => t.our_view?.bias === 'BULLISH').length,
-    NEUTRAL: ok.filter((t) => t.our_view?.bias === 'NEUTRAL').length,
-    BEARISH: ok.filter((t) => t.our_view?.bias === 'BEARISH').length,
+    BULLISH: ok.filter((t) => t.analysis?.verdict?.bias === 'BULLISH').length,
+    NEUTRAL: ok.filter((t) => t.analysis?.verdict?.bias === 'NEUTRAL').length,
+    BEARISH: ok.filter((t) => t.analysis?.verdict?.bias === 'BEARISH').length,
   },
   // A market-wide condition belongs here, not repeated on every row.
   market_condition: (() => {

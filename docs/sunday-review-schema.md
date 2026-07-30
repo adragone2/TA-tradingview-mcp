@@ -1,21 +1,72 @@
-# Sunday review — report schema v1.0
+# Sunday review — report schema v2.0
 
 The contract for `reports/sunday-review-YYYY-MM-DD.json`. **Every ticker carries every key**, with `null` where a measurement was unavailable. A key is never absent, so a consumer can rely on the shape without defensive parsing, and "no value" is distinguishable from "no field".
 
 Bump `schema_version` on any breaking change.
 
+---
+
+## ⚠ 2.0 is a BREAKING change — migration for the importer
+
+The review used to call `assess()`, `ourAssessment()` and `drawFindings()` directly.
+That gave it 28 measurement blocks and **none** of the 23 context sections the
+unified `analyzeTicker` workflow adds — so the review of real positions was thinner
+than the morning candidate screen. It now runs the same one workflow, and everything
+it produces lives under a single `analysis` key.
+
+**Three keys moved. Nothing was deleted or renamed in place.**
+
+| 1.0 | 2.0 | Note |
+|---|---|---|
+| `ticker.assessment` | `ticker.analysis.assessment` | Same 28 blocks, same shapes |
+| `ticker.our_view` | `ticker.analysis.verdict` | Same object |
+| `ticker.drawings` | `ticker.analysis.drawings` | Same object, plus `patterns_skipped` / `plans_suppressed` |
+| `ticker.resolution` | `ticker.resolution` *(unchanged)* | also at `analysis.timeframe` |
+| `ticker.bars` | `ticker.bars` *(unchanged)* | also at `analysis.bars` |
+
+**Unchanged at the top of each ticker:** `ticker`, `symbol`, `status`, `error`,
+`side`, `ta_suggestion`, `ta_validation`.
+
+**New, and worth importing:**
+
+| Key | What it is |
+|---|---|
+| `analysis.completeness` | Score against the 45-section contract. `complete`, `missing[]` with reasons, `not_applicable[]`. **A section that did not run is now reported rather than silently absent** — the property 1.0 lacked. |
+| `analysis.context.portfolio_heat` | Total risk across TA's whole book, sized against the book's own equity |
+| `analysis.context.position_and_calendar` | Held? Reporting soon? **This symbol's slice only** — `held`, `earnings`, `days_to_earnings`, `regime_stage`. TA's full context and macro regime are identical across the batch and are NOT repeated per ticker; call `ta_regime` for the full block. |
+| `analysis.context.benchmark` | `{symbol, bars, reused}` — the SPY *series* is not carried per ticker. `analysis.assessment.relative_strength` is the finding. |
+| `analysis.context.pivot_trail` | Where the trailing stop goes |
+| `analysis.context.short_interest` | FINRA, with the `driver` — quote that, never bare days-to-cover |
+| `analysis.context.luld_band`, `.breakout_check`, `.stopping_premium`, `.level_test_history`, `.scaling_exponent` | Halt band, breakout scored at the primary levels, whether a stop helps on this series |
+| `analysis.entry_hypothesis` | Forward entry, both directions — for the ENTRY half of TA's list |
+| `analysis.context.sizing` | Share count under the three constraints |
+| `analysis.primary_levels` | The swing-anchored primary support and resistance |
+| `counts.excluded` + `excluded_from_review[]` | Positions TA holds that this layer does not chart. **Holdings are now included by default** — `--holdings` was opt-in and the scheduled job never passed it, so ~35 held positions were silently absent from every review. |
+| `analysis.timeframe_calibration`, `.horizon_applicable` | Always `1D` here, so labels are calendar-accurate and the horizon prior applies. Present for symmetry with the morning report, which is not always daily. |
+
+A `failed` ticker still carries every key, with `analysis` and `ta_validation` `null`.
+
+---
+
 ## Top level
 
 ```jsonc
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "generated_at": "ISO-8601",
   "timeframe": "1D",
   "benchmark": "AMEX:SPY",
   "drawing_group_pattern": "sunday-<TICKER>",   // how to clear/find the drawings
-  "counts":  { "requested", "analysed", "failed", "exits", "entries", "holdings" },
+  "counts":  { "requested", "analysed", "failed", "excluded", "exits", "entries", "holdings" },
+  // Every TA position NOT charted on this layer, each with its reason. NEW in 2.0.
+  // EXCLUDED is not FAILED: failed was attempted and unreadable, excluded was never
+  // charted here. Today this is entirely crypto — TA owns that book on the investing
+  // layer. Passing it to the chart is also unsafe: "BTC-USD" resolves to the SPREAD
+  // CRYPTOCAP:BTC-BATS:USD, which returns bars that are not the price of Bitcoin.
+  "excluded_from_review": [ { "ticker", "side", "kind", "why" } ],
   "ta_validation_summary": { "CONFIRMED", "MIXED", "DISPUTED", "CONTRADICTED", "NO_SIGNAL" },
   "our_bias_summary":      { "BULLISH", "NEUTRAL", "BEARISH" },
+  "completeness_summary":  { "complete": 46, "incomplete": 0 },   // NEW in 2.0
   "market_condition": {
     "regime_counts":          { "choppy": 54, "mixed": 4 },
     "choppy_share_pct":       93.1,
@@ -41,16 +92,27 @@ Bump `schema_version` on any breaking change.
   "side": "exit" | "entry" | "holding",
 
   "ta_suggestion": { ... },   // what TA said, unmodified
-  "assessment":    { ... },   // OUR analysis — 26 blocks
-  "our_view":      { ... },   // our independent call, made BEFORE consulting TA
-  "ta_validation": { ... },   // whether the two agree
-  "drawings":      { ... }    // what was drawn on the chart
+  "ta_validation": { ... },   // whether OUR read supports it
+
+  "analysis": {               // the FULL unified workflow — same call the morning screen makes
+    "assessment":    { ... }, //   was `assessment` in 1.0 — 28 blocks
+    "verdict":       { ... }, //   was `our_view`   in 1.0 — made BEFORE consulting TA
+    "drawings":      { ... }, //   was `drawings`   in 1.0
+    "completeness":  { ... }, //   NEW — scored against the 45-section contract
+    "context":       { ... }, //   NEW — portfolio_heat, short_interest, pivot_trail, luld_band, ...
+    "entry_hypothesis": {...},//   NEW — forward entry, both directions
+    "primary_levels": [ ... ] //   NEW — swing-anchored support and resistance
+  }
 }
 ```
 
-**A `failed` ticker still carries every key**, with `assessment`, `our_view`, `ta_validation` and `drawings` all `null`. It was not checked — that is not the same as agreeing.
+**A `failed` ticker still carries every key**, with `analysis` and `ta_validation` `null`. It was not checked — that is not the same as agreeing.
 
-## `assessment` — one block per analysis type
+`ta_validation` stays at the top level on purpose: it is the one thing here that is **not** part of the shared analysis. `analyzeTicker` says what the chart shows; `validateTa` says whether that supports what TA wants done, and no other caller needs it.
+
+## `analysis.assessment` — one block per analysis type
+
+*(was `assessment` at the top level in 1.0)*
 
 Each maps to a skill in this repo.
 
@@ -147,7 +209,9 @@ appears on **13.5%**. Filter on the agreement count, never on `count > 0`.
 **70.5%** of random walks. Disagreement across sensitivities is the reading,
 not the count itself.
 
-## `our_view` — the independent call
+## `analysis.verdict` — the independent call
+
+*(was `our_view` at the top level in 1.0)*
 
 ```jsonc
 {
@@ -197,7 +261,9 @@ of and into a name is worth surfacing.
 
 `evidence_tier` on each catalyst: `PORTFOLIO_ONLY`, `CROSS_SECTIONAL`, `DIRECTLY_TESTABLE`, `NOT_TECHNICAL`, `DESCRIPTIVE`, `UNCLASSIFIED`.
 
-## `drawings`
+## `analysis.drawings`
+
+*(was `drawings` at the top level in 1.0)*
 
 ```jsonc
 { "group": "sunday-AAPL", "shapes": 8, "items": [ "support 129.48", ... ], "errors": [] }
