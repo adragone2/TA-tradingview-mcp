@@ -31,6 +31,7 @@
 | [docs/sunday-review-schema.md](docs/sunday-review-schema.md) | Fixed output contract for the weekly review — TA imports this |
 | [docs/swing-evidence-review.md](docs/swing-evidence-review.md) | **Read first.** The owner's own evidence review — tiers A/B/C, and the horizon problem |
 | [docs/literature.md](docs/literature.md) | 25 papers, paper by paper — including the ones that contradict our own modules |
+| [docs/book-notes-shannon.md](docs/book-notes-shannon.md) | Shannon, *Multiple Timeframes*, read in full — what was built, what is still unbuilt, and the claims that need a noise floor |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
 | `skills/` | Step-by-step procedures, invoked by name |
 
