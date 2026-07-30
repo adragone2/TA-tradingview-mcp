@@ -73,9 +73,27 @@
         "trend_broken"
       ],
       "indicators": [
-        "Simple Moving Average (200)",
-        "Simple Moving Average (50)",
-        "Rate of Change (252)"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Rate Of Change",
+          "label": "Rate of Change (252)",
+          "inputs": {
+            "length": 252
+          }
+        }
       ],
       "skills": [
         "risk-sizing",
@@ -121,8 +139,20 @@
         "time_elapsed"
       ],
       "indicators": [
-        "Simple Moving Average (21)",
-        "Simple Moving Average (200)"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (21)",
+          "inputs": {
+            "length": 21
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        }
       ],
       "skills": [
         "risk-sizing",
@@ -174,8 +204,20 @@
         "ma_crossover"
       ],
       "indicators": [
-        "Simple Moving Average (50)",
-        "Simple Moving Average (200)"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        }
       ],
       "skills": [
         "risk-sizing",
@@ -220,8 +262,14 @@
         "time_elapsed"
       ],
       "indicators": [
-        "Volume",
-        "Relative Volume at Time"
+        {
+          "study": "Volume",
+          "label": "Volume"
+        },
+        {
+          "study": "Relative Volume at Time",
+          "label": "Relative Volume at Time"
+        }
       ],
       "skills": [
         "risk-sizing"
@@ -276,10 +324,31 @@
         "gap_against_trend"
       ],
       "indicators": [
-        "Simple Moving Average (50)",
-        "Simple Moving Average (200)",
-        "Average True Range (14)",
-        "Volume"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Average True Range",
+          "label": "Average True Range (14)",
+          "inputs": {
+            "length": 14
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        }
       ],
       "skills": [
         "market-structure",
@@ -330,9 +399,26 @@
         "stop_hit"
       ],
       "indicators": [
-        "Relative Strength Index (2)",
-        "Simple Moving Average (200)",
-        "Volatility Index (external)"
+        {
+          "study": "Relative Strength Index",
+          "label": "Relative Strength Index (2)",
+          "inputs": {
+            "length": 2
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": null,
+          "label": "Volatility Index (external)",
+          "external": true,
+          "note": "Not a TradingView study — supply from another source."
+        }
       ],
       "skills": [
         "risk-sizing",
@@ -379,8 +465,17 @@
         "level_reached"
       ],
       "indicators": [
-        "Volume",
-        "Average True Range (14)"
+        {
+          "study": "Volume",
+          "label": "Volume"
+        },
+        {
+          "study": "Average True Range",
+          "label": "Average True Range (14)",
+          "inputs": {
+            "length": 14
+          }
+        }
       ],
       "skills": [
         "market-structure",
@@ -443,11 +538,38 @@
         "target_hit"
       ],
       "indicators": [
-        "Exponential Moving Average (21)",
-        "Simple Moving Average (50)",
-        "Simple Moving Average (200)",
-        "Average True Range (14)",
-        "Volume"
+        {
+          "study": "Moving Average Exponential",
+          "label": "Exponential Moving Average (21)",
+          "inputs": {
+            "length": 21
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Average True Range",
+          "label": "Average True Range (14)",
+          "inputs": {
+            "length": 14
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        }
       ],
       "skills": [
         "market-structure",
@@ -504,10 +626,31 @@
         "gap_against_trend"
       ],
       "indicators": [
-        "Exponential Moving Average (8)",
-        "Simple Moving Average (50)",
-        "Volume",
-        "Average True Range (14)"
+        {
+          "study": "Moving Average Exponential",
+          "label": "Exponential Moving Average (8)",
+          "inputs": {
+            "length": 8
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        },
+        {
+          "study": "Average True Range",
+          "label": "Average True Range (14)",
+          "inputs": {
+            "length": 14
+          }
+        }
       ],
       "skills": [
         "chart-patterns",
@@ -571,9 +714,18 @@
         "target_hit"
       ],
       "indicators": [
-        "VWAP",
-        "Volume",
-        "Relative Volume at Time"
+        {
+          "study": "VWAP",
+          "label": "VWAP"
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        },
+        {
+          "study": "Relative Volume at Time",
+          "label": "Relative Volume at Time"
+        }
       ],
       "skills": [
         "chart-analysis",
@@ -624,8 +776,14 @@
         "tape_seller"
       ],
       "indicators": [
-        "VWAP",
-        "Volume"
+        {
+          "study": "VWAP",
+          "label": "VWAP"
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        }
       ],
       "skills": [
         "chart-analysis",
@@ -672,9 +830,24 @@
         "too_steep"
       ],
       "indicators": [
-        "Exponential Moving Average (9)",
-        "Relative Strength Index (14)",
-        "VWAP"
+        {
+          "study": "Moving Average Exponential",
+          "label": "Exponential Moving Average (9)",
+          "inputs": {
+            "length": 9
+          }
+        },
+        {
+          "study": "Relative Strength Index",
+          "label": "Relative Strength Index (14)",
+          "inputs": {
+            "length": 14
+          }
+        },
+        {
+          "study": "VWAP",
+          "label": "VWAP"
+        }
       ],
       "skills": [
         "chart-analysis",
@@ -747,10 +920,28 @@
       "exit": "n/a",
       "exit_reason_keys": [],
       "indicators": [
-        "Relative Strength Index (14)",
-        "MACD",
-        "On Balance Volume",
-        "Money Flow Index (14)"
+        {
+          "study": "Relative Strength Index",
+          "label": "Relative Strength Index (14)",
+          "inputs": {
+            "length": 14
+          }
+        },
+        {
+          "study": "MACD",
+          "label": "MACD"
+        },
+        {
+          "study": "On Balance Volume",
+          "label": "On Balance Volume"
+        },
+        {
+          "study": "Money Flow Index",
+          "label": "Money Flow Index (14)",
+          "inputs": {
+            "length": 14
+          }
+        }
       ],
       "skills": [],
       "tools": [
@@ -771,9 +962,27 @@
       "exit": "n/a",
       "exit_reason_keys": [],
       "indicators": [
-        "Simple Moving Average (10)",
-        "Simple Moving Average (20)",
-        "Simple Moving Average (50)"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (10)",
+          "inputs": {
+            "length": 10
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (20)",
+          "inputs": {
+            "length": 20
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        }
       ],
       "skills": [
         "market-structure"
@@ -817,8 +1026,17 @@
       "exit": "n/a",
       "exit_reason_keys": [],
       "indicators": [
-        "Average True Range (14)",
-        "Bollinger Bands"
+        {
+          "study": "Average True Range",
+          "label": "Average True Range (14)",
+          "inputs": {
+            "length": 14
+          }
+        },
+        {
+          "study": "Bollinger Bands",
+          "label": "Bollinger Bands"
+        }
       ],
       "skills": [],
       "tools": [
@@ -863,9 +1081,24 @@
         "gap_against_trend"
       ],
       "indicators": [
-        "Simple Moving Average (50)",
-        "Simple Moving Average (200)",
-        "Volume"
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        }
       ],
       "skills": [
         "market-structure",
@@ -905,5 +1138,6 @@
       ],
       "risk_rules": []
     }
-  }
+  },
+  "_indicator_schema": "indicators is a list of {study, label, inputs?, external?, unverified?}. `study` is the name chart_manage_indicator passes to TradingView and it must be EXACT — verified against the live chart, \"Moving Average\" works and \"Simple Moving Average (50)\" does not, because the parenthesised period is not part of a study name. The period goes in `inputs.length`."
 }

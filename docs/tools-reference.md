@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **182 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **184 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -35,7 +35,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`rules_init`** — Create rules.json from the bundled template so morning_brief can use your own watchlist, bias criteria, and risk rules
 - **`rules_status`** — Show which rules.json would be used, and where it was searched for.
 
-### chart_* (8)
+### chart_* (9)
 
 - **`chart_get_state`** — Get current chart state (symbol, timeframe, chart type, indicators)
 - **`chart_set_symbol`** — Change the chart symbol
@@ -45,6 +45,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`chart_get_visible_range`** — Get the visible date range (unix timestamps) and bars range on the chart
 - **`chart_set_visible_range`** — Zoom the chart to a specific date range (unix timestamps)
 - **`chart_scroll_to_date`** — Jump the chart view to center on a specific date
+- **`chart_indicators_for_strategy`** — Put a strategy's TradingView indicators on the chart, from the catalogue's own `indicators` field
 
 ### data_* (10)
 
@@ -428,6 +429,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`group_context`** — The industry-group context Livermore put BEFORE every trade, and the one thing this toolchain had no equivalent for
 - **`group_top_down`** — Livermore's Top Down Trading as an explicit four-step GATE, in his order: the market the stock trades on, then the industry group, then the two leader
+
+### ticker_* (1)
+
+- **`ticker_playbook`** — THE ENTRY POINT for analysing one ticker
 
 ---
 

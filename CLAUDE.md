@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-182 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+184 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,9 +19,10 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 182 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 184 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 18 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
+| [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict. **8 swing screens + 1 intraday**, one per strategy family |
 | [docs/screening-parameters.md](docs/screening-parameters.md) | The exact screen parameters (generated — `node scripts/gen-screens-doc.js`) |
@@ -43,7 +44,8 @@
 |---|---|
 | Anything is broken | `tv_doctor` — every failing check carries its fix |
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
-| "Analyse this chart" | `chart-analysis` skill |
+| "Analyse TICKER" / "how would I trade X?" | `ticker-playbook` skill — the full chain. Starts with `ticker_playbook`, which reverses the screener: one symbol against all 9 screens, clause by clause, then the strategies each implies |
+| "Analyse this chart" | `chart-analysis` skill — for a chart you were already given |
 | "Which timeframe?" / swing vs day | `timeframe_plan` then `mtf_analyze` — context grants permission, structure finds the setup |
 | "What do I DO right now?" | `stage_plan` — Shannon's gate: Stage 2 or 4 on the longer timeframe or NO setup, then ANTICIPATE / PARTICIPATE / EXIT / AVOID. Forward-tested NEGATIVE — a description of alignment, not an edge |
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
@@ -129,9 +131,9 @@ Each of these exists because it has already gone wrong here.
 
 **Dual share classes are not two stocks.** GOOG/GOOGL were being used as a group's "two leaders" and confirmed each other on **57 of 57** signals — a tautology that diluted the tandem measurement from −9.3 to −5.6. `dedupeShareClasses` collapses them by issuer name *and* by market cap matching to within rounding, because dual classes report the same company cap. Any group, peer or correlation work must dedupe first.
 
-**Every strategy needs a screener that can actually find it.** The catalogue pointed  at  — and measured on the live universe those two screens share **ZERO** of their candidates, because a name at a new high fails the pullback filter three ways (RSI outside 35–55, monthly performance outside −15/+5, and *too close* to the high for the 2–25% band). 97 breakout candidates the pullback screen cannot see. Eight swing screens now, one per strategy family, plus  held separately:  feed a confluence merge that allocates 15 continuation and 5 reversal slots to a **swing** watchlist, so a pre-market gap list would take slots from it.
+**Every strategy needs a screener that can actually find it.** The catalogue pointed `breakout_continuation` at `momentum_pullback` — and measured on the live universe those two screens share **ZERO** of their candidates, because a name at a new high fails the pullback filter three ways (RSI outside 35–55, monthly performance outside −15/+5, and *too close* to the high for the 2–25% band). 97 breakout candidates the pullback screen cannot see. Eight swing screens now, one per strategy family, plus `INTRADAY_SCREENS` held separately: `SCREENS` feed a confluence merge that allocates 15 continuation and 5 reversal slots to a **swing** watchlist, so a pre-market gap list would take slots from it.
 
-**A new screen needs a bucket, a session and a both-sided threshold.** Three contract tests exist because each has already gone wrong: an unbucketed screen routes to  and vanishes from the watchlist silently; a  field stops  ranking on fields that fold the forming day and stops  running on stale data after the close; and a ONE-SIDED threshold on RSI or short-horizon performance selects the tail, which is collapses rather than dips. All three caught real mistakes in the screens added for the catalogue.
+**A new screen needs a bucket, a session and a both-sided threshold.** Three contract tests exist because each has already gone wrong: an unbucketed screen routes to `unrouted` and vanishes from the watchlist silently; a `session` field stops `short_term_reversal` ranking on fields that fold the forming day and stops `premarket_gap` running on stale data after the close; and a ONE-SIDED threshold on RSI or short-horizon performance selects the tail, which is collapses rather than dips. All three caught real mistakes in the screens added for the catalogue.
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
@@ -154,6 +156,8 @@ Each of these exists because it has already gone wrong here.
 **A backtest can only model an exit that was specifiable before entry.** `target`/`stop`/`time` are exactly the modellable set, which is why recording only those teaches nothing — they cannot separate an exit the plan called for from one decided while the position was live. `exit_mix` splits them using the fifteen-key exit taxonomy and counts the ones driven by the INDEX, which no single-symbol backtest can see. If discretionary exits are the majority, every benchmark, trial count and deflated Sharpe in the test describes a different strategy that merely shares an entry signal.
 
 **A noise floor you cannot measure is not a noise floor.** The 1-2-3 (`src/core/ignition.js`) fires on 5.9% of real charts and 22.5% of random walks — *below* its own null. The cause was the ATR gate: ATR counts overnight gaps, bar range does not, so every constructed null shifts the gate rather than the pattern, and estimates span 5.9–39.6% on the same data. It is implemented, tested, and deliberately **not registered as a tool**. One relative finding survives because both arms shared a generator: the top-third clause is load-bearing (22.5% vs 63%).
+
+**The chart has an indicator BUDGET: Volume and Moving Average Ribbon are permanent, 5 studies maximum, so at most 3 may be added.** `src/core/chart_budget.js` enforces it and `chart_indicators_for_strategy` calls it before touching the chart. Several strategies name more than fits (`momentum_pullback` names five), and the tool NAMES what it dropped rather than silently truncating. Three traps found by running it live: `chart_get_state` returns the field as `studies`, not `indicators`; `manageIndicator` returns `success: false` WITHOUT throwing when TradingView rejects a name, so catching only exceptions records a silent failure as a success; and study names must be EXACT — "Moving Average" works, "Simple Moving Average (50)" does not, because the period is an INPUT and not part of the name.
 
 **Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. It is also rarely what you want: `clear-orphans` recovers drawings lost to a session restart WITHOUT touching anything hand-drawn, and on 2026-07-28 removed 545 stale shapes across 45 symbols while preserving 7 of the user's own. If you add or change a drawing label, append its format to `MCP_TEXT_SIGNATURES` — a label with no signature leaks an orphan that can never be cleaned up. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 
