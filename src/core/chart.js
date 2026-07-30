@@ -3,6 +3,7 @@
  */
 import { evaluate, evaluateAsync } from '../connection.js';
 import { waitForChartReady } from '../wait.js';
+import { applyInputs } from './indicators.js';
 
 const CHART_API = 'window.TradingViewApi._activeChartWidgetWV.value()';
 
@@ -112,18 +113,44 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
   const inputs = inputsRaw ? (typeof inputsRaw === 'string' ? JSON.parse(inputsRaw) : inputsRaw) : undefined;
 
   if (action === 'add') {
-    const inputArr = inputs ? Object.entries(inputs).map(([k, v]) => ({ id: k, value: v })) : [];
     const before = await evaluate(`${CHART_API}.getAllStudies().map(function(s) { return s.id; })`);
+    /**
+     * createStudy's 4th argument takes RAW VALUES POSITIONALLY, in the study's own
+     * declared input order — NOT [{id, value}] objects. Passing objects made
+     * TradingView fall back to every default while still creating the study, so
+     * "Moving Average" with { length: 200 } silently became a 9-period MA and the
+     * add still reported success. Since the declared order is not known before the
+     * study exists, create it bare and set the inputs by ID afterwards, which is
+     * verifiable.
+     */
     await evaluate(`
       (function() {
         var chart = ${CHART_API};
-        chart.createStudy('${indicator.replace(/'/g, "\\'")}', false, false, ${JSON.stringify(inputArr)});
+        chart.createStudy('${indicator.replace(/'/g, "\\'")}', false, false, []);
       })()
     `);
     await new Promise(r => setTimeout(r, 1500));
     const after = await evaluate(`${CHART_API}.getAllStudies().map(function(s) { return s.id; })`);
     const newIds = (after || []).filter(id => !(before || []).includes(id));
-    return { success: newIds.length > 0, action: 'add', indicator, entity_id: newIds[0] || null, new_study_count: newIds.length };
+    const entityId = newIds[0] || null;
+
+    let inputResult = null;
+    if (inputs && Object.keys(inputs).length && entityId) {
+      try {
+        inputResult = await applyInputs({ entity_id: entityId, overrides: inputs });
+      } catch (err) {
+        inputResult = { inputs_verified: false, input_error: err.message };
+      }
+    }
+
+    return {
+      success: newIds.length > 0 && (inputResult ? inputResult.inputs_verified : true),
+      action: 'add',
+      indicator,
+      entity_id: entityId,
+      new_study_count: newIds.length,
+      ...(inputResult || {}),
+    };
   } else if (action === 'remove') {
     if (!entity_id) throw new Error('entity_id required for remove action. Use chart_get_state to find study IDs.');
     await evaluate(`
@@ -258,4 +285,62 @@ export async function symbolSearch({ query, type }) {
   }));
 
   return { success: true, query, source: 'rest_api', results, count: results.length };
+}
+
+/**
+ * Make the chart HOLD enough history, then say how much it got.
+ *
+ * TradingView loads a viewport's worth of bars and no more — measured on AAPL, a
+ * fresh 5-minute chart holds **300 bars, which is two sessions**. Every detector
+ * here then reads two sessions of structure and reports it as a finding. The daily
+ * timeframe hides the problem because 300 daily bars is fifteen months.
+ *
+ * `mainSeries().requestMoreData(n)` extends it, and it does work: six calls took
+ * that same chart from 300 to 3,312 bars. It is asynchronous with no completion
+ * signal, so this polls the bar count and stops when it stops growing — a symbol
+ * that genuinely has no more history must not spin.
+ *
+ * Read the bars with `data.getOhlcv({ count, max })`: the reader has its own 500-bar
+ * cap for context reasons, and loading history the caller cannot read is pointless.
+ */
+export async function loadHistory({ min_bars = 800, max_requests = 12, settle_ms = 900 } = {}) {
+  const barCount = async () => {
+    try {
+      return await evaluate(`${CHART_API}._chartWidget.model().mainSeries().bars().size()`);
+    } catch { return null; }
+  };
+
+  const started = await barCount();
+  if (started == null) {
+    return { success: false, bars: null, note: 'could not read the series bar count — chart not ready?' };
+  }
+
+  let have = started;
+  let requests = 0;
+  while (have < min_bars && requests < max_requests) {
+    const before = have;
+    try {
+      await evaluate(`${CHART_API}._chartWidget.model().mainSeries().requestMoreData(500)`);
+    } catch (e) {
+      return { success: false, bars: have, requested: requests, note: `requestMoreData failed: ${e.message}` };
+    }
+    await new Promise((r) => setTimeout(r, settle_ms));
+    have = (await barCount()) ?? before;
+    requests += 1;
+    // No growth means the feed has no more history for this symbol and resolution.
+    // Spinning to max_requests would add ~10s per symbol across a whole watchlist.
+    if (have <= before) {
+      return {
+        success: true, bars: have, started, requested: requests, exhausted: true,
+        reached_target: have >= min_bars,
+        note: `history exhausted at ${have} bars (asked for ${min_bars}) — the feed has no more at this resolution`,
+      };
+    }
+  }
+  return {
+    success: true, bars: have, started, requested: requests,
+    exhausted: false,
+    reached_target: have >= min_bars,
+    ...(have < min_bars ? { note: `stopped at ${have} bars after ${requests} requests (wanted ${min_bars})` } : {}),
+  };
 }

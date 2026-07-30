@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/risk.js';
 import { exitMix, EXIT_REASONS, sliceTrades, DEFAULT_BUCKETS } from '../core/exits.js';
+import { accountSettings } from '../core/rules.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -56,7 +57,7 @@ export function registerRiskTools(server) {
     'position_size_atr',
     'Position size from volatility instead of from a fixed price stop. Places the stop a multiple of ATR from entry, so the position shrinks when the instrument gets more volatile and the stop sits outside its ordinary bar range. Pass manual_stop to compare against a stop you already chose — a stop tighter than 1x ATR will be hit by normal noise rather than by being wrong. Read ATR off the chart with data_get_study_values.',
     {
-      account_size: z.coerce.number().describe('Account size'),
+      account_size: z.coerce.number().optional().describe('Account size. Omit to read it from rules.json (account.account_size). If neither is set the tool REFUSES rather than assuming a figure — an invented account size produces a real-looking share count.'),
       risk_percent: z.coerce.number().describe('Percent of the account to risk on this trade'),
       entry: z.coerce.number().describe('Entry price'),
       atr: z.coerce.number().describe('Current ATR value for this symbol and timeframe'),
@@ -79,7 +80,34 @@ export function registerRiskTools(server) {
       max_position_pct: z.coerce.number().optional().describe('Concentration cap as percent of account in one position (default 20 — Shannon says 15-20)'),
       max_adv_pct: z.coerce.number().optional().describe('Liquidity cap as percent of average daily volume (default 2 — this repo\'s choice; Shannon names no number)'),
     },
-    wrap((args) => ({ success: true, ...core.sizeWithConstraints(args), caps: core.SIZING_CAPS, disclaimer: DISCLAIMER })),
+    wrap((args) => {
+      /**
+       * Resolve the account size rather than defaulting it. A size computed from a
+       * number nobody supplied looks exactly like a correct one — during a live DLO
+       * analysis $100,000 was invented because there was nowhere to read it from.
+       */
+      let { account_size } = args;
+      let resolved_from = 'argument';
+      if (account_size == null) {
+        const cfg = accountSettings(args.rules_path);
+        if (cfg.account_size == null) {
+          throw new Error(
+            'No account size. Pass account_size, or set account.account_size in rules.json '
+            + `(looked in ${cfg.rules_path || 'the default locations'}). This tool will not assume one: `
+            + 'a share count derived from an invented account is indistinguishable from a correct one.',
+          );
+        }
+        account_size = cfg.account_size;
+        resolved_from = `rules.json (${cfg.rules_path})`;
+      }
+      return {
+        success: true,
+        ...core.sizeWithConstraints({ ...args, account_size }),
+        account_size_from: resolved_from,
+        caps: core.SIZING_CAPS,
+        disclaimer: DISCLAIMER,
+      };
+    }),
   );
 
   server.tool(

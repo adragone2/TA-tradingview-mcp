@@ -50,7 +50,8 @@
       "evidence_tier": "A",
       "evidence": "Moskowitz, Ooi & Pedersen (2012): 12-month lookback positive and significant for EVERY one of 58 futures over 25+ years. Composite Sharpe 1.28 vs 0.38 buy-and-hold.",
       "evidence_caveat": "A PORTFOLIO result on 58 diversified futures. Applied to ONE equity it retains ~13% of its information ratio (IR = IC x sqrt(breadth)) and would take ~136 years to prove. Run edge_breadth before quoting the Sharpe.",
-      "screener": "morning-screen:tier_a_factors",
+      "screener": "morning-screen:tier_a_factors + screens:rs_leadership",
+      "screener_note": "tier_a_factors is the MONTHLY cross-sectional sort this was measured as, and remains the primary route. screens:rs_leadership is the same idea reachable on a daily screen — Perf.Y > 10 and Perf.3M > 5, within 15% of the 52-week high. It was added because rs_leadership was the only screen in the run pointing at NO strategy: the execution tier comes from the strategy, so its survivors classified as null and were dropped from the watchlist without a word.",
       "criteria": [
         {
           "left": "close",
@@ -808,7 +809,8 @@
       "evidence_tier": "C",
       "evidence": "Practitioner source. No measurement.",
       "evidence_caveat": "A counter-trend short. Shannon's rule is that shorts in an uptrend carry 'much higher' risk, and a squeeze can be violent — check short_interest and shorts_position first, since squeeze fuel needs shorts who are LOSING.",
-      "screener": "intraday_screens:premarket_gap",
+      "screener": "intraday_screens:intraday_extension",
+      "screener_note_2": "Moved off intraday_screens:premarket_gap. A gapper and a name extended above its fast average are different populations — the same defect the catalogue already records for breakout_continuation pointed at momentum_pullback (measured ZERO shared candidates). Worse here: premarket_gap is pre-open ONLY, so the whole intraday tier could populate for at most two hours a day. intraday_extension is this strategy's OWN criteria — rsi(14) > 75 and price >= ema(9)*1.05 — run against daily scanner fields, with EMA10 standing in for EMA9 because the scanner has no EMA9. opening_range_break and vwap_reclaim stay on premarket_gap: their criteria need minutes_since_open, vwap and rvol, none of which exist before the open, so an in-play gap list is the only thing a pre-open screen can honestly give them.",
       "criteria": [
         {
           "left": "price",

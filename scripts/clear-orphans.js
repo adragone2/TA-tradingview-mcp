@@ -22,6 +22,7 @@
  * Hand-drawn shapes are never touched under either flag.
  */
 import * as chart from '../src/core/chart.js';
+import { acquireChartLock } from '../src/core/chart_lock.js';
 import * as ta from '../src/core/ta_decisions.js';
 import * as taApi from '../src/core/ta_api.js';
 import * as drawing from '../src/core/drawing.js';
@@ -39,6 +40,17 @@ const only = (() => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (s) => process.stdout.write(`${s}\n`);
+
+/**
+ * Take the chart lock — this walks up to 200 tickers deleting shapes.
+ *
+ * Only claimed when it will actually WRITE. The default is a dry run that reads
+ * each chart and reports, and blocking a read-only inspection behind a lock held
+ * by a legitimate long run would make the diagnostic tool unavailable exactly when
+ * something is wrong. A dry run that overlaps a live run may report shapes that
+ * run is mid-way through replacing, which is a stale reading, not a corruption.
+ */
+if (APPLY) acquireChartLock({ label: 'clear-orphans --apply' });
 
 const before = await chart.getState().catch(() => null);
 const original = before?.symbol || null;

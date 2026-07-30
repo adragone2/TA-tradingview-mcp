@@ -27,11 +27,52 @@ export const PERMANENT_STUDIES = Object.freeze(['Volume', 'Moving Average Ribbon
 /** Total studies allowed on the chart, permanent ones included. */
 export const MAX_STUDIES = 5;
 
+/**
+ * What the permanent studies ALREADY plot, so a strategy naming one of them does
+ * not burn a slot re-adding it.
+ *
+ * The owner's Moving Average Ribbon (`STD;MA%Ribbon`) has four MA slots and two are
+ * enabled: SMA 50 (`in_8`) and SMA 200 (`in_13`). The EMA 8 and EMA 100 slots are
+ * off. So the chart always carries Volume, MA 50 and MA 200 — and adding a separate
+ * `Moving Average` at length 50 or 200 is a duplicate that costs one of only three
+ * free slots. This was found by doing exactly that.
+ */
+export const PERMANENT_COVERS = Object.freeze([
+  { study: 'Moving Average', lengths: Object.freeze([50, 200]), by: 'Moving Average Ribbon' },
+]);
+
 const norm = (s) => String(s || '').trim().toLowerCase();
 
 /** Is this study one the owner keeps permanently? */
 export function isPermanent(name) {
   return PERMANENT_STUDIES.some((p) => norm(p) === norm(name));
+}
+
+/**
+ * Is this wanted indicator already plotted by one of the permanent studies?
+ * Returns the covering study's name, or null.
+ *
+ * Matching is on the study name AND the period, because `Moving Average` at length
+ * 20 is genuinely absent while length 50 is genuinely present.
+ */
+export function coveredByPermanent(want, studies = []) {
+  const study = want && typeof want === 'object' ? want.study : want;
+  if (!study) return null;
+  const length = want && typeof want === 'object'
+    ? (want.inputs?.length ?? want.length ?? null)
+    : null;
+  const names = (studies || []).map((s) => norm(s.name || s));
+  for (const c of PERMANENT_COVERS) {
+    if (norm(c.study) !== norm(study)) continue;
+    if (!names.includes(norm(c.by))) continue; // the coverer must actually be present
+    if (length != null && c.lengths.includes(Number(length))) return c.by;
+    /**
+     * No period given is ambiguous, and it is NOT treated as covered. A duplicate MA
+     * is visible on the chart and self-correcting; a silent omission is invisible.
+     * Catalogue entries always carry `inputs.length`, so this branch is rare.
+     */
+  }
+  return null;
 }
 
 /**
@@ -78,7 +119,12 @@ export function planIndicators(wanted = [], studies = [], { clear_added = false 
   for (const w of wanted) {
     const study = w && typeof w === 'object' ? w.study : w;
     if (!study || w?.external) { candidates.push(w); continue; }
-    if (names.some((n) => norm(n) === norm(study))) already.push(w); else candidates.push(w);
+    if (names.some((n) => norm(n) === norm(study))) { already.push(w); continue; }
+    // A permanent study may already plot it under a different name — the MA Ribbon
+    // carries SMA 50 and SMA 200, so re-adding either would waste a slot.
+    const cover = coveredByPermanent(w, studies);
+    if (cover) { already.push({ ...(typeof w === 'object' ? w : { study: w }), covered_by: cover }); continue; }
+    candidates.push(w);
   }
 
   const toRemove = clear_added

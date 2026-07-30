@@ -10,7 +10,8 @@
  *   node scripts/gen-screens-doc.js
  */
 import { writeFileSync } from 'node:fs';
-import { SCREENS, VETO_DEFAULTS, DEFAULT_SLOTS } from '../src/core/screens.js';
+import { SCREENS, INTRADAY_SCREENS, VETO_DEFAULTS } from '../src/core/screens.js';
+import { strategiesForScreen, PRE_GATE, PER_SCANNER } from '../src/core/morning_routine.js';
 import { UNIVERSES, DEFAULT_UNIVERSE, LIQUIDITY_FILTER, BASE_COLUMNS } from '../src/core/scanner.js';
 
 const OPS = { greater: '>', less: '<', equal: '=', in_range: 'in', egreater: '>=', eless: '<=' };
@@ -64,13 +65,21 @@ out.push('A name that cannot be traded at size is excluded at stage 1 rather tha
 out.push('and then vetoed — `trade_cost` would eat the edge before it exists.');
 out.push('');
 
-for (const s of SCREENS) {
+/**
+ * Both families are documented. The intraday screens were omitted entirely, so the
+ * generated parameters file described 8 of the 10 screens that actually run and
+ * said nothing about the one tier a reader is most likely to find empty.
+ */
+const emitScreen = (s) => {
   out.push(`## ${s.name} — \`${s.key}\``);
   out.push('');
   out.push(`**Direction:** ${s.direction}  `);
   out.push(`**Horizon:** ${s.horizon_side}  `);
   out.push(`**Bet:** ${s.bet}  `);
-  out.push(`**Evidence:** ${s.evidence}`);
+  out.push(`**Evidence:** ${s.evidence}  `);
+  out.push(`**Strategies:** ${strategiesForScreen(s.key).map((x) => `\`${x.name}\` (${x.execution}, tier ${x.evidence_tier})`).join(', ') || '**NONE — its survivors would classify as null and vanish**'}  `);
+  out.push(`**Session:** ${s.session ? `\`${s.session}\` only` : 'any — nothing it reads is session-sensitive'}`);
+  if (s.session_note) { out.push(''); out.push(`> ${s.session_note}`); }
   out.push('');
   out.push('| Field | Op | Value |');
   out.push('|---|---|---|');
@@ -81,7 +90,23 @@ for (const s of SCREENS) {
   out.push('');
   out.push(`**Client-side refine:** ${describeRefine(s.refine)}`);
   out.push('');
-}
+};
+
+out.push('# Swing screens');
+out.push('');
+out.push('These feed the INTRADAY / WEEKLY / MONTHLY split via the strategy each points at.');
+out.push('');
+for (const s of SCREENS) emitScreen(s);
+
+out.push('# Intraday screens');
+out.push('');
+out.push('Held separately from `SCREENS`. Two of the three intraday strategies need operands');
+out.push('that do not exist before the open — `minutes_since_open`, `vwap`, `rvol` — so the most');
+out.push('a pre-open screen can honestly hand them is a list of names likely to be *in play*.');
+out.push('`parabolic_fade` is the exception: its own criteria are price-only and daily-screenable,');
+out.push('which is why it has a screen that runs at any hour.');
+out.push('');
+for (const s of INTRADAY_SCREENS) emitScreen(s);
 
 out.push('## Veto — runs last, on the survivors');
 out.push('');
@@ -95,20 +120,22 @@ out.push('The veto is the only screen that reliably improves results. The other 
 out.push('candidates; this removes the ones that cannot work.');
 out.push('');
 
-out.push('## Ranking');
+out.push('## Selection');
 out.push('');
-out.push(`Slots: ${Object.entries(DEFAULT_SLOTS).map(([k, v]) => `**${k} ${v}**`).join(', ')} — scaled proportionally when fewer than ${Object.values(DEFAULT_SLOTS).reduce((a, b) => a + b, 0)} are requested.`);
+out.push(`Each screen's own top **${PRE_GATE}** enter the detector gate; its top **${PER_SCANNER}**`);
+out.push('**survivors** are selected. Per screen, not pooled — so no single strategy family can');
+out.push('take the whole list.');
 out.push('');
-out.push('Ranked by **confluence within direction**, tie-broken by 12-month performance.');
-out.push('Not a weighted composite: weighting the screens would invent coefficients nobody');
-out.push('measured. And not global confluence either — the overlap was measured, and');
-out.push('`structural_reversal` shares 0% with every other screen by construction (RSI');
-out.push('15–35 against their 40–75), so a global ranking made it structurally incapable');
-out.push('of scoring above 1 and deleted the reversal side outright.');
+out.push('There is **no confluence merge and no slot allocation**. Schema 2.x pooled every screen');
+out.push('into 15 continuation and 5 reversal slots and ran the detectors on whatever the merge had');
+out.push('already chosen, which is the exact inverse of "scanner as coarse filter, our detectors as');
+out.push('verdict". Confluence — how many screens wanted a name — is still recorded, and still only');
+out.push('breaks a tie: the continuation screens overlap heavily (`near_52w_high` × `rs_leadership`');
+out.push('**42%**), so their agreement is *not* independent confirmation.');
 out.push('');
-out.push('The continuation screens overlap heavily — `near_52w_high` × `rs_leadership`');
-out.push('**42%** — so their agreement is *not* independent confirmation. The pairwise');
-out.push('matrix ships in every report.');
+out.push('The **tier** comes from the strategy the screen points at, never from the screen. A screen');
+out.push('pointing at no strategy would gate and select names that then classify as `null` and vanish');
+out.push('from the watchlist in silence, so a contract test asserts every screen above reaches one.');
 out.push('');
 
 out.push('## Columns returned by stage 1');
@@ -119,4 +146,4 @@ out.push('```');
 out.push('');
 
 writeFileSync('docs/screening-parameters.md', `${out.join('\n')}\n`, 'utf8');
-console.log(`docs/screening-parameters.md — ${SCREENS.length} screens, ${out.length} lines`);
+console.log(`docs/screening-parameters.md — ${SCREENS.length} swing + ${INTRADAY_SCREENS.length} intraday screens, ${out.length} lines`);

@@ -14,6 +14,9 @@
  */
 import { evaluate, getChartApi, KNOWN_PATHS } from '../connection.js';
 import * as registry from './drawing_registry.js';
+// A REAL key event via CDP. A synthetic KeyboardEvent is ignored by TradingView's
+// handler (isTrusted === false), which is why the pattern tool stayed armed.
+import { keyboard } from './ui.js';
 
 /** linestyle: 0 solid, 1 dotted, 2 dashed. */
 const SOLID = 0, DOTTED = 1, DASHED = 2;
@@ -163,6 +166,23 @@ async function createOne({ apiPath, shape, point, point2, points, overrides, tex
     `);
     // These resolve more slowly than the two-point shapes; 200ms is not enough.
     await new Promise((r) => setTimeout(r, 500));
+    /**
+     * Disarm the drawing tool with a REAL key event.
+     *
+     * `createMultipointShape` leaves TradingView's pattern tool ARMED — the ABCD /
+     * triangle cursor stays selected waiting for clicks that never come, so the
+     * next thing the user clicks starts a drawing instead of doing what they meant.
+     * The owner had to press ESC by hand after every analysis.
+     *
+     * A synthetic `new KeyboardEvent('keydown')` does NOT work: it was tried and
+     * the tool stayed armed, because the handler ignores events with
+     * `isTrusted === false`. It has to go through CDP's Input domain, which is what
+     * `ui.keyboard` already does — the same path the ui_keyboard tool uses.
+     *
+     * There is no `selectLineTool` on the exposed API; the chart widget and the
+     * widget collection were both checked and neither has one.
+     */
+    try { await keyboard({ key: 'Escape' }); } catch { /* the shape is drawn either way */ }
   } else if (point2) {
     await evaluate(`
       ${apiPath}.createMultipointShape(
@@ -588,7 +608,14 @@ export async function clearAll({ scope = 'mcp', group = null } = {}) {
   // to it — otherwise every other symbol's tracked drawings get untracked and
   // can never be cleared again. See drawing_registry.prune.
   const liveIds = (await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`)) || [];
-  registry.prune(liveIds, { symbol: await currentSymbol() });
+  /**
+   * `currentSymbol()` returns null on ANY failure — it swallows the error. The prune
+   * below now refuses rather than wiping the store when that happens, but a refusal
+   * has to be visible: a run that silently stopped pruning would accumulate stale
+   * entries with nothing saying why.
+   */
+  const sym = await currentSymbol();
+  const pruned = registry.prune(liveIds, { symbol: sym });
 
   const candidates = registry.list({ group });
   if (!candidates.length) {
@@ -612,7 +639,24 @@ export async function clearAll({ scope = 'mcp', group = null } = {}) {
       removed.push(id);
     } catch { /* already gone; prune below handles it */ }
   }
-  registry.forget(candidates.map(c => c.entity_id));
+  /**
+   * FORGET ONLY WHAT WAS REMOVED.
+   *
+   * This forgot `candidates` — and with no `group`, `candidates` is every entry for
+   * every SYMBOL, while `ids` is only the handful live on the chart in front of us.
+   * So one `draw_clear scope:"mcp"` untracked the entire store: it deleted 22 shapes
+   * on the loaded symbol and quietly orphaned every drawing on every other chart.
+   *
+   * They stayed on those charts and became unclearable by `scope: "mcp"` forever
+   * after, because the registry no longer knew they were ours. Measured straight
+   * afterwards: FTAI still carried its 8 shapes, all reading `created_by_mcp: false`,
+   * minutes after this toolchain had drawn them.
+   *
+   * The bound is `ids`, not `removed` — an entity that was live but whose removal
+   * threw is gone from the chart or unreachable either way, and keeping a record of
+   * it would resurrect a phantom on every later clear.
+   */
+  registry.forget(ids);
 
   const remaining = await evaluate(`${apiPath}.getAllShapes().length`);
   return {
@@ -622,7 +666,9 @@ export async function clearAll({ scope = 'mcp', group = null } = {}) {
     removed: removed.length,
     entity_ids: removed,
     remaining_shapes: remaining || 0,
-    note: 'Only drawings created by this tool were removed.',
+    // A refusal here means the store kept stale entries rather than losing good ones.
+    ...(pruned?.refused ? { prune_refused: pruned.why } : {}),
+    note: 'Only drawings created by this tool were removed. Tracking for other symbols is untouched.',
   };
 }
 

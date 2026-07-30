@@ -311,7 +311,73 @@ export const INTRADAY_SCREENS = [
     rank: (r) => Math.abs(Number(r.premarket_change ?? r.gap) || 0),
     session_note: 'Pre-open ONLY, and deliberately so. It ranks on premarket_change and premarket_volume, which describe '
       + 'the pre-market session. It does NOT rank on relative_volume_10d_calc, which scannerTrust marks unsafe pre-open '
-      + 'because a partial day carries a fraction of its eventual volume (SPY measured 6.7M against about 45M).',
+      + 'because a partial day carries a fraction of its eventual volume (SPY measured 6.7M against about 45M). Measured '
+      + 'mid-session on 2026-07-30: the premarket fields are still POPULATED (500/500 rows carry premarket_change, 431 '
+      + 'carry premarket_volume > 0) and 46 rows still pass refine — they are THIS MORNING\'S values, frozen. Present is '
+      + 'not fresh, which is exactly why the gate reads the session state and not whether the field is null.',
+  },
+
+  /**
+   * INTRADAY EXTENSION — because `parabolic_fade` was pointed at the gap screen,
+   * and a gapper and an extended name are different populations.
+   *
+   * This is the same defect the catalogue already carries a note about:
+   * `breakout_continuation` pointed at `momentum_pullback`, measured to share ZERO
+   * candidates. Here it was worse in one way — `premarket_gap` is pre-open ONLY, so
+   * the entire intraday tier could populate for at most two hours a day, and any run
+   * outside that window produced an empty INTRADAY section with no explanation.
+   *
+   * Unlike the other two intraday strategies, `parabolic_fade` needs NO intraday
+   * operand. Its own criteria in strategies.json are `price > ema(9) * 1.05` and
+   * `rsi(14) > 75` — both of which the scanner serves from daily bars. So this
+   * screen is that definition, and nothing more.
+   *
+   * TWO SUBSTITUTIONS, stated rather than hidden:
+   *   - EMA10 for EMA9. The scanner exposes EMA5/10/20/50/100/200 and no EMA9.
+   *     EMA10 is the nearest and is slightly slower, so it selects marginally FEWER
+   *     names than the strategy's own clause — the conservative direction.
+   *   - DAILY RSI. The strategy executes intraday, but every screen here is a coarse
+   *     DAILY filter feeding intraday execution. A name extended on the daily is the
+   *     population a fade is hunted in; the trigger is still an intraday event that
+   *     strategy_check evaluates.
+   *
+   * No session gate. Nothing here is volume-derived: `close` is a real quote at any
+   * hour and the moving averages and RSI are price-only. Pre-open they read
+   * yesterday's finished session, which is precisely what a pre-open candidate list
+   * should be built from.
+   */
+  {
+    key: 'intraday_extension',
+    direction: 'reversal',
+    name: 'Extended from the fast average',
+    bet: 'A name stretched far enough above its fast moving average that a reversion toward it is the trade.',
+    horizon_side: 'INTRADAY — and the sub-21-day REVERSAL side, which is the one direction the horizon '
+      + 'evidence actually supports. Nearly every other screen here is a continuation bet placed where '
+      + 'continuation is weakest; this one is not.',
+    evidence: 'C. Practitioner sources only, like every intraday entry in the catalogue. The clauses are '
+      + "parabolic_fade's OWN criteria from strategies.json rather than anything invented here. What is "
+      + 'measured and relevant: luld_band, because a parabolic name is the one most likely to halt, and '
+      + 'the bands DOUBLE between 09:30-09:45 and 15:35-16:00; and short_interest, because a crowded '
+      + 'short is what turns a fade into a squeeze against you.',
+    columns: ['EMA10', 'EMA20', 'ATR'],
+    filter: [
+      ...LIQUIDITY_FILTER,
+      // RSI > 75 is parabolic_fade's own threshold. ONE-SIDED on purpose and safe to
+      // be: this screen hunts the upper tail, which is the definition of extended.
+      { left: 'RSI', operation: 'greater', right: 75 },
+    ],
+    // price >= EMA(9) * 1.05, with EMA10 standing in. Computed in refine rather than
+    // filtered server-side because the scanner cannot compare two of its own columns.
+    refine: (r) => {
+      const c = Number(r.close);
+      const e = Number(r.EMA10);
+      return Number.isFinite(c) && Number.isFinite(e) && e > 0 && c >= e * 1.05;
+    },
+    // Most extended first — the further from the average, the further to revert.
+    rank: (r) => (Number(r.close) / Number(r.EMA10)) - 1,
+    session_note: 'Runs at ANY hour. Every field it reads is price-only, so none of them is the '
+      + 'partial-day volume trap. Pre-open it reads the finished prior session, which is what a '
+      + 'pre-open candidate list wants.',
   },
 ];
 
@@ -395,6 +461,23 @@ export function overlapMatrix(resultsByScreen) {
  * among screens that could ever have disagreed. The overlap matrix is returned
  * alongside so a confluence of 3 among 35%-overlapping screens is not read as
  * three independent confirmations.
+ */
+/**
+ * ── SUPERSEDED. Nothing in the morning routine calls this any more. ──
+ *
+ * Schema 3.0 does not merge. The merge was the defect: it pooled every screen into
+ * these 20 slots and the detectors then ran on the names it had already chosen, so
+ * the scanner selected the list and our measurements described it afterwards —
+ * the exact inverse of `docs/screening.md`'s "TV scanner as coarse filter, our
+ * detectors as verdict". The routine now gates each screen's own top 15 and keeps
+ * its top 5 SURVIVORS, per screen, so no strategy family can take the whole list.
+ *
+ * Kept, with its tests, because the MEASUREMENTS in it are still true and still
+ * cited: `structural_reversal` shares 0% with every other screen by construction,
+ * and the continuation screens overlap up to 42%, which is why confluence only ever
+ * breaks a tie. Deleting the function would delete the evidence for both.
+ *
+ * Do not wire it back in without re-reading why it was removed.
  */
 export const DEFAULT_SLOTS = { continuation: 15, reversal: 5 };
 

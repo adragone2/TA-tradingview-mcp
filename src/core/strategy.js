@@ -525,8 +525,14 @@ export function buildContext(bars, { rvol_lookback = 20, structure = null, _dept
 }
 
 async function contextForChart(count) {
-  const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+  // The symbol travels with the bars: a scan can move the chart mid-analysis, and
+  // a criteria evaluation that does not say which symbol it evaluated is unusable
+  // as evidence. See the note on loadBars in core/structure.js.
+  const raw = await data.getOhlcv({ count, summary: false });
+  const bars = normalizeBars(raw);
   if (!bars.length) throw new Error('No price bars came back from the chart.');
+  const chartSymbol = raw?.symbol ?? null;
+  const chartTimeframe = raw?.resolution ?? null;
   /**
    * Build the structure operands too. Without this, pullback_pct,
    * nearest_level_* and the zone operands are permanently UNKNOWN, so any
@@ -538,16 +544,20 @@ async function contextForChart(count) {
     bars,
     ctx: buildContext(bars, { structure: structure.available ? structure : null }),
     structure,
+    symbol: chartSymbol,
+    timeframe: chartTimeframe,
   };
 }
 
 /** Check one strategy against the symbol currently on the chart. */
 export async function checkStrategy({ strategy, count = 400 } = {}) {
-  const { bars, ctx } = await contextForChart(count);
+  const { bars, ctx, symbol, timeframe } = await contextForChart(count);
   const result = evaluateCriteria(strategy, ctx);
 
   return {
     success: true,
+    symbol,
+    timeframe,
     strategy: strategy.name || null,
     direction: strategy.direction || null,
     bars_analyzed: bars.length,

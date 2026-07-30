@@ -16,6 +16,7 @@
 import * as chart from '../src/core/chart.js';
 import * as data from '../src/core/data.js';
 import { normalizeBars } from '../src/core/structure.js';
+import { acquireChartLock } from '../src/core/chart_lock.js';
 
 /**
  * @param {string[]} symbols
@@ -26,11 +27,28 @@ import { normalizeBars } from '../src/core/structure.js';
  *                                   partial daily bar, whose high/low/volume
  *                                   are not a day's).
  */
-export async function loadRealBars(symbols, { timeframe, count = 420, skipNewest = 1 } = {}) {
+export async function loadRealBars(symbols, { timeframe, count = 420, skipNewest = 1, label = null } = {}) {
   if (!timeframe) {
     throw new Error('loadRealBars needs an explicit timeframe. Inheriting the chart\'s resolution is how a 60-minute '
       + 'measurement got recorded as daily.');
   }
+
+  /**
+   * Take the chart lock — this walks the chart symbol by symbol, exactly like the
+   * two morning-screen runs that interleaved and corrupted each other's results.
+   *
+   * Acquired HERE rather than in each caller because six measurement scripts go
+   * through this one function, and a rule that has to be remembered per script is a
+   * rule that eventually is not. One of them was found still resident 157 minutes
+   * after its results were recorded, holding nothing.
+   *
+   * `throw` rather than `exit`: a measurement script should report a refusal to its
+   * caller, not vanish with status 0 as if it had measured something.
+   */
+  const lock = acquireChartLock({
+    label: label || `loadRealBars(${symbols.length} symbols @ ${timeframe})`,
+    on_conflict: 'throw',
+  });
 
   const before = await chart.getState();
   const restoreSymbol = before?.symbol || null;
@@ -64,6 +82,8 @@ export async function loadRealBars(symbols, { timeframe, count = 420, skipNewest
   } finally {
     if (restoreSymbol) { try { await chart.setSymbol({ symbol: restoreSymbol }); } catch {} }
     if (restoreResolution) { try { await chart.setTimeframe({ timeframe: String(restoreResolution) }); } catch {} }
+    // Released after the RESTORE, not before: the restore is itself a chart write.
+    lock.release();
   }
 
   return {

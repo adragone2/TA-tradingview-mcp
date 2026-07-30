@@ -4,6 +4,63 @@ The workflows this toolchain exists to run. Each is a sequence you can follow di
 
 ## Morning routine
 
+### The unattended half — the screen
+
+Scheduled weekdays **05:30 PT**, an hour before the 06:30 open. Run it directly with:
+
+```bash
+node scripts/morning-screen.js
+```
+
+~12–15 minutes. Schema 3.0, and the order is the point:
+
+| | |
+|---|---|
+| 1 | Every **session-eligible** scanner. `short_term_reversal` needs a settled session; `premarket_gap` runs pre-open only. A skipped screen is reported, never silently absent |
+| 2 | Top **15 per scanner** into **our detectors** — `assess()` + `ourAssessment()`, every rejection carrying its reason |
+| 3 | Top **5 survivors** per scanner. Not the five the scanner ranked highest — the five that passed |
+| 4 | One **execution tier** each, from the strategy's `execution` field: INTRADAY / WEEKLY / MONTHLY |
+| 5 | Those three watchlist sections rewritten. Any `KEEP*` section is **untouched** — not rewritten, not analysed, not cleared |
+| 6 | The **full unified analysis** (`analyzeTicker`, all 44 contract sections) on every name written, drawn on its chart |
+| 7 | `reports/morning-screen-YYYY-MM-DD.json` + `morning-screen-latest.json` |
+
+Useful flags: `--dry-run` (compute the watchlist, don't write it), `--no-draw`,
+`--no-analysis`, `--pre-gate N`, `--per-scanner N`.
+
+**All three managed sections are rebuilt every run.** There is no rebalance clock
+— INTRADAY/WEEKLY/MONTHLY says how long a trade is *held*, not how often the
+candidate list refreshes, and adding a name to a watchlist places no trade. The
+turnover arithmetic still governs the portfolio; it never governed this list.
+
+**INTRADAY populates from two screens.** `premarket_gap` runs pre-open only and
+feeds `opening_range_break` and `vwap_reclaim`, whose criteria need `vwap` and
+`minutes_since_open`. `intraday_extension` runs at any hour and feeds
+`parabolic_fade`, whose criteria are price-only.
+
+**The analysis timeframe follows the tier.** `src/core/timeframe_policy.js` owns it:
+
+| Tier | Analysis | Context | Bars | Notes |
+|---|---|---|---|---|
+| INTRADAY | **5-minute** | 15-minute | 800 (~10 sessions) | Traded **10:15–14:30 ET** |
+| WEEKLY | daily | weekly macro | 400 | 4-hour to fine-tune the entry |
+| MONTHLY | daily | weekly macro | 400 | 4-hour to fine-tune the entry |
+
+The **gate stays on daily** — the screens are daily, so "is this worth looking at"
+is a daily question, and the gate runs before a tier is even assigned. Only the
+per-ticker analysis moves.
+
+> **Read `timeframe_calibration` on any intraday analysis.** `assess()` measures
+> fixed **bar counts** — 252/126/63/21, captioned 12m/6m/3m/1m. On 5-minute bars
+> 252 bars is **3.2 sessions**: the numbers stay correct and the calendar labels on
+> them do not. `horizon_prior` is measured in trading days and reports **NOT
+> APPLICABLE** below daily, which the completeness score counts as neither a pass
+> nor a failure.
+
+Design and reasoning: [screening.md](screening.md). Exact parameters:
+[screening-parameters.md](screening-parameters.md).
+
+### The interactive half — reading the day
+
 Before the session. ~2–3 minutes for a 25-symbol watchlist.
 
 1. **`tv_doctor`** — confirm the bridge is up. Everything below assumes it.

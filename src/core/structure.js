@@ -22,6 +22,9 @@ import * as data from './data.js';
 import { completeBars } from './session.js';
 import { COLORS, resolveTime, drawShape } from './drawing.js';
 import { evaluate, getChartApi } from '../connection.js';
+import {
+  selectForDisplay, selectPrimary, atrFromBars, DISPLAY_DEFAULTS,
+} from './level_display.js';
 
 /** A level wider than this fraction of price is reported as a zone, not a line. */
 const ZONE_SPAN_PCT = 0.6;
@@ -786,16 +789,31 @@ export function findKeyLevels(bars, {
  * Chart-facing wrappers
  * ------------------------------------------------------------------ */
 
+/**
+ * Bars, WITH the symbol they came from.
+ *
+ * The symbol used to be discarded here, and that is how another company's data got
+ * into a report. A background `morning-screen.js` run drives the chart symbol by
+ * symbol, and during a DLO analysis it moved the chart underneath the tools: reads
+ * came back stamped BATS:AMLX, then BATS:EVRG, then BATS:ZGN. The ones that
+ * returned a symbol were caught immediately. The ones that did not — structure,
+ * legs, levels — were indistinguishable from correct output, and were only caught
+ * by hand-matching swing prices against a tool that did stamp it.
+ *
+ * So every chart read carries what it actually read. A caller can then compare it
+ * to the symbol it asked for, which is the only defence against a mid-analysis
+ * hijack.
+ */
 async function loadBars(count) {
   const raw = await data.getOhlcv({ count, summary: false });
   const bars = normalizeBars(raw);
   if (!bars.length) throw new Error('No price bars came back from the chart. Check the symbol is loaded.');
-  return bars;
+  return { bars, symbol: raw?.symbol ?? null, timeframe: raw?.resolution ?? null };
 }
 
 /** Market structure for the chart as it stands: trend, swings, BOS and CHoCH. */
 export async function analyzeStructure({ count = 200, lookback = 5, max_swings = 20 } = {}) {
-  const bars = await loadBars(count);
+  const { bars, symbol, timeframe } = await loadBars(count);
   const swings = findSwings(bars, { lookback });
   const alt = alternateSwings(swings);
   const s = classifyStructure(alt);
@@ -821,7 +839,7 @@ export async function analyzeStructure({ count = 200, lookback = 5, max_swings =
 
 /** Key levels for the chart as it stands, each with its evidence. */
 export async function keyLevels({ count = 300, lookback = 5, tolerance_pct = 0.75, min_touches = 2, max_levels = 12, max_distance_pct = 25 } = {}) {
-  const bars = await loadBars(count);
+  const { bars, symbol, timeframe } = await loadBars(count);
   const result = findKeyLevels(bars, { lookback, tolerance_pct, min_touches, max_levels, max_distance_pct });
 
   const supports = result.levels.filter((l) => l.side === 'support');
@@ -829,6 +847,8 @@ export async function keyLevels({ count = 300, lookback = 5, tolerance_pct = 0.7
 
   return {
     success: true,
+    symbol,
+    timeframe,
     ...result,
     counts: { support: supports.length, resistance: resistances.length },
     nearest_support: supports[0] ? { price: supports[0].price, distance_pct: supports[0].distance_pct } : null,
@@ -874,11 +894,63 @@ export function labelFor(lvl, detail = 'compact') {
 export async function drawKeyLevels({
   count = 300, lookback = 5, tolerance_pct = 0.75, min_touches = 2, max_levels = 8,
   max_distance_pct = 25, group, label_detail = 'compact', extend_bars = 0,
+  mode = 'primary', tier = 1,
+  select = true, atr_multiple = DISPLAY_DEFAULTS.atr_multiple, per_side = DISPLAY_DEFAULTS.per_side,
+  pins = [], max_bars_since_test = null,
 } = {}) {
-  const bars = await loadBars(count);
-  const found = findKeyLevels(bars, { lookback, tolerance_pct, min_touches, max_levels, max_distance_pct });
+  const { bars, symbol: chartSymbol, timeframe } = await loadBars(count);
+  /**
+   * With selection on, find every candidate and let selectForDisplay choose —
+   * `max_levels` would otherwise pre-truncate by SCORE, which is the behaviour
+   * being replaced. Score is driven by test count, and touch count was measured
+   * here to carry no information about whether a level holds.
+   */
+  const found = findKeyLevels(bars, {
+    lookback, tolerance_pct, min_touches, max_distance_pct,
+    max_levels: (mode === 'primary' || select) ? Math.max(max_levels, 40) : max_levels,
+  });
   if (!found.levels.length) {
     return { success: true, drawn: 0, levels: [], note: found.note || 'No levels cleared the evidence threshold. Lower min_touches or raise tolerance_pct.' };
+  }
+
+  let selection = null;
+  let levelsToDraw = found.levels;
+  const price = found.current_price ?? bars[bars.length - 1]?.close;
+
+  if (mode === 'primary') {
+    /**
+     * Anchor to the last confirmed swing extremes, because those bound the range.
+     * Proximity does not work here: with spot mid-range the nearest levels are the
+     * congestion it is sitting in.
+     */
+    const alt = alternateSwings(findSwings(bars, { lookback }));
+    const lastHigh = [...alt].reverse().find((s) => s.kind === 'high');
+    const lastLow = [...alt].reverse().find((s) => s.kind === 'low');
+    selection = selectPrimary(found.levels, {
+      price, tier,
+      swing_high: lastHigh?.price ?? null,
+      swing_low: lastLow?.price ?? null,
+    });
+    levelsToDraw = selection.shown;
+    if (!levelsToDraw.length) {
+      return {
+        success: true, drawn: 0, levels: [], selection,
+        note: `Nothing to draw at tier ${tier}. ${selection.tiers_available.resistance} resistance and `
+          + `${selection.tiers_available.support} support tier(s) exist.`,
+      };
+    }
+  } else if (select) {
+    selection = selectForDisplay(found.levels, {
+      price, atr: atrFromBars(bars, 14), atr_multiple, per_side, pins, max_bars_since_test,
+    });
+    levelsToDraw = selection.shown;
+    if (!levelsToDraw.length) {
+      return {
+        success: true, drawn: 0, levels: [], selection,
+        note: `No level fell inside ${atr_multiple}x ATR of ${price}. Raise atr_multiple `
+          + `(next: ${selection.next_atr_multiple ?? 'none'}) or pass select:false for the old score ranking.`,
+      };
+    }
   }
 
   const apiPath = await getChartApi();
@@ -899,10 +971,10 @@ export async function drawKeyLevels({
   // the evidence that is the whole point of the label. Alternating the anchor
   // by price rank separates adjacent labels vertically.
   const rank = new Map(
-    [...found.levels].sort((a, b) => a.price - b.price).map((lvl, i) => [lvl, i]),
+    [...levelsToDraw].sort((a, b) => a.price - b.price).map((lvl, i) => [lvl, i]),
   );
 
-  for (const lvl of found.levels) {
+  for (const lvl of levelsToDraw) {
     const colour = lvl.side === 'support' ? COLORS.target : COLORS.stop;
     const label = labelFor(lvl, label_detail);
     const vertAlign = rank.get(lvl) % 2 === 0 ? 'bottom' : 'top';
@@ -949,12 +1021,44 @@ export async function drawKeyLevels({
   const failed = drawn.filter((d) => d.error);
   return {
     success: true,
+    symbol: chartSymbol,
+    timeframe,
     group: groupName,
     drawn: ok,
-    requested: found.levels.length,
+    requested: levelsToDraw.length,
+    candidates_found: found.levels.length,
     current_price: found.current_price,
     levels: drawn,
-    ...(failed.length ? { warning: `${failed.length} of ${found.levels.length} level(s) failed to draw.` } : {}),
+    ...(selection && mode === 'primary' ? {
+      mode: 'primary',
+      tier: selection.tier,
+      next_tier: selection.next_tier,
+      tiers_available: selection.tiers_available,
+      swing_high: selection.swing_high,
+      swing_low: selection.swing_low,
+      anchors: selection.shown.map((l) => ({ side: l.side, price: l.price, anchor: l.anchor })),
+      ...(selection.anchor_warning ? { anchor_warning: selection.anchor_warning } : {}),
+      interior: selection.interior,
+      beyond: selection.beyond,
+      suppressed_note: selection.suppressed_note,
+      selection_method: selection.method,
+    } : selection ? {
+      counts: selection.counts,
+      band: selection.band,
+      pinned_count: selection.pinned_count,
+      next_atr_multiple: selection.next_atr_multiple,
+      ...(selection.shortfalls ? { shortfalls: selection.shortfalls } : {}),
+      ...(selection.suppressed.length ? {
+        suppressed: selection.suppressed,
+        suppressed_note: selection.suppressed_note,
+      } : {}),
+      selection_method: selection.method,
+    } : {
+      selection_off: 'select:false — ranked by score and truncated at max_levels, which is the old '
+        + 'behaviour. Score is driven by test count, and touch count carries no measured information '
+        + 'about whether a level holds.',
+    }),
+    ...(failed.length ? { warning: `${failed.length} of ${levelsToDraw.length} level(s) failed to draw.` } : {}),
     clear_hint: `Remove with draw_clear group="${groupName}".`,
     note: 'Levels derived from this chart\'s price history. Labels carry the evidence behind each one — check it rather than taking the level on trust.',
   };

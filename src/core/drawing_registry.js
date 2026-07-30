@@ -143,17 +143,54 @@ export function forget(entityIds, { path = STORE_PATH } = {}) {
  * entries are considered. Entries for other symbols are left alone.
  */
 export function prune(liveIds, { symbol = null, path = STORE_PATH } = {}) {
-  const live = new Set(liveIds || []);
   const store = readStore(path);
   const before = store.entries.length;
+
+  /**
+   * NO SYMBOL, NO PRUNE. Unknown is not "safe to delete".
+   *
+   * `liveIds` comes from `getAllShapes()`, which only ever sees the CURRENT chart.
+   * Without knowing which symbol produced them, every entry for every OTHER symbol
+   * looks non-live and the whole store gets emptied in one call.
+   *
+   * That is not hypothetical — it happened. `currentSymbol()` swallows any failure
+   * and returns null, the old guard was `if (symbol && ...)`, so a single null
+   * reading untracked every drawing on every chart. The shapes stayed on the charts
+   * and became permanently unclearable by `scope: "mcp"`: 13 charts measured
+   * afterwards read `created_by_mcp: false` for drawings this toolchain had made
+   * minutes earlier.
+   *
+   * Refusing is strictly safer. The cost of not pruning is a stale entry, which the
+   * next scoped prune removes. The cost of over-pruning is a drawing that can never
+   * be cleaned up again — the exact leak `clear-orphans.js` exists to mop up.
+   */
+  if (!symbol) {
+    return {
+      pruned: 0,
+      remaining: before,
+      scoped_to: null,
+      refused: true,
+      why: 'prune needs the symbol these liveIds came from. getAllShapes() only sees the current '
+        + 'chart, so an unscoped prune would untrack every OTHER symbol\'s drawings and leave them '
+        + 'on the charts with no way to clear them.',
+    };
+  }
+
   store.entries = store.entries.filter((e) => {
     // Only judge entries belonging to the symbol these ids came from.
-    if (symbol && e.symbol && e.symbol !== symbol) return true;
-    if (symbol && !e.symbol) return true;   // untagged legacy entries: leave alone
-    return live.has(e.entity_id);
+    if (e.symbol && e.symbol !== symbol) return true;
+    if (!e.symbol) return true;             // untagged legacy entries: leave alone
+    return live(liveIds).has(e.entity_id);
   });
   writeStore(store, path);
   return { pruned: before - store.entries.length, remaining: store.entries.length, scoped_to: symbol };
+}
+
+/** Memoised per call — `filter` would otherwise rebuild the Set per entry. */
+let _liveCache = { src: null, set: null };
+function live(liveIds) {
+  if (_liveCache.src !== liveIds) _liveCache = { src: liveIds, set: new Set(liveIds || []) };
+  return _liveCache.set;
 }
 
 export function clear({ path = STORE_PATH } = {}) {

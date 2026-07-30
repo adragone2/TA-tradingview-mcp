@@ -13,13 +13,13 @@ export function registerGroupTools(server) {
     'The industry-group context Livermore put BEFORE every trade, and the one thing this toolchain had no equivalent for. relative_strength compares a symbol to an INDEX; this asks whether its GROUP is moving and whether the SISTER STOCK agrees. "Livermore never tracked a single stock. He first tracked the industry group movements... a legitimate group movement had to include at least the two leaders of the group." Returns: the symbol\'s group and sector (the scanner\'s industry and sector map exactly onto his Group and Sector, a distinction he insisted people conflate), the group\'s two leaders by market cap, the KEY PRICE — his combined-move confirmation on those two leaders — and the LAGGARDS, members trailing the group median, which he read as weak or sick and therefore short candidates. Worth understanding about the Key Price: requiring the SUM of two moves to clear twice a bar is the same as requiring their AVERAGE to clear it, so it is more permissive than demanding both clear it individually — leaders_agree is what separates "both moving" from "one leader carrying it", and the second case is the false movement his rule exists to catch. His six-POINT threshold is not copied: six points on a $30 stock is 20%, a 1940 artefact, so the bar is a percentage here. IMPORTANT: this is CONTEXT, not an edge. His claim that groups lead the market by three to six months is UNMEASURED here, and this repo has already had two alignment claims (level_pressure, stage_plan) die on measurement.',
     {
       symbol: z.string().describe('Ticker, e.g. "AAPL". Exchange prefix optional.'),
-      universe: z.string().optional().describe('Comma-separated universe keys to search for group members (default "sp500"). Use "sp500,nasdaq,russell2000" for a wider group.'),
+      universe: z.string().optional().describe('Comma-separated universe keys to search for group members (default "sp500,nasdaq,russell2000"). Use "sp500,nasdaq,russell2000" for a wider group.'),
       window: z.enum(['Perf.W', 'Perf.1M', 'Perf.3M']).optional().describe('Performance window for the Key Price (default Perf.1M — a month, matching his major-move framing better than a week)'),
       threshold_pct: z.coerce.number().optional().describe('Key Price bar as a percent move, per leader (default 6). Pass 20 to reproduce his original six-points-on-a-$30-stock.'),
       min_gap_pct: z.coerce.number().optional().describe('How far behind the group median a member must be to count as a laggard (default 5 points)'),
-      limit: z.coerce.number().optional().describe('Rows to pull from the scanner (default 500)'),
+      limit: z.coerce.number().optional().describe('Rows to pull from the scanner (default 2000 — matches ticker_playbook, which is the tool this is normally used alongside)'),
     },
-    wrap(async ({ symbol, universe = 'sp500', window = 'Perf.1M', threshold_pct = 6, min_gap_pct = 5, limit = 500 }) => {
+    wrap(async ({ symbol, universe = 'sp500,nasdaq,russell2000', window = 'Perf.1M', threshold_pct = 6, min_gap_pct = 5, limit = 2000 }) => {
       const keys = String(universe).split(',').map((s) => s.trim()).filter(Boolean);
       const { rows, fetched } = await core.fetchGroupRows({ universe: keys, limit });
 
@@ -107,13 +107,13 @@ export function registerGroupTools(server) {
     {
       symbol: z.string().describe('Ticker to evaluate'),
       market: z.enum(['up', 'down', 'flat']).describe('Direction of the market this stock trades on — get it from market_regime or mtf_analyze, do not guess'),
-      universe: z.string().optional().describe('Universe keys for group membership (default "sp500")'),
+      universe: z.string().optional().describe('Universe keys for group membership (default "sp500,nasdaq,russell2000")'),
       window: z.enum(['Perf.W', 'Perf.1M', 'Perf.3M']).optional().describe('Performance window (default Perf.1M)'),
       threshold_pct: z.coerce.number().optional().describe('Key Price bar per leader, percent (default 6)'),
       side: z.enum(['long', 'short']).optional().describe('Restrict to one side. A side contradicting the aligned direction closes the gate rather than obliging.'),
-      limit: z.coerce.number().optional().describe('Scanner rows (default 500)'),
+      limit: z.coerce.number().optional().describe('Scanner rows (default 2000 — matches ticker_playbook)'),
     },
-    wrap(async ({ symbol, market, universe = 'sp500', window = 'Perf.1M', threshold_pct = 6, side = null, limit = 500 }) => {
+    wrap(async ({ symbol, market, universe = 'sp500,nasdaq,russell2000', window = 'Perf.1M', threshold_pct = 6, side = null, limit = 2000 }) => {
       const keys = String(universe).split(',').map((s) => s.trim()).filter(Boolean);
       const { rows, fetched } = await core.fetchGroupRows({ universe: keys, limit });
       const row = core.findRow(rows, symbol);

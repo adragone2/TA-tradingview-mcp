@@ -3,6 +3,8 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/patterns.js';
 import * as data from '../core/data.js';
 import { normalizeBars } from '../core/structure.js';
+import { planPatternDrawings } from '../core/patterns_draw.js';
+import { drawPatternGeometry } from '../core/assessment_draw.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -10,6 +12,75 @@ const wrap = (fn) => async (args = {}) => {
 };
 
 export function registerPatternTools(server) {
+  server.tool(
+    'patterns_draw',
+    'Draw the detected patterns on the chart — the COMPLETION LEVEL of each, which is the price at which a shape stops being a shape and becomes a fact, and therefore the only line on a pattern that is also a trigger. Bullish patterns are labelled "completes", bearish ones "breaks at", because a rising wedge breaking DOWN through support is not the same event as a flag completing UP through its high. This closes the last manual step in the ticker workflow: patterns_detect returned completion_level and draw_shape could draw a line, but nothing joined them, so patterns were drawn by hand with hand-written labels — and a hand-written label is exactly what leaks an orphan, since entity IDs die with the TradingView session and a label matching no signature can never be swept up. Every label here uses a registered format. Targets are OFF by default: a measured move assumes the pattern behaves typically, and on a FORMING pattern it is projected off a shape that has not happened. Candlestick patterns are never drawn — they are single visible bars, and two independent academic tests found candlestick strategies add no value.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      lookback: z.coerce.number().optional().describe('Swing sensitivity (default 5)'),
+      max_age_bars: z.coerce.number().optional().describe('Ignore patterns that finished more than this many bars ago (default 60)'),
+      include_targets: z.coerce.boolean().optional().describe('Also draw the measured-move target (default false). On a forming pattern this is a projection off a shape that has not completed.'),
+      forming_only: z.coerce.boolean().optional().describe('Draw only patterns still forming (default false)'),
+      max_patterns: z.coerce.number().optional().describe('Cap on patterns drawn (default 6)'),
+      group: z.string().optional().describe('Group name for clearing later (default "patterns-<TICKER>")'),
+    },
+    wrap(async ({ count = 300, lookback = 5, max_age_bars = 60, include_targets = false, forming_only = false, max_patterns = 6, group }) => {
+      const raw = await data.getOhlcv({ count, summary: false });
+      const bars = normalizeBars(raw);
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+      const symbol = raw?.symbol ?? null;
+      const detected = core.detectPatterns(bars, { lookback, max_age_bars });
+      const plan = planPatternDrawings(detected.structural || [], { include_targets, forming_only, max_patterns });
+
+      if (!plan.patterns.length) {
+        return {
+          success: true, symbol, timeframe: raw?.resolution ?? null, drawn: 0, ...plan,
+          note: 'No pattern had a completion level to draw. "None" is a real result — do not manufacture one.',
+        };
+      }
+
+      const groupName = group || `patterns-${String(symbol || 'chart').replace(/^.*:/, '')}`;
+      const drawn = []; const failed = [];
+      /**
+       * Draw the pattern's actual SHAPE, not just its break level.
+       *
+       * This tool originally drew one horizontal line per pattern and nothing
+       * else — which silently dropped the geometry the chart had been showing for
+       * months: wedge boundaries, flag poles, triangle edges, head-and-shoulders.
+       * `drawPatternGeometry` already did all of it, anchored to REAL pivots via
+       * TradingView's native triangle_pattern and head_and_shoulders tools, and it
+       * carries two hard-won fixes: a rectangle gets a BOX rather than a
+       * converging triangle, and boundaries are anchored to pivots rather than
+       * extrapolated from a slope (a 0.93%/bar slope run back 46 bars once put a
+       * lower edge at 22.25 on a bar trading near 29 — a line touching nothing).
+       */
+      const put = async (fn, label) => {
+        try {
+          const r = await fn();
+          if (r?.success || r?.entity_id) drawn.push({ shape: label, entity_id: r?.entity_id ?? null });
+          else failed.push({ shape: label, why: 'created but could not be identified' });
+        } catch (e) { failed.push({ shape: label, why: e.message }); }
+      };
+      for (const pat of plan.patterns) {
+        await drawPatternGeometry(pat, bars, groupName, put);
+      }
+
+      return {
+        success: failed.length === 0,
+        symbol,
+        timeframe: raw?.resolution ?? null,
+        group: groupName,
+        drawn: drawn.length,
+        shapes: drawn,
+        ...plan,
+        ...(failed.length ? { failed, warning: `${failed.length} shape(s) failed to draw.` } : {}),
+        clear_hint: `Remove with draw_clear group="${groupName}".`,
+        noise_floor: detected.noise_baseline ? { walks_with_any_pattern_pct: detected.noise_baseline.walks_with_any_pattern_pct } : undefined,
+        rule: 'A FORMING pattern has not completed. The line is where it would confirm, not a signal now.',
+      };
+    }),
+  );
+
   server.tool(
     'patterns_detect',
     'Detect candlestick and chart patterns on the chart from the bars themselves. CONFIRMED structural patterns carry Bulkowski\'s measured statistics — break-even failure rate, average move, how often the measured-move target is reached — split by breakout direction. Bull-market figures, and they are PERFECT TRADES gross of costs. Every structural pattern reports status "forming" or "confirmed" — a pattern is NOT complete until price closes through the level that completes it, and reporting a forming pattern as a signal is the classic error. Each detection carries the measurements behind it and, where defined, the measured-move target.',

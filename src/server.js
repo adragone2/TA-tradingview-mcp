@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { recordRegistrations } from "./core/tool_registry.js";
 import { registerHealthTools } from "./tools/health.js";
 import { registerDoctorTools } from "./tools/doctor.js";
 import { registerTaApiTools } from "./tools/ta_api.js";
@@ -343,6 +344,15 @@ while doing nothing:
   output; present it as context, not as a recommendation.`,
   },
 );
+
+/**
+ * Record every registration BEFORE any of them happen, so tv_doctor can tell
+ * whether this process is running the code that is on disk. An MCP server loads
+ * its tool modules once at startup, so a tool added afterwards is invisible and
+ * returns "No such tool available" — with no way to ask the server why.
+ * Must stay above the register*Tools() calls or the registry undercounts.
+ */
+recordRegistrations(server);
 
 // Register all tool groups
 registerHealthTools(server);

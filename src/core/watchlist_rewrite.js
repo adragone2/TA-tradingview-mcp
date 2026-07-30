@@ -110,13 +110,45 @@ const TV = 'https://www.tradingview.com';
  */
 const SECTION_PREFIX = '###';
 
-/** Split the flat array into a default section plus named ones. PURE. */
+/**
+ * TradingView's own marker, U+2064 INVISIBLE PLUS, sits between the `###` and the
+ * name on every header its UI creates. Measured on the live list:
+ *
+ *   "###⁤KEEP - POTENTIAL" => 0023 0023 0023 2064 004b 0045 0045 0050 ...
+ *
+ * It renders as nothing, so a header looks identical to one we wrote — and it is
+ * not identical to any code comparing names. `"⁤KEEP - POTENTIAL"` does not
+ * start with `"KEEP"`, so the preservation rule silently failed to match and the
+ * KEEP sections would have been rewritten out of existence; the managed names
+ * missed too, which would have written a second `###INTRADAY` beside the real one.
+ *
+ * So names are NORMALISED for every comparison, while the original header is kept
+ * verbatim for any section carried through untouched, and the marker is reused on
+ * headers we create so the panel stays consistent.
+ */
+const SECTION_MARKER = '⁤';
+/** Zero-width and default-ignorable characters that can hide inside a name. */
+const INVISIBLE = /[­​-‏⁠-⁤﻿]/g;
+
+/** The comparable form of a section name. PURE. */
+export const normaliseSectionName = (raw) => String(raw ?? '').replace(INVISIBLE, '').trim();
+
+/** The header to write for a section we are creating. PURE. */
+export const sectionHeader = (name) => `${SECTION_PREFIX}${SECTION_MARKER}${normaliseSectionName(name)}`;
+
+/**
+ * Split the flat array into a default section plus named ones. PURE.
+ *
+ * `name` is normalised and is what all matching uses; `raw_name` and `header` are
+ * exactly what TradingView holds, so a preserved section round-trips byte for byte.
+ */
 export function parseSections(entries) {
   const out = { default: [], sections: [] };
   let current = null;
   for (const e of entries || []) {
     if (String(e).startsWith(SECTION_PREFIX)) {
-      current = { name: String(e).slice(SECTION_PREFIX.length), header: String(e), symbols: [] };
+      const raw = String(e).slice(SECTION_PREFIX.length);
+      current = { name: normaliseSectionName(raw), raw_name: raw, header: String(e), symbols: [] };
       out.sections.push(current);
     } else if (current) current.symbols.push(e);
     else out.default.push(e);
@@ -139,7 +171,7 @@ export function flattenSections({ default: def, sections }) {
  */
 export function buildWithPreserved(currentEntries, todaysSymbols, preserve = ['KEEP']) {
   const parsed = parseSections(currentEntries);
-  const keepNames = new Set(preserve.map((p) => p.toUpperCase()));
+  const keepNames = new Set(preserve.map((p) => normaliseSectionName(p).toUpperCase()));
   const preserved = parsed.sections.filter((s) => keepNames.has(s.name.toUpperCase()));
   const protectedSymbols = new Set(preserved.flatMap((s) => s.symbols));
   return {
@@ -153,25 +185,82 @@ export function buildWithPreserved(currentEntries, todaysSymbols, preserve = ['K
   };
 }
 
-/** Symbols under one named section. Case-insensitive. PURE. */
+/** Symbols under one named section. Case-insensitive, marker-insensitive. PURE. */
 export function sectionSymbols(entries, name) {
-  const want = String(name).toUpperCase();
+  const want = normaliseSectionName(name).toUpperCase();
   const found = parseSections(entries).sections.find((s) => s.name.toUpperCase() === want);
   return found ? found.symbols.slice() : [];
 }
 
 /**
- * Build a watchlist split by horizon bucket.
+ * Build a watchlist split into ANY ordered set of managed sections.
  *
- * Four sections: `Months` and `Weeks` for the screen's output, plus any section
- * whose name begins with KEEP, carried through untouched. Prefix matching on
- * KEEP rather than an exact list means the existing plain `###KEEP` section
- * survives this change, and so does any future `KEEP swing` the user invents.
+ * The general form. `buildBucketed` below is the two-bucket Weeks/Months case
+ * expressed in terms of it — the owner's list now runs INTRADAY / WEEKLY /
+ * MONTHLY, and a second copy of the KEEP-preservation logic is exactly the kind
+ * of duplicate that drifts.
+ *
+ * Three invariants, each of which has already gone wrong somewhere:
+ *
+ *   - Any section whose name begins with KEEP is carried through UNTOUCHED, and
+ *     its symbols outrank today's screen. Prefix matching, so "KEEP - POTENTIAL"
+ *     and "KEEP - ACTIVE TRADE" both survive without being enumerated.
+ *   - A symbol may appear ONCE. A duplicate anywhere makes TradingView reject the
+ *     whole write with a 422, so earlier sections win and later ones drop it.
+ *   - A managed section passed as `null` is CARRIED FORWARD rather than emptied.
+ *     That is how a bucket on a slower cadence survives a daily run.
+ *
+ * @param {{name: string, symbols: string[]|null}[]} sections Ordered; null = carry forward.
+ */
+export function buildSectioned(currentEntries, { sections = [], keep_prefix = 'KEEP' } = {}) {
+  const parsed = parseSections(currentEntries);
+  const prefix = normaliseSectionName(keep_prefix).toUpperCase();
+  const preserved = parsed.sections.filter((x) => x.name.toUpperCase().startsWith(prefix));
+  const protectedSymbols = new Set(preserved.flatMap((x) => x.symbols));
+  const existing = new Map(parsed.sections.map((x) => [x.name.toUpperCase(), x]));
+
+  const used = new Set(protectedSymbols);
+  const carried = [];
+  const out = [];
+  for (const want of sections) {
+    const name = normaliseSectionName(want.name);
+    const carriedForward = want.symbols === null;
+    if (carriedForward) carried.push(name);
+    const wanted = carriedForward ? sectionSymbols(currentEntries, name) : want.symbols;
+    const kept = [];
+    for (const sym of wanted || []) {
+      if (used.has(sym)) continue;          // KEEP wins, then earlier sections
+      used.add(sym);
+      kept.push(sym);
+    }
+    // Reuse the header TradingView already holds, so rewriting a section does not
+    // create a second one differing only by an invisible character.
+    const header = existing.get(name.toUpperCase())?.header ?? sectionHeader(name);
+    out.push({ name, header, symbols: kept });
+  }
+
+  const managed = new Set(sections.map((x) => normaliseSectionName(x.name)));
+  return {
+    entries: flattenSections({ default: [], sections: [...out, ...preserved] }),
+    sections: Object.fromEntries(out.map((x) => [x.name, x.symbols])),
+    carried_forward: carried,
+    protected_symbols: [...protectedSymbols],
+    preserved_sections: preserved.map((x) => ({ name: x.name, count: x.symbols.length })),
+    // A section that existed and is neither managed nor KEEP would be deleted by
+    // this write. Surfaced so a rename cannot quietly bin the user's own symbols.
+    dropped_sections: parsed.sections
+      .filter((x) => !x.name.toUpperCase().startsWith(prefix) && !managed.has(x.name))
+      .map((x) => ({ name: x.name, count: x.symbols.length })),
+    orphaned_default: parsed.default.slice(),
+  };
+}
+
+/**
+ * The two-bucket Weeks/Months case, expressed through `buildSectioned`.
  *
  * Pass `months: null` on a day the monthly bucket is NOT due — the existing
  * Months section is then carried forward verbatim. That is the cadence fix
- * expressed in the watchlist: on 20 of 21 weekdays the Months section is not
- * touched at all.
+ * expressed in the watchlist: on 20 of 21 weekdays it is not touched at all.
  *
  * Ordering is deliberate: Months first (slowest, most evidenced), then Weeks,
  * then the KEEP sections in whatever order they already had.
@@ -183,40 +272,22 @@ export function buildBucketed(currentEntries, {
   months_section = 'Months',
   weeks_section = 'Weeks',
 } = {}) {
-  const parsed = parseSections(currentEntries);
-  const prefix = keep_prefix.toUpperCase();
-  const preserved = parsed.sections.filter((s) => s.name.toUpperCase().startsWith(prefix));
-  const protectedSymbols = new Set(preserved.flatMap((s) => s.symbols));
-
-  const carriedForward = months === null;
-  const monthsWanted = carriedForward ? sectionSymbols(currentEntries, months_section) : months;
-
-  // A symbol the user has pinned in a KEEP section outranks today's screen —
-  // and a duplicate anywhere makes TradingView reject the entire write with 422.
-  const monthsOut = monthsWanted.filter((s) => !protectedSymbols.has(s));
-  const monthsSet = new Set(monthsOut);
-  const weeksOut = weeks.filter((s) => !protectedSymbols.has(s) && !monthsSet.has(s));
-
-  const sections = [
-    { name: months_section, header: `${SECTION_PREFIX}${months_section}`, symbols: monthsOut },
-    { name: weeks_section, header: `${SECTION_PREFIX}${weeks_section}`, symbols: weeksOut },
-    ...preserved,
-  ];
-
+  const r = buildSectioned(currentEntries, {
+    keep_prefix,
+    sections: [
+      { name: months_section, symbols: months },
+      { name: weeks_section, symbols: weeks },
+    ],
+  });
   return {
-    entries: flattenSections({ default: [], sections }),
-    months: monthsOut,
-    weeks: weeksOut,
-    months_carried_forward: carriedForward,
-    protected_symbols: [...protectedSymbols],
-    preserved_sections: preserved.map((s) => ({ name: s.name, count: s.symbols.length })),
-    // Sections that existed and are NOT being kept — surfaced so a rename does
-    // not quietly delete a section full of the user's own symbols.
-    dropped_sections: parsed.sections
-      .filter((s) => !s.name.toUpperCase().startsWith(prefix)
-        && s.name !== months_section && s.name !== weeks_section)
-      .map((s) => ({ name: s.name, count: s.symbols.length })),
-    orphaned_default: parsed.default.slice(),
+    entries: r.entries,
+    months: r.sections[months_section],
+    weeks: r.sections[weeks_section],
+    months_carried_forward: r.carried_forward.includes(months_section),
+    protected_symbols: r.protected_symbols,
+    preserved_sections: r.preserved_sections,
+    dropped_sections: r.dropped_sections,
+    orphaned_default: r.orphaned_default,
   };
 }
 

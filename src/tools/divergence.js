@@ -12,10 +12,16 @@ const wrap = (fn) => async (args = {}) => {
   catch (err) { return jsonResult({ success: false, error: err.message }, true); }
 };
 
+/**
+ * Bars, WITH the symbol they came from — see the note on the same helper in
+ * core/structure.js. A background scan can move the chart mid-analysis, and a read
+ * that does not say what it read cannot be checked.
+ */
 async function loadBars(count) {
-  const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
+  const raw = await data.getOhlcv({ count, summary: false });
+  const bars = normalizeBars(raw);
   if (!bars.length) throw new Error('No price bars came back from the chart.');
-  return bars;
+  return { bars, symbol: raw?.symbol ?? null, timeframe: raw?.resolution ?? null };
 }
 
 const SERIES = {
@@ -41,13 +47,15 @@ export function registerDivergenceTools(server) {
       include_hidden: z.boolean().optional().describe('Include hidden (continuation) divergences (default true)'),
     },
     wrap(async ({ count = 300, indicator = 'rsi', length, ...opts }) => {
-      const bars = await loadBars(count);
+      const { bars, symbol, timeframe } = await loadBars(count);
       const { label, series } = SERIES[indicator](bars, length);
       if (!series.some((v) => Number.isFinite(v))) {
         throw new Error(`${label} could not be computed from these bars — check there is enough history and, for OBV/MFI, usable volume.`);
       }
       return {
         success: true,
+        symbol,
+        timeframe,
         last_price: bars[bars.length - 1].close,
         ...core.findDivergences(bars, series, { ...opts, label }),
         caveat: core.DIVERGENCE_CAVEAT,
@@ -65,8 +73,12 @@ export function registerDivergenceTools(server) {
       agreement_window: z.coerce.number().optional().describe('How recent a divergence must be to count toward agreement (default 10 bars)'),
     },
     wrap(async ({ count = 300, ...opts }) => {
-      const bars = await loadBars(count);
-      return { success: true, last_price: bars[bars.length - 1].close, ...core.surveyDivergences(bars, opts) };
+      const { bars, symbol, timeframe } = await loadBars(count);
+      return {
+        success: true, symbol, timeframe,
+        last_price: bars[bars.length - 1].close,
+        ...core.surveyDivergences(bars, opts),
+      };
     }),
   );
 
@@ -81,7 +93,7 @@ export function registerDivergenceTools(server) {
       correction_window: z.coerce.number().optional().describe('Bars a time correction must span (default 10)'),
     },
     wrap(async ({ count = 300, lookback = 5, max_legs = 10, time_corrections = true, correction_window = 10 }) => {
-      const bars = await loadBars(count);
+      const { bars, symbol, timeframe } = await loadBars(count);
       const swings = alternateSwings(findSwings(bars, { lookback }));
       const r = classifyLegs(bars, swings);
       const tc = time_corrections ? findTimeCorrections(bars, { window: correction_window }) : null;

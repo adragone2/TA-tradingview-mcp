@@ -15,6 +15,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findTradingViewBinary } from "./health.js";
 import { rulesStatus } from "./rules.js";
+import { checkServerCurrent } from "./tool_registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../");
@@ -236,6 +237,12 @@ export async function doctor({ port = 9222, skip_server_test = false } = {}) {
   }
 
   checks.push(checkRules());
+  /**
+   * Last, but it explains failures the others cannot: a tool that exists in source
+   * and is missing from this process means the server is running older code, and
+   * every other check will pass while it does.
+   */
+  checks.push(checkServerCurrent());
 
   const failed = checks.filter((c) => !c.ok);
   const ok = failed.length === 0;

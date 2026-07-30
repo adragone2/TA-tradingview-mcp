@@ -10,7 +10,8 @@ Status: **built and running.** Scheduled weekdays 07:00 ET.
 |---|---|
 | Exact parameters | [screening-parameters.md](screening-parameters.md) — generated from the code |
 | Runner | `node scripts/morning-screen.js` |
-| Output | `reports/morning-screen-YYYY-MM-DD.json` + the `Swing Opportunities` watchlist |
+| Output | `reports/morning-screen-YYYY-MM-DD.json` (schema **3.0**) + the `Swing Opportunities` watchlist |
+| Watchlist sections | `INTRADAY`, `WEEKLY`, `MONTHLY` — rewritten. `KEEP*` — never touched |
 | Scheduled task | `morning-screen`, weekdays **05:30 PT** (an hour before the 06:30 PT open) |
 
 Three things changed between this design and the implementation, each because
@@ -24,8 +25,16 @@ the live data disagreed with the plan — see the git log for the measurements:
 3. **`/replace/` is a reorder, not a rewrite.** A watchlist rewrite is
    remove-then-append; `/replace/` only imposes order afterwards.
 
-A **KEEP** section in the watchlist is preserved across rewrites — its symbols
-stay in the list and their drawings are not cleared.
+Any section whose name begins with **KEEP** is preserved across rewrites — its
+symbols stay in the list, they are not analysed, and their drawings are not
+cleared. Moving a ticker into a KEEP section in TradingView is how you tell this
+run to leave it alone.
+
+> **The header format is not what it looks like.** TradingView writes
+> `###` + **U+2064 INVISIBLE PLUS** + the name, so `"###⁤KEEP - POTENTIAL"` parses
+> to a name that does **not** start with `"KEEP"`. Matching on the raw name
+> silently failed to preserve anything. `parseSections` normalises for comparison
+> and round-trips the original header verbatim.
 
 ---
 
@@ -387,17 +396,107 @@ bar this analysis is based on"*.
 
 ## Run shape
 
+Schema 3.0. **The detectors run BEFORE the per-scanner cut** — the order is the
+whole point of the change.
+
 ```
-07:00 ET   stage 1   one POST, 4505-symbol universe -> ~150 candidates   <1s
-           merge     rank by screen-confluence, apply the veto
-           top 20
-07:05 ET   stage 2   20 x assess()                                       ~4 min
-           deflate   rule_select across the morning's trials
-07:10 ET   output    rewrite the Swing Watchlist + write the report
+05:30 PT   stage 1   every session-eligible scanner, one POST each        <1s
+           stage 2   top 15 per scanner -> OUR detectors on the union     ~3 min
+                     assess() + ourAssessment(), each rejection reasoned
+           stage 3   top 5 SURVIVORS per scanner
+           stage 4   classify each into INTRADAY / WEEKLY / MONTHLY
+           stage 5   rewrite those three sections; KEEP* untouched
+05:35 PT   stage 6   the FULL unified analysis on every name written      ~8 min
+06:00 PT   output    reports/morning-screen-YYYY-MM-DD.json
 ```
 
-Twenty names is roughly four minutes of stage 2, against the Sunday review's
-7–12 for about fifty. Comfortably inside the pre-open window.
+### Why the order changed
+
+2.x ran every scanner, merged into 15 continuation and 5 reversal slots, and
+only *then* ran the detectors on the twenty names the merge had already picked.
+The scanner chose the list; our measurements described it afterwards. That
+inverts the design stated at the top of this file, and it let one strategy family
+take most of the slots.
+
+Now each scanner's own top 15 enters the gate, and only survivors are ranked for
+its five places. Fifteen in rather than five because the gate genuinely rejects —
+a choppy regime reading alone knocks out most of a typical sample — so five in
+would rarely yield five out.
+
+The pre-gate exists because detectors need BARS. Measured on the 2026-07-30 run
+the scanners refine to 891 slots over **415 unique symbols**; at roughly two
+seconds a chart load that is fifteen minutes before any analysis starts, in a
+window that has to finish before the open.
+
+### What the gate can reject, and what it deliberately cannot
+
+| Rejects | Why |
+|---|---|
+| `market_regime.tradeable === false` | Efficiency against the random-walk baseline. The single most common rejection. |
+| `ourAssessment().tradeable === false` | Folds in a stale last leg, a partial weekly bar, no measurable persistence. |
+| Bars that will not load, or fewer than 60 | Not a candidate. |
+
+| Deliberately does NOT gate | Why |
+|---|---|
+| Pattern presence | 68% of random walks contain one, and the screens already select for shape. |
+| `stage_plan` alignment | Forward-tested NEGATIVE as a gate — long 33.5% vs a 36.4% baseline. |
+| Two-leader group agreement | Measured to cost 9.3 points of win rate. |
+
+### The tier, and where it comes from
+
+The tier comes from the **strategy**, not the screen — `strategies.json` carries
+`execution` per strategy, and a screen only points at strategies. Best evidence
+tier wins; a tie takes the **longer** horizon, because below ~21 trading days the
+documented effect is reversal and these are continuation bets. REJECTED
+strategies never decide a tier.
+
+A screen pointing at **no** strategy produces survivors that classify as null and
+vanish from the watchlist in silence. Two were found that way and both are now
+covered by a contract test: `rs_leadership` had no catalogue entry at all, and
+`short_term_reversal` had one whose `screener` field is prose that the identifier
+parser truncated.
+
+### There is no rebalance clock, and there should not have been one
+
+Every managed section is rebuilt every run.
+
+A monthly clock was carried over from the Weeks/Months design and it was wrong
+twice. Mechanically, it read a stamp that the **deleted 2.x pipeline** had written
+that same morning — so MONTHLY carried forward the twelve names 2.x had chosen and
+cited 2.x's own timestamp as the reason it was not allowed to change.
+
+Conceptually, the argument never applied. Weeks/Months was a **cadence** split;
+INTRADAY/WEEKLY/MONTHLY is an **execution** split — how long a trade in that name
+is expected to be *held*. And this is a **watchlist**: adding a name to it places
+no trade. The turnover arithmetic that justifies a monthly clock — 252 round trips
+a year, 50.4% drag at 20bps against MAD's ~9% gross — is about holding positions,
+and it still is. It was never about how often to refresh a list of things to look
+at.
+
+Tier A factors are still computed every run, because computing one is a single
+scan. They **order** the monthly tier; they never select it, and ordering a list
+produces no trades.
+
+### The intraday tier needs a screen that can run
+
+`premarket_gap` is `session: 'premarket'`. While it was the only intraday screen,
+the entire tier could populate for at most two hours a day, and every run outside
+that window wrote an empty `INTRADAY` section with no explanation.
+
+Two of the three intraday strategies genuinely need the pre-open list —
+`opening_range_break` and `vwap_reclaim` are defined on `minutes_since_open`,
+`vwap` and `rvol`, none of which exist before the bell. The most a pre-open screen
+can honestly give them is a list of names likely to be *in play*.
+
+`parabolic_fade` is different and was mis-wired: its own criteria are
+`rsi(14) > 75` and `price > ema(9) × 1.05`, both of which the scanner serves from
+daily bars. Pointing it at a gap screen is the `breakout_continuation` →
+`momentum_pullback` defect again — a gapper and an extended name are different
+populations. `intraday_extension` is that definition and nothing more, with two
+substitutions stated rather than hidden: **EMA10 for EMA9** (the scanner has no
+EMA9; EMA10 is slower, so it selects marginally fewer names) and **daily RSI**
+(every screen here is a coarse daily filter feeding intraday execution). It
+carries no session gate because every field it reads is price-only.
 
 ## Settled
 

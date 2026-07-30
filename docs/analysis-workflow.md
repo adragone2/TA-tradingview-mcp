@@ -38,7 +38,8 @@ is the architecture: what connects to what, which piece was missing, and where t
   │ 6  SIZE                  position_size_constrained   │  the MINIMUM of three constraints wins
   │                          pivot_trail + stopping_premium
   ├─────────────────────────────────────────────────────┤
-  │ 7  DRAW                  levels_draw, draw_trade_plan,
+  │ 7  DRAW                  draw_clear FIRST, then        │  clear before drawing, every time
+  │                          levels_draw, draw_trade_plan,
   │                          zones_draw, capture_screenshot
   ├─────────────────────────────────────────────────────┤
   │ 8  INDICATORS            chart_indicators_for_strategy│  driven from the catalogue
@@ -46,6 +47,64 @@ is the architecture: what connects to what, which piece was missing, and where t
   │ 9  REPORT                fixed shape, tiers quoted    │
   └─────────────────────────────────────────────────────┘
 ```
+
+## The pattern pass, and the entry hypothesis
+
+Two omissions found by running this on a live name, both of which make a report read as
+complete when it is not.
+
+**Patterns are part of step 3, and "none" is a result.** `patterns_detect`, `vcp_check`,
+`wyckoff_spring`, `divergence_survey` and `elliott_survey` all belong in the chart read. Three
+fields decide what a detection is worth: `status` (`forming` is not a signal — Bulkowski
+measures from the breakout onward, so his statistics do not apply to a forming shape),
+`noise_check` (68% of random walks contain at least one structural pattern), and
+`breakout_levels` on NR4/NR7/inside bars, which is where a concrete trigger price comes from.
+Two forming patterns can point opposite ways on the same bars — report both and say the chart
+does not favour either, rather than picking one.
+
+**A confirmed pattern whose target has already been hit is history.** Check the target against
+the high since it completed. A DLO inverse H&S completed at a 13.495 neckline with a 15.83
+target on a chart that then printed 16.78 — the pattern paid out months ago, and quoting its
+71% meeting-target rate as though the move were still ahead would be wrong.
+
+**Every report needs a forward entry hypothesis**, stated as a conditional and given for both
+directions: a trigger price and the *event* at it (a daily close, not "around" a number), a
+stop from structure checked against 1x ATR, the invalidation price, and the R:R measured at
+the trigger rather than at today's price. Build the trigger from something already on the
+chart — a pattern's `completion_level`, an NR7 `breakout_levels` value, a level. If the
+trigger cannot plausibly be reached before a known catalyst, say so.
+
+## Two things that go wrong at step 7 and 8
+
+Both were found running this workflow against a live chart, not in a test.
+
+**Clear before drawing.** Drawings from earlier runs survive, and a stale level from a
+previous session looks exactly like one this analysis just proved. A live DLO run found
+**12 orphaned MCP shapes** already on the chart; the new levels were drawn on top of them.
+`draw_clear scope:"mcp"` first — it never touches hand-drawn shapes — then check
+`remaining_shapes`. Anything left is either the user's own or an orphan from a restarted
+TV session, which `node scripts/clear-orphans.js` finds by label text.
+
+Also: `levels_draw` ranks by score and takes the top N, and support levels routinely
+outscore resistance. Asking for 6 returned **six supports and no resistance** on a name
+sitting under overhead supply — hiding the only levels that mattered for a position held
+at a loss. Read the `counts` field rather than trusting the count you asked for.
+
+**The permanent studies are Volume, MA 50 and MA 200 — three, not two.** The Moving
+Average Ribbon has four MA slots with SMA 50 and SMA 200 enabled and EMA 8 / EMA 100 off.
+So `group_leader_momentum`, which names MA(50) + MA(200) + Volume, needs **nothing added**
+and all three free slots stay free. `coveredByPermanent` in `src/core/chart_budget.js`
+matches the period as well as the name, since MA(20) is genuinely absent while MA(50) is
+genuinely present.
+
+And an `inputs` override could be silently ignored while the add still reported success:
+`createStudy`'s fourth argument takes raw values **positionally** in the study's declared
+input order, not `[{id, value}]` objects, so `Moving Average` with `{length: 200}` produced
+a **9-period** MA reading 14.58 where the real sma(200) was 13.40. `getInputValues()` also
+returns `[]` until the study finishes loading, so setting inputs straight after creating
+matched nothing and wrote nothing. Both are fixed and `chart_manage_indicator` now returns
+`inputs_verified`, read back from the property tree — check it, and cross-check the number
+against what `strategy_check` computed.
 
 ## What was missing, and is now built
 

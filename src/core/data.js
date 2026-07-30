@@ -5,6 +5,11 @@ import { evaluate, evaluateAsync, KNOWN_PATHS } from '../connection.js';
 import { lastBarState } from './session.js';
 
 const MAX_OHLCV_BARS = 500;
+/**
+ * An absolute ceiling on a single read, so `max` cannot become a runaway.
+ * 5,000 five-minute bars is ~64 sessions — well past anything here needs.
+ */
+const HARD_OHLCV_CEILING = 5000;
 const MAX_TRADES = 20;
 const CHART_API = KNOWN_PATHS.chartApi;
 const BARS_PATH = KNOWN_PATHS.mainSeriesBars;
@@ -191,8 +196,18 @@ function buildSettledReadJS(limit, timeoutMs) {
  * no identity attached cannot be checked by anything downstream, which is how a
  * wrong series used to pass silently all the way into a printed analysis.
  */
-export async function getOhlcv({ count, summary, settle_timeout_ms } = {}) {
-  const limit = Math.min(count || 100, MAX_OHLCV_BARS);
+/**
+ * @param {number} [max] Raise the read cap above MAX_OHLCV_BARS.
+ *
+ * The default 500 is a CONTEXT guard, not a data limit — an interactive caller
+ * pulling thousands of bars into a reply is the thing it prevents. Unattended
+ * callers need more: on 5-minute bars 500 is THREE SESSIONS, which is not enough
+ * history for a level, a structure read or a pattern to mean anything. The chart
+ * must also be holding them; see `chart.loadHistory`.
+ */
+export async function getOhlcv({ count, summary, settle_timeout_ms, max } = {}) {
+  const ceiling = Math.min(max || MAX_OHLCV_BARS, HARD_OHLCV_CEILING);
+  const limit = Math.min(count || 100, ceiling);
   const timeout = settle_timeout_ms ?? SERIES_SETTLE_TIMEOUT_MS;
 
   let payload;

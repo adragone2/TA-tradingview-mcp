@@ -264,7 +264,32 @@ describe('the four screens added for catalogue coverage', () => {
       assert.ok(byKey(k), `screen ${k} missing`);
     }
     assert.equal(SCREENS.length, 8, 'eight swing screens');
-    assert.equal(INTRADAY_SCREENS.length, 1, 'premarket_gap is intraday and must NOT be in the confluence merge');
+    /**
+     * The invariant is the SEPARATION, not a count.
+     *
+     * This asserted `INTRADAY_SCREENS.length === 1` because premarket_gap was the
+     * only one — which made adding a second intraday screen fail a test whose stated
+     * reason ("must NOT be in the confluence merge") the addition did not violate.
+     * A count is a proxy for the rule; write the rule.
+     */
+    const swingKeys = new Set(SCREENS.map((s) => s.key));
+    for (const s of INTRADAY_SCREENS) {
+      assert.ok(!swingKeys.has(s.key),
+        `${s.key} is intraday and must stay out of SCREENS, which drives the swing tiers`);
+    }
+    assert.ok(INTRADAY_SCREENS.length >= 1, 'the intraday tier needs at least one screen or it can never populate');
+  });
+
+  test('the intraday tier is not reachable only in the pre-open window', () => {
+    /**
+     * `premarket_gap` is `session: 'premarket'`, so when it was the ONLY intraday
+     * screen the entire tier could populate for at most two hours a day. Every run
+     * outside that window wrote an empty INTRADAY section and said nothing about why.
+     */
+    const anytime = INTRADAY_SCREENS.filter((s) => !s.session);
+    assert.ok(anytime.length >= 1,
+      'at least one intraday screen must run at any hour, or INTRADAY is empty on every '
+      + 'run that is not pre-open and nothing explains it');
   });
 
   test('breakout selects the OPPOSITE band from momentum_pullback', () => {

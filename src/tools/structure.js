@@ -38,13 +38,20 @@ export function registerStructureTools(server) {
 
   server.tool(
     'levels_draw',
-    'Draw computed key levels on the chart — horizontal lines for tight levels, shaded rectangles for zones — green for support, red for resistance, thickness by strength. Each label carries the evidence behind the level, not just the price. Grouped so draw_clear removes them without touching the user\'s own drawings.',
+    'Draw the key levels on the chart, labelled with the evidence behind each one, grouped so draw_clear removes them cleanly. BY DEFAULT it draws exactly TWO lines: the PRIMARY support and PRIMARY resistance, anchored to the last confirmed swing low and swing high — the levels that BOUND the range. Ask for `tier: 2` to walk out to the next level beyond each, then 3, and so on. Two earlier rankings were tried and both failed on a live chart: ranking by `score` put six supports and no resistance on a name sitting under overhead supply, because score is driven by test count and touch count carries no measured information about whether a level holds; and ranking by PROXIMITY is worse still when price sits mid-range, because the nearest levels are then the congestion price is inside — measured on DLO the three nearest were traded through 16.7%, 16.7% and 21.7% of the last 60 bars, the three worst on the chart, while the swing-anchored resistance was traded through 0.0%. Everything not drawn comes back in `interior` and `beyond` rather than being silently dropped. Pass mode:"band" for the nearest-N-per-side ATR behaviour, with `pins` to force your stop/entry/targets through.',
     {
       count: z.coerce.number().optional().describe('Bars to analyze (default 300)'),
       lookback: z.coerce.number().optional().describe('Swing sensitivity (default 5)'),
       tolerance_pct: z.coerce.number().optional().describe('Clustering tolerance, percent (default 0.75)'),
       min_touches: z.coerce.number().optional().describe('Separate tests required (default 2)'),
-      max_levels: z.coerce.number().optional().describe('How many to draw (default 8 — more than this clutters the chart)'),
+      mode: z.enum(['primary', 'band']).optional().describe('"primary" (DEFAULT) draws ONE support and ONE resistance, anchored to the last confirmed swing low and swing high — the levels that BOUND the range. "band" draws the nearest N per side inside an ATR band.'),
+      tier: z.coerce.number().optional().describe('Which tier to draw in primary mode (default 1 = the boundaries). Tier 2 is the next level beyond each boundary, tier 3 the one after. This is "show me the next one".'),
+      select: z.coerce.boolean().optional().describe('Band mode only: filter to the nearest N per side (default true). false restores the old score-ranked top-max_levels behaviour.'),
+      atr_multiple: z.coerce.number().optional().describe('Band half-width in ATRs (default 1.5). This is the knob for "show me the next ones" — raise it to 3, then 6.'),
+      per_side: z.coerce.number().optional().describe('How many levels per side, at most (default 3). Applied to support and resistance separately so one side cannot crowd out the other.'),
+      pins: z.array(z.union([z.number(), z.object({ price: z.number(), label: z.string().optional() })])).optional().describe('Prices that must be drawn however far away they are — your stop, entry and targets. A filter that hides your own stop hides the decision.'),
+      max_bars_since_test: z.coerce.number().optional().describe('Optional recency cut: drop levels last tested more than this many bars ago. OFF by default — measured on DLO it removed only 2 of 19 levels and both were resistances, because an active name revisits most of its range constantly.'),
+      max_levels: z.coerce.number().optional().describe('Only used when select:false — how many to draw, ranked by score (default 8)'),
       max_distance_pct: z.coerce.number().optional().describe('Ignore levels further than this percent from price (default 25)'),
       label_detail: z.enum(['price', 'compact', 'full']).optional().describe('How much to put in the chart label. "compact" (default) keeps it readable; "full" writes the whole reason and will overlap when levels are close. The complete evidence is in the result either way.'),
       extend_bars: z.coerce.number().optional().describe('Extend zones this many bars past the last bar (default 0)'),

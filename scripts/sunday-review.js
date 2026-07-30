@@ -31,6 +31,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as chart from '../src/core/chart.js';
+import { acquireChartLock } from '../src/core/chart_lock.js';
 import * as data from '../src/core/data.js';
 import * as ta from '../src/core/ta_decisions.js';
 import * as taApi from '../src/core/ta_api.js';
@@ -215,6 +216,18 @@ if (INCLUDE_HOLDINGS) {
   log(`  ${holdings.length} additional holdings`);
 }
 
+/**
+ * Take the chart lock before the first chart write.
+ *
+ * This walks ~60 tickers symbol by symbol, and until now it announced itself to
+ * nobody: the lock existed only inside `morning-screen.js`. A Sunday review and a
+ * forced morning screen overlapping would interleave exactly as two morning runs
+ * once did, each restoring the chart to the other's working symbol. Placed AFTER
+ * the TA calls above so a run that cannot reach TA fails without ever claiming
+ * the chart.
+ */
+acquireChartLock({ label: 'sunday-review' });
+
 const before = await chart.getState();
 const original = before?.symbol || null;
 
@@ -295,7 +308,13 @@ for (const item of queue) {
     row.assessment = a; row.our_view = ours;
     row.ta_validation = validateTa(a, ours, { side: item.side, taRow: item.taRow });
     if (item.also_listed_as) row.ta_validation.also_listed_as = item.also_listed_as;
-    if (DRAW) row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars, rawChannel);
+    // `bias` is OUR independent read; `item.side` is the side TA holds. They are
+    // different claims and the drawer needs both — the bias decides which findings
+    // are drawn, the side labels TA's own stop.
+    if (DRAW) {
+      row.drawings = await drawFindings(t, a, item.taRow, item.side, rawPatterns, bars, rawChannel, null,
+        { bias: row.our_view?.bias ?? null });
+    }
     log(`${ours.bias}/${row.ta_validation.agreement}${row.drawings ? ` (${row.drawings.shapes} drawn)` : ''}`);
   } catch (e) {
     row.error = e.message;

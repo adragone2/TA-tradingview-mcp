@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import {
-  PERMANENT_STUDIES, MAX_STUDIES, isPermanent, budget, planIndicators,
+  PERMANENT_STUDIES, MAX_STUDIES, isPermanent, budget, planIndicators, coveredByPermanent,
 } from '../src/core/chart_budget.js';
 
 const st = (...names) => names.map((n, i) => ({ name: n, id: `id${i}` }));
@@ -104,5 +104,63 @@ describe('planIndicators', () => {
     assert.equal(p.will_add.length, 0);
     assert.equal(p.dropped.length, 0);
     assert.equal(p.dropped_note, undefined);
+  });
+});
+
+describe('the MA Ribbon already plots MA 50 and MA 200', () => {
+  /**
+   * The owner's ribbon has SMA 50 and SMA 200 enabled. Re-adding either as a
+   * separate Moving Average is a duplicate that costs one of only three free
+   * slots — which is exactly what happened before this existed.
+   */
+  const bare = st('Volume', 'Moving Average Ribbon');
+  const ma = (length) => ({ study: 'Moving Average', label: `SMA(${length})`, inputs: { length } });
+
+  test('a 50 and a 200 are covered by the ribbon', () => {
+    assert.equal(coveredByPermanent(ma(50), bare), 'Moving Average Ribbon');
+    assert.equal(coveredByPermanent(ma(200), bare), 'Moving Average Ribbon');
+  });
+
+  test('a period the ribbon does NOT carry is genuinely absent', () => {
+    // The EMA 8 and EMA 100 ribbon slots are disabled, and 20 was never there.
+    assert.equal(coveredByPermanent(ma(20), bare), null);
+    assert.equal(coveredByPermanent(ma(100), bare), null);
+  });
+
+  test('nothing is covered when the ribbon itself is missing', () => {
+    assert.equal(coveredByPermanent(ma(50), st('Volume')), null);
+  });
+
+  test('a different study is never covered by the ribbon', () => {
+    assert.equal(coveredByPermanent({ study: 'Average True Range', inputs: { length: 50 } }, bare), null);
+  });
+
+  test('a bare Moving Average with no period is NOT treated as covered', () => {
+    /**
+     * Ambiguous, and deliberately resolved towards adding it: a duplicate MA is
+     * visible on the chart and self-correcting, whereas a silent omission is
+     * invisible. Catalogue entries always carry a length, so this is the rare case.
+     */
+    assert.equal(coveredByPermanent({ study: 'Moving Average', label: 'MA' }, bare), null);
+  });
+
+  test('planIndicators spends slots on what is actually missing', () => {
+    // group_leader_momentum names MA(50), MA(200) and Volume — all three already
+    // present. Every slot must survive.
+    const p = planIndicators([ma(50), ma(200), { study: 'Volume', label: 'Volume' }], bare);
+    assert.equal(p.will_add.length, 0, 'all three are already on the chart');
+    assert.equal(p.already_on_chart.length, 3);
+    assert.equal(p.budget.slots_free, 3, 'the three free slots must remain free');
+    assert.equal(p.already_on_chart[0].covered_by, 'Moving Average Ribbon');
+  });
+
+  test('the freed slots go to indicators the ribbon cannot supply', () => {
+    const p = planIndicators(
+      [ma(50), ma(200), { study: 'Average True Range', label: 'ATR(14)', inputs: { length: 14 } }],
+      bare,
+    );
+    assert.equal(p.will_add.length, 1);
+    assert.equal(p.will_add[0].study, 'Average True Range');
+    assert.equal(p.dropped.length, 0);
   });
 });

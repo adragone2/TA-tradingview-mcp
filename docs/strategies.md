@@ -67,7 +67,7 @@ Closed out by **the session close**.
 | **Entry** | Break of the first 5-minute candle's high, above VWAP. |
 | **Exit** | Loss of VWAP. Flat by the close. |
 | **Exit reason keys** | `stop_hit`, `time_elapsed`, `target_hit` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `VWAP`, `Volume`, `Relative Volume at Time` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [chart-analysis](../skills/chart-analysis/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `strategy_check`, `luld_band`, `depth_get`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `max_daily_loss` |
@@ -94,11 +94,11 @@ Closed out by **the session close**.
 
 | | |
 |---|---|
-| **Screener** | `intraday_screens:premarket_gap` |
+| **Screener** | `intraday_screens:intraday_extension` |
 | **Entry** | Fade back toward the 9 EMA once the extension stalls. |
 | **Exit** | Prior candle extreme as the stop. Cover into the 9 EMA. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `too_steep` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Exponential Moving Average (9)`, `Relative Strength Index (14)`, `VWAP` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [chart-analysis](../skills/chart-analysis/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `short_interest`, `luld_band`, `candle_read`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `max_daily_loss` |
@@ -126,7 +126,7 @@ Closed out by **the session close**.
 | **Entry** | Breaks VWAP, pulls back less than half the move, then continues. Volume falls on the pullback and rises on the continuation. |
 | **Exit** | Beyond VWAP. Flat by the close. |
 | **Exit reason keys** | `stop_hit`, `time_elapsed`, `tape_seller` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `VWAP`, `Volume` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | [chart-analysis](../skills/chart-analysis/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `anchored_vwap`, `strategy_check`, `depth_get`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `max_daily_loss` |
@@ -163,7 +163,7 @@ Closed out by **within two trading weeks**.
 | **Entry** | Only when VIX is elevated. Buy the biggest short-horizon losers that are still above their long-term trend. |
 | **Exit** | 2 to 10 days, on mean reversion or the time stop — whichever comes first. |
 | **Exit reason keys** | `target_hit`, `time_elapsed`, `stop_hit` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Relative Strength Index (2)`, `Simple Moving Average (200)`, `Volatility Index (external)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [risk-sizing](../skills/risk-sizing/SKILL.md), [backtest-strategy](../skills/backtest-strategy/SKILL.md) |
 | **Tools** | `tier_a_factors`, `ta_regime`, `horizon_prior`, `turnover_cost`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `max_portfolio_heat` |
@@ -191,7 +191,7 @@ Closed out by **within two trading weeks**.
 | **Entry** | On the reclaim close, not on the wick. A REVERSAL setup, so it is one of the few structural entries the 2-10 day horizon actually supports. |
 | **Exit** | Stop below the spring low. Target the range high. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `level_reached` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Volume`, `Average True Range (14)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | [market-structure](../skills/market-structure/SKILL.md), [supply-demand-setup](../skills/supply-demand-setup/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `wyckoff_spring`, `effort_vs_result`, `levels_find`, `horizon_prior`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `min_rr` |
@@ -219,7 +219,7 @@ Closed out by **within two trading weeks**.
 | **Entry** | A CLOSE beyond the level, with volume at least normal for the period. Shannon is explicit that volume CONFIRMS and never triggers — waiting for expansion produces late entries. |
 | **Exit** | Reclaimed next bar means it failed. Stop just beyond the broken level; measured move as the first target. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `gap_against_trend` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Exponential Moving Average (8)`, `Simple Moving Average (50)`, `Volume`, `Average True Range (14)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [chart-patterns](../skills/chart-patterns/SKILL.md), [market-structure](../skills/market-structure/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `breakout_check`, `levels_find`, `level_pressure`, `horizon_prior`, `luld_band`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `min_rr` |
@@ -248,7 +248,7 @@ Closed out by **within two trading weeks**.
 | **Entry** | Enter on the first new higher high after the pullback, not on the touch. Shannon: the trigger is a new extreme, and a low-volume pullback is the better candidate. |
 | **Exit** | Stop below the most recent higher low. Trail with pivot_trail. Two exit triggers: the higher low breaks (PRICE correction) or the short average crosses the intermediate one (TIME correction). |
 | **Exit reason keys** | `stop_hit`, `trend_broken`, `ma_crossover`, `target_hit` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Exponential Moving Average (21)`, `Simple Moving Average (50)`, `Simple Moving Average (200)`, `Average True Range (14)`, `Volume` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [market-structure](../skills/market-structure/SKILL.md), [chart-analysis](../skills/chart-analysis/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md), [trade-journal](../skills/trade-journal/SKILL.md) |
 | **Tools** | `structure_analyze`, `legs_classify`, `momentum_read`, `horizon_prior`, `pivot_trail`, `stopping_premium`, `position_size_constrained`, `draw_trade_plan` |
 | **Risk rules** | `max_risk_per_trade`, `min_rr`, `concentration_cap` |
@@ -298,7 +298,7 @@ _"Candlestick reversal patterns" is tiered REJECTED: FAILED TWO INDEPENDENT ACAD
 | **Screener** | `screens:volatility_contraction` |
 | **Entry** | Do not trade the contraction as a directional signal. It is a state. |
 | **Exit** | n/a |
-| **TradingView indicators** | `Average True Range (14)`, `Bollinger Bands` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | — |
 | **Tools** | `volatility_state`, `legs_classify` |
 | **Risk rules** | — |
@@ -338,7 +338,7 @@ _"Level strength from touch count" is tiered REJECTED: Measured null in BOTH dir
 | **Screener** | _none_ |
 | **Entry** | Only with two or more independent indicators agreeing, and then as context. |
 | **Exit** | n/a |
-| **TradingView indicators** | `Relative Strength Index (14)`, `MACD`, `On Balance Volume`, `Money Flow Index (14)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | — |
 | **Tools** | `divergence_survey` |
 | **Risk rules** | — |
@@ -358,7 +358,7 @@ _"Single-indicator divergence" is tiered REJECTED: One divergence fires on 99% o
 | **Screener** | _none as an edge_ |
 | **Entry** | Do not enter because the gate is open. Use it to EXCLUDE, never to justify. |
 | **Exit** | n/a |
-| **TradingView indicators** | `Simple Moving Average (10)`, `Simple Moving Average (20)`, `Simple Moving Average (50)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [market-structure](../skills/market-structure/SKILL.md) |
 | **Tools** | `stage_plan`, `horizon_prior` |
 | **Risk rules** | — |
@@ -423,11 +423,11 @@ Closed out by **a month or more, rebalanced monthly**.
 
 | | |
 |---|---|
-| **Screener** | `morning-screen:tier_a_factors` |
+| **Screener** | `morning-screen:tier_a_factors + screens:rs_leadership` |
 | **Entry** | Monthly rebalance. Long the top decile of 12-month return, skipping the most recent month (the skip exists because the sub-21-day window is the reversal zone). |
 | **Exit** | Monthly rerank. Exit when the name leaves the entry band — use the hysteresis exit, not a hard rank cut. |
 | **Exit reason keys** | `time_elapsed`, `trend_broken` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Simple Moving Average (200)`, `Simple Moving Average (50)`, `Rate of Change (252)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [risk-sizing](../skills/risk-sizing/SKILL.md), [backtest-strategy](../skills/backtest-strategy/SKILL.md) |
 | **Tools** | `momentum_read`, `edge_breadth`, `tier_a_factors`, `turnover_cost`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `max_portfolio_heat`, `concentration_cap` |
@@ -457,7 +457,7 @@ The 12-month return itself is not an OPERAND, so these criteria are a proxy gate
 | **Entry** | Monthly. Long the top decile of sma(21)/sma(200) ratio across the universe. It is a RANK, not a threshold. |
 | **Exit** | Monthly rerank with a hysteresis band (~0.96% net drag vs 2.4% for a hard monthly cut). |
 | **Exit reason keys** | `time_elapsed` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Simple Moving Average (21)`, `Simple Moving Average (200)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | [risk-sizing](../skills/risk-sizing/SKILL.md), [backtest-strategy](../skills/backtest-strategy/SKILL.md) |
 | **Tools** | `tier_a_factors`, `turnover_cost`, `costs_vs_edge`, `edge_breadth`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade`, `concentration_cap` |
@@ -485,7 +485,7 @@ The 12-month return itself is not an OPERAND, so these criteria are a proxy gate
 | **Entry** | Monthly. Long names within a few percent of their 52-week high, ranked by proximity. |
 | **Exit** | Monthly rerank, or a close below the 50-day average. |
 | **Exit reason keys** | `time_elapsed`, `trend_broken`, `ma_crossover` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Simple Moving Average (50)`, `Simple Moving Average (200)` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | [risk-sizing](../skills/risk-sizing/SKILL.md), [market-structure](../skills/market-structure/SKILL.md) |
 | **Tools** | `momentum_read`, `screens`, `edge_breadth`, `position_size_constrained`, `gap_risk` |
 | **Risk rules** | `max_risk_per_trade`, `concentration_cap` |
@@ -516,7 +516,7 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 | **Entry** | Monthly. Long names whose volume over the ranking window was unusually high relative to their own history. |
 | **Exit** | One month. This effect has a stated decay. |
 | **Exit reason keys** | `time_elapsed` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Volume`, `Relative Volume at Time` |
+| **TradingView indicators** | `[object Object]`, `[object Object]` |
 | **Skills** | [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `tier_a_factors`, `effort_vs_result`, `turnover_cost`, `position_size_constrained` |
 | **Risk rules** | `max_risk_per_trade` |
@@ -544,7 +544,7 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 | **Entry** | Buy the breakout above the base high. vcp_check names WHICH clause failed on a near miss, so a rejection is diagnosable. |
 | **Exit** | Stop below the last contraction low. Target by measured base depth; trail with pivot_trail once a higher high confirms. |
 | **Exit reason keys** | `stop_hit`, `target_hit`, `trend_broken`, `gap_against_trend` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Simple Moving Average (50)`, `Simple Moving Average (200)`, `Average True Range (14)`, `Volume` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [market-structure](../skills/market-structure/SKILL.md), [chart-patterns](../skills/chart-patterns/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `vcp_check`, `volatility_state`, `breakout_check`, `pivot_trail`, `position_size_constrained`, `horizon_prior` |
 | **Risk rules** | `max_risk_per_trade`, `min_rr`, `concentration_cap` |
@@ -574,7 +574,7 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 | **Entry** | Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm — that filter was measured and hurts. |
 | **Exit** | Monthly rerank, or when the name's own trend breaks. His hard rule: never lose more than 10% of the capital committed to a trade, and never average down. |
 | **Exit reason keys** | `time_elapsed`, `trend_broken`, `stop_hit`, `gap_against_trend` — log these, `exit_mix` reads them |
-| **TradingView indicators** | `Simple Moving Average (50)`, `Simple Moving Average (200)`, `Volume` |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
 | **Skills** | [market-structure](../skills/market-structure/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
 | **Tools** | `group_context`, `relative_strength`, `momentum_read`, `position_size_constrained`, `horizon_prior`, `edge_breadth` |
 | **Risk rules** | `max_risk_per_trade`, `concentration_cap`, `max_portfolio_heat` |

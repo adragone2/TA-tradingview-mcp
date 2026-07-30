@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **184 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **187 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -217,7 +217,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### levels_* (2)
 
 - **`levels_find`** — Support and resistance levels computed from price history, each carrying the evidence that earned it: how many SEPARATE times price tested it, how man
-- **`levels_draw`** — Draw computed key levels on the chart — horizontal lines for tight levels, shaded rectangles for zones — green for support, red for resistance, thickn
+- **`levels_draw`** — Draw the key levels on the chart, labelled with the evidence behind each one, grouped so draw_clear removes them cleanly
 
 ### level_* (2)
 
@@ -237,8 +237,9 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`strategy_check`** — Evaluate a strategy against the symbol on the chart, criterion by criterion, showing the ACTUAL value on each side of every comparison
 - **`strategy_scan`** — Check a strategy across several symbols and return the ones where every criterion passes
 
-### patterns_* (2)
+### patterns_* (3)
 
+- **`patterns_draw`** — Draw the detected patterns on the chart — the COMPLETION LEVEL of each, which is the price at which a shape stops being a shape and becomes a fact, an
 - **`patterns_detect`** — Detect candlestick and chart patterns on the chart from the bars themselves
 - **`patterns_lmw`** — The Lo/Mamaysky/Wang pattern definitions verbatim (head-and-shoulders, broadening, triangle, rectangle, double top/bottom) as a SECOND OPINION on patt
 
@@ -430,9 +431,14 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`group_context`** — The industry-group context Livermore put BEFORE every trade, and the one thing this toolchain had no equivalent for
 - **`group_top_down`** — Livermore's Top Down Trading as an explicit four-step GATE, in his order: the market the stock trades on, then the industry group, then the two leader
 
-### ticker_* (1)
+### ticker_* (2)
 
 - **`ticker_playbook`** — THE ENTRY POINT for analysing one ticker
+- **`ticker_analyze`** — THE WHOLE CHART ANALYSIS IN ONE CALL, and it reports what it did NOT do
+
+### entry_* (1)
+
+- **`entry_hypothesis`** — AT WHAT PRICE WOULD YOU ACT — the forward half of an analysis, for BOTH directions
 
 ---
 

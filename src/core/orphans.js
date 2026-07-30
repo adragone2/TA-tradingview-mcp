@@ -95,6 +95,10 @@ SIGNATURES_BY_SOURCE.review.push(
   // — are the ones never cleaned up. Signatures are append-only; delete one
   // and its drawings become permanent.
   new RegExp(`^(?:${PAT}) (?:forming|confirmed) (?:upper|lower)$`),
+  // patterns_draw target lines: "bull_flag forming target 19.32".
+  // Added when pattern drawing stopped being a manual draw_shape call — a label
+  // written by hand matches nothing here and leaks an orphan that survives forever.
+  new RegExp(`^(?:${PAT}) (?:forming|confirmed) target ${NUM}$`),
   // VCP: "VCP pivot 34.2"
   new RegExp(`^VCP pivot ${NUM}$`),
 );

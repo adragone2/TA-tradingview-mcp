@@ -255,6 +255,19 @@ export function applyHysteresis({
  * because the slower bucket is the one whose evidence is stronger and whose
  * costs are lower — and holding a name in both would double the position
  * without saying so.
+ *
+ * ── SUPERSEDED. Nothing in the morning routine calls this any more. ──
+ *
+ * It routed by SCREEN into the Weeks/Months CADENCE buckets. The watchlist is now
+ * split by EXECUTION tier — INTRADAY / WEEKLY / MONTHLY — and the tier comes from
+ * the STRATEGY a screen points at, not from the screen, which is why
+ * `tier_classify.js` replaced it: two screens can imply different horizons for the
+ * same name and the tie has to be resolved on evidence.
+ *
+ * `rebalanceDue` and `applyHysteresis` in this file are ALSO no longer called by
+ * the routine. The turnover arithmetic they encode is still correct and still
+ * governs HOLDING a position — it just never governed a watchlist, where adding a
+ * name places no trade. See the cadence block in scripts/morning-screen.js.
  */
 export function routeToBuckets(candidates, { screenBucket = SCREEN_BUCKET } = {}) {
   const out = { MONTHS: [], WEEKS: [], unrouted: [] };

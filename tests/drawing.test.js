@@ -318,19 +318,42 @@ describe('drawing registry', () => {
   it('prunes ids that no longer exist on the chart', () => {
     const { path, cleanup } = tempStore();
     try {
-      registry.record([{ entity_id: 'live' }, { entity_id: 'stale' }], { path });
-      const res = registry.prune(['live'], { path });
+      // Recorded WITH a symbol, and pruned against that same symbol. `liveIds` comes
+      // from getAllShapes(), which only ever sees one chart, so the pair is the only
+      // form in which the comparison means anything.
+      registry.record([{ entity_id: 'live' }, { entity_id: 'stale' }], { path, symbol: 'BATS:AAA' });
+      const res = registry.prune(['live'], { path, symbol: 'BATS:AAA' });
       assert.equal(res.pruned, 1);
       assert.equal(res.remaining, 1);
       assert.deepEqual(registry.list({ path }).map((e) => e.entity_id), ['live']);
     } finally { cleanup(); }
   });
 
-  it('pruning against an empty chart clears everything', () => {
+  it('pruning against an empty chart clears that symbol', () => {
     const { path, cleanup } = tempStore();
     try {
-      registry.record([{ entity_id: 'a' }], { path });
-      assert.equal(registry.prune([], { path }).remaining, 0);
+      registry.record([{ entity_id: 'a' }], { path, symbol: 'BATS:AAA' });
+      assert.equal(registry.prune([], { path, symbol: 'BATS:AAA' }).remaining, 0);
+    } finally { cleanup(); }
+  });
+
+  it('an UNSCOPED prune refuses instead of clearing everything', () => {
+    /**
+     * This test used to be "pruning against an empty chart clears everything", with
+     * no symbol passed — asserting the behaviour that emptied the live store.
+     *
+     * `currentSymbol()` returns null on any failure, and the old guard was
+     * `if (symbol && ...)`, so one null reading made every entry for every OTHER
+     * symbol look non-live. Those drawings stayed on their charts and became
+     * unclearable by `scope: "mcp"`, because the registry no longer knew they were
+     * ours. See tests/drawing_registry_scope.test.js for the full case.
+     */
+    const { path, cleanup } = tempStore();
+    try {
+      registry.record([{ entity_id: 'a' }], { path, symbol: 'BATS:AAA' });
+      const res = registry.prune([], { path });
+      assert.equal(res.refused, true);
+      assert.equal(res.remaining, 1, 'unknown symbol must be a no-op, never a wipe');
     } finally { cleanup(); }
   });
 

@@ -120,7 +120,19 @@ export function assess(bars, spy) {
   };
 
   // ── key_levels ────────────────────────────────────────────────────────────
-  const lv = safe(() => S.findKeyLevels(bars, { lookback: 5 }), { levels: [] });
+  /**
+   * `max_levels` matters here even though this block reports every level it finds.
+   *
+   * The default truncates hard: on DLO it returned ONE resistance (14.84) and hid
+   * 15.5433 — the level sitting on the last swing high. Anything anchoring to the
+   * swing extremes then has nothing to anchor to and silently falls back to the
+   * nearest level, which is the ranking the holdout work exists to replace. The
+   * primary-level selection consumes this list, so the candidate set has to be
+   * wide even when the drawing is narrow.
+   */
+  const lv = safe(() => S.findKeyLevels(bars, {
+    lookback: 5, max_levels: 40, max_distance_pct: 25,
+  }), { levels: [] });
   const sup = (lv.levels || []).filter((l) => l.side === 'support');
   const res = (lv.levels || []).filter((l) => l.side === 'resistance');
   const key_levels = {

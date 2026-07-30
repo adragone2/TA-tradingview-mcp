@@ -152,3 +152,12 @@ inside a bucket**, not as the reason to be in a trade.
 4. **The watchlist gets four sections**: `Weeks`, `Months`, `KEEP weeks`,
    `KEEP months`. The section machinery already works and is tested; the rewrite
    preserves any section named in `PRESERVE_SECTIONS`.
+
+> **Superseded, in the naming only.** The live sections are now `INTRADAY`,
+> `WEEKLY`, `MONTHLY` and any number of `KEEP*` — an **execution** split, matching
+> `strategies.json`'s `execution` field, rather than the Weeks/Months **cadence**
+> split this document proposed. The two are different questions and both survive:
+> the `MONTHLY` section still rebalances on `cadence.js`'s monthly clock with the
+> hysteresis band, because the arithmetic in "Turnover decides whether a swing
+> strategy can exist" above is unchanged by what the section is called. Everything
+> else in this document stands as written.

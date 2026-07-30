@@ -50,8 +50,46 @@ export const DEFAULT_RULES = {
     ],
   },
   risk_rules: [],
+  /**
+   * Sizing inputs. `account_size` is NULL on purpose and is never defaulted to a
+   * number: position_size_constrained would otherwise return a share count derived
+   * from a figure nobody supplied, and a plausible-looking size is worse than a
+   * refusal. During a live DLO analysis the account size was simply invented
+   * ($100,000, Shannon's textbook figure) because there was nowhere to read it.
+   */
+  account: {
+    account_size: null,
+    risk_percent: 1,
+    max_position_pct: 20,
+    max_adv_pct: 2,
+  },
   notes: null,
 };
+
+/**
+ * The configured account size, or null.
+ *
+ * Null means "not configured" and callers must say so rather than substitute a
+ * number. Accepts it at the top level too, because that is where a user is likely
+ * to put it by hand.
+ */
+export function accountSettings(explicitPath, { roots } = {}) {
+  const { rules, path, source } = resolveRules(explicitPath, { roots });
+  const a = rules?.account || {};
+  const size = Number.isFinite(Number(a.account_size)) && Number(a.account_size) > 0
+    ? Number(a.account_size)
+    : (Number.isFinite(Number(rules?.account_size)) && Number(rules?.account_size) > 0
+      ? Number(rules.account_size)
+      : null);
+  return {
+    account_size: size,
+    risk_percent: Number.isFinite(Number(a.risk_percent)) ? Number(a.risk_percent) : null,
+    max_position_pct: Number.isFinite(Number(a.max_position_pct)) ? Number(a.max_position_pct) : null,
+    max_adv_pct: Number.isFinite(Number(a.max_adv_pct)) ? Number(a.max_adv_pct) : null,
+    rules_path: path,
+    source,
+  };
+}
 
 /**
  * Resolve rules for a run. Never throws for a missing file.

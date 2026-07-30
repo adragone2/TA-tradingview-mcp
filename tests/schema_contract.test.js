@@ -104,8 +104,17 @@ describe('the schema doc matches what the script emits', () => {
 });
 
 describe('stale reports cannot be mistaken for the contract', () => {
+  /**
+   * Report artifacts only.
+   *
+   * Dotfiles are excluded because `reports/` also holds `.screen-state.json` —
+   * the Months hysteresis state, not a report. It carries a `schema_version` and
+   * no `kind`, so the filename fallback below filed it as a Sunday review and
+   * demanded schema 1.0 of a file stamped 2.0. The failure appeared only after a
+   * morning-screen run wrote the file, and pointed at the wrong thing entirely.
+   */
   const reports = () => (existsSync('reports')
-    ? readdirSync('reports').filter((x) => x.endsWith('.json'))
+    ? readdirSync('reports').filter((x) => x.endsWith('.json') && !x.startsWith('.'))
     : []);
 
   test('every report in reports/ was produced by the current schema version', () => {
@@ -129,8 +138,19 @@ describe('stale reports cannot be mistaken for the contract', () => {
 
     for (const f of reports()) {
       const rep = JSON.parse(readFileSync(`reports/${f}`, 'utf8'));
-      // Older Sunday reports predate the `kind` field; the filename carries it.
-      const kind = rep.kind ?? (f.startsWith('morning-screen') ? 'morning-screen' : 'sunday-review');
+      /**
+       * Older Sunday reports predate the `kind` field, so the filename carries it —
+       * but only for a filename we RECOGNISE. Defaulting anything unrecognised to
+       * "sunday-review" is what turned a stray state file into a schema-version
+       * failure that named the wrong file and the wrong problem.
+       */
+      const kind = rep.kind
+        ?? (f.startsWith('morning-screen') ? 'morning-screen'
+          : f.startsWith('sunday-review') ? 'sunday-review'
+            : null);
+      assert.ok(kind, `reports/${f} is not a recognised report: it has no "kind" field and its `
+        + 'filename matches neither morning-screen-* nor sunday-review-*. Give it a kind, rename '
+        + 'it, or keep non-report artifacts out of reports/.');
       const want = byKind[kind];
       assert.ok(want, `reports/${f} has unknown kind "${kind}"`);
       assert.equal(rep.schema_version, want,
