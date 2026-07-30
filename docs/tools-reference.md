@@ -232,7 +232,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 ### strategy_* (3)
 
-- **`strategy_list`** — List the machine-evaluable strategies defined in rules.json, with their criteria and any validation errors
+- **`strategy_list`** — Every strategy in the catalogue (strategies.json, tracked in git) plus any in rules.json, with criteria, execution tier, evidence tier and validation 
 - **`strategy_check`** — Evaluate a strategy against the symbol on the chart, criterion by criterion, showing the ACTUAL value on each side of every comparison
 - **`strategy_scan`** — Check a strategy across several symbols and return the ones where every criterion passes
 

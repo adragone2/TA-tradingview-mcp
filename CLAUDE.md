@@ -20,6 +20,7 @@
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
 | [docs/tools-reference.md](docs/tools-reference.md) | All 180 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 18 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
 | [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict |
@@ -64,6 +65,7 @@
 | "Where does this move project to?" | `fib_targets` — extensions find exits; `fib_levels` finds entries. They get confused constantly |
 | "Any patterns?" / "analyse this chart" | `chart-patterns` skill — a *forming* pattern is not a signal |
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
+| "What strategies do we have?" / "how do I play X?" | [docs/strategies.md](docs/strategies.md), or `strategy_list` — grouped by execution tier with the screener, entry/exit, indicators, skills and tools per strategy. Filter with `execution` and `evidence_tier` |
 | "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed |
 | "Will this level hold?" | `level_pressure` — describes whether attempts are strengthening. Its predictive claim FAILED out of sample (+39.1 in-sample → +4.6 on a fresh universe). Ignore touch count entirely |
 | "Backtest this" / "does it work?" | `backtest-strategy` skill — **always report buy-and-hold** |
@@ -116,6 +118,10 @@ Each of these exists because it has already gone wrong here.
 **A noise floor and a trial count are not enough. Two claims here passed both and died on a holdout.** `level_pressure`'s pressure clause scored +39.1 points at z = 3.96 with its random-walk null attached and its family size corrected — and collapsed to +4.6 on a fresh universe with a *larger* sample. `stage_plan`'s gate abstained on 54% of random walks and still made forward outcomes worse. So: any single-sample finding in this repo is PROVISIONAL until it has an out-of-sample arm — a different universe, a disjoint period, or both. `scripts/level-test-inversion.js` and `scripts/stage-forward-test.js` are the templates.
 
 **Pin the timeframe, or the measurement is of something else.** Three measurement scripts called `setSymbol` but never `setTimeframe`, inherited the chart's 60-minute resolution, and recorded their results as "daily bars". Nothing in the output revealed it. `scripts/_real_bars.js` now requires an explicit timeframe, verifies the resolution actually took, and restores both symbol and resolution afterwards. Use it for any real-data measurement.
+
+**A strategy lives in strategies.json, not in prose.** 18 strategies are catalogued as DATA — criteria, screener, entry, exit, indicators, skills, tools, risk rules and an evidence tier each — so `strategy_check` and `strategy_scan` can evaluate them. Before this existed `strategy_list` returned `count: 0` while four pieces of machinery waited for input. `rules.json` still wins a name clash; it holds the owner's own criteria and a shared catalogue must not override them. **Six entries are tiered REJECTED and kept deliberately** — candlesticks, standalone zones, single divergences, the stage gate as an edge, level touch count, Crabel contraction — each with the measurement that killed it, so nobody rediscovers one and believes it is new. They carry no criteria and `strategy_check` refuses them with the reason.
+
+**The owner's WEEKLY bucket is the reversal zone, and most setups in it are continuation bets.** Execution tiers are intraday, weekly (2–10 days), monthly (11+ days). Below ~21 trading days the documented effect is REVERSAL; 11–63 days is the contested gap where neither effect is documented. So a breakout, flag, triangle or VCP placed in the weekly tier is fighting its own horizon — `docs/strategies.md` says so on every tier heading, and `horizon_prior` says which side a given setup is on.
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 

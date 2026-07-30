@@ -21,6 +21,7 @@
  */
 import * as data from './data.js';
 import { normalizeBars } from './structure.js';
+import { buildStructureContext } from './structure_context.js';
 
 const round = (n, dp = 6) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 
@@ -526,7 +527,18 @@ export function buildContext(bars, { rvol_lookback = 20, structure = null, _dept
 async function contextForChart(count) {
   const bars = normalizeBars(await data.getOhlcv({ count, summary: false }));
   if (!bars.length) throw new Error('No price bars came back from the chart.');
-  return { bars, ctx: buildContext(bars) };
+  /**
+   * Build the structure operands too. Without this, pullback_pct,
+   * nearest_level_* and the zone operands are permanently UNKNOWN, so any
+   * strategy using one can never pass — which was true of five catalogue
+   * strategies until this was wired.
+   */
+  const structure = buildStructureContext(bars);
+  return {
+    bars,
+    ctx: buildContext(bars, { structure: structure.available ? structure : null }),
+    structure,
+  };
 }
 
 /** Check one strategy against the symbol currently on the chart. */

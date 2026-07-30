@@ -102,6 +102,7 @@ wrds-mcp/      separate MCP server for historical research
 
 - [architecture.md](architecture.md) — how the layers connect, and what runs where
 - [screening.md](screening.md) — morning screening design: the TV scanner reaches 19,672 symbols in one request
+- [strategies.md](strategies.md) — THE strategy catalogue: 18 strategies by execution tier, each with screener, entry/exit, indicators, skills and tools
 - [tools-reference.md](tools-reference.md) — all 180 tools by group
 - [data-sources.md](data-sources.md) — TA endpoints, WRDS datasets, freshness
 - [routines.md](routines.md) — the daily and weekly workflows

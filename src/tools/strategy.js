@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import * as catalogue from '../core/catalogue.js';
 import { jsonResult } from './_format.js';
 import * as core from '../core/strategy.js';
 import { resolveRules } from '../core/rules.js';
@@ -17,19 +18,24 @@ const wrap = (fn) => async (args = {}) => {
 function loadStrategy({ strategy, strategy_name, rules_path }) {
   if (strategy && typeof strategy === 'object') return strategy;
   if (!strategy_name) {
-    throw new Error('Pass either strategy (inline) or strategy_name (from rules.json). Use strategy_list to see what is defined.');
+    throw new Error('Pass either strategy (inline) or strategy_name (from the catalogue or rules.json). Use strategy_list to see what is defined.');
   }
-  const { rules, path, using_defaults } = resolveRules(rules_path);
-  const defined = rules.strategies || {};
+  const { rules, path } = resolveRules(rules_path);
+  // Both sources. rules.json wins a name clash — it is the owner's own file.
+  const defined = catalogue.mergedStrategies(rules);
   const found = defined[strategy_name];
   if (!found) {
     const names = Object.keys(defined);
     throw new Error(
       names.length
-        ? `No strategy "${strategy_name}" in ${path || 'the default rules'}. Defined: ${names.join(', ')}.`
-        : `No strategies are defined${using_defaults ? ' (no rules.json found — run rules_init)' : ` in ${path}`}. Add a "strategies" block. See skills/strategy-scan/SKILL.md for the format.`,
+        ? `No strategy "${strategy_name}" in the catalogue or ${path || 'the default rules'}. Defined: ${names.join(', ')}.`
+        : 'No strategies are defined in strategies.json or rules.json. See docs/strategies.md.',
     );
   }
+  // A REJECTED catalogue entry has empty criteria by design. Saying why beats
+  // an "invalid strategy: criteria must be a non-empty array" error.
+  const ok = catalogue.scannable(found);
+  if (!ok.ok) throw new Error(`Cannot evaluate "${strategy_name}": ${ok.reason}`);
   return { name: strategy_name, ...found };
 }
 
@@ -51,38 +57,69 @@ const strategySchema = z.object({
 export function registerStrategyTools(server) {
   server.tool(
     'strategy_list',
-    'List the machine-evaluable strategies defined in rules.json, with their criteria and any validation errors. Strategies are criteria as DATA, not prose — which is what makes them scannable across symbols and testable, unlike the bias_criteria sentences a model has to grade by judgement.',
+    'Every strategy in the catalogue (strategies.json, tracked in git) plus any in rules.json, with criteria, execution tier, evidence tier and validation errors. Strategies are criteria as DATA, not prose — which is what makes them scannable and testable, unlike the bias_criteria sentences a model grades by judgement. Entries tiered REJECTED are listed deliberately: each has been measured and found to have no edge over its own null, and they are kept so nobody rediscovers them. They carry no criteria and strategy_check will refuse them with the reason. docs/strategies.md is the readable version of this same data.',
     {
       rules_path: z.string().optional().describe('Explicit rules.json path'),
+      execution: z.enum(['intraday', 'weekly', 'monthly']).optional().describe('Only this execution tier'),
+      evidence_tier: z.enum(['A', 'B', 'C', 'REJECTED']).optional().describe('Only this evidence tier'),
+      scannable_only: z.coerce.boolean().optional().describe('Drop documentation-only and REJECTED entries (default false — seeing the rejected ones is the point)'),
     },
-    wrap(({ rules_path }) => {
-      const { rules, path, source, using_defaults } = resolveRules(rules_path);
-      const defined = rules.strategies || {};
-      const names = Object.keys(defined);
+    wrap(({ rules_path, execution = null, evidence_tier = null, scannable_only = false }) => {
+      const { rules, path, source } = resolveRules(rules_path);
+      const cat = catalogue.loadCatalogue();
+      const all = catalogue.mergedStrategies(rules);
+
+      let names = Object.keys(all);
+      if (execution) names = names.filter((n) => all[n].execution === execution);
+      if (evidence_tier) names = names.filter((n) => all[n].evidence_tier === evidence_tier);
+      if (scannable_only) names = names.filter((n) => catalogue.scannable(all[n]).ok);
+
       return {
         success: true,
+        catalogue_path: cat.path,
+        catalogue_available: cat.available,
         rules_path: path,
-        source,
+        rules_source: source,
         count: names.length,
+        summary: catalogue.catalogueSummary(all),
+        execution_tiers: cat.execution_tiers,
+        evidence_tiers: cat.evidence_tiers,
         strategies: names.map((name) => {
-          const spec = defined[name];
-          const check = core.validateStrategy(spec);
+          const spec = all[name];
+          const hasCriteria = Array.isArray(spec.criteria) && spec.criteria.length > 0;
+          const check = hasCriteria ? core.validateStrategy(spec) : { valid: false, errors: ['no criteria — documentation only'] };
+          const can = catalogue.scannable(spec);
           return {
             name,
+            label: spec.label || null,
+            source: spec.source,
+            execution: spec.execution || null,
+            evidence_tier: spec.evidence_tier || null,
+            evidence: spec.evidence || null,
+            evidence_caveat: spec.evidence_caveat || null,
             direction: spec.direction || null,
-            description: spec.description || null,
-            criteria_count: Array.isArray(spec.criteria) ? spec.criteria.length : 0,
-            criteria: spec.criteria,
+            screener: spec.screener || null,
+            entry: spec.entry || null,
+            exit: spec.exit || null,
+            exit_reason_keys: spec.exit_reason_keys || [],
+            indicators: spec.indicators || [],
+            skills: spec.skills || [],
+            tools: spec.tools || [],
+            risk_rules: spec.risk_rules || [],
+            criteria_count: hasCriteria ? spec.criteria.length : 0,
+            criteria: spec.criteria || [],
+            ...(spec.criteria_note ? { criteria_note: spec.criteria_note } : {}),
+            scannable: can.ok,
+            ...(can.ok ? {} : { not_scannable_because: can.reason }),
             valid: check.valid,
             ...(check.valid ? {} : { errors: check.errors }),
+            ...(spec.overrides_catalogue ? { overrides_catalogue: true } : {}),
           };
         }),
         operands: core.OPERANDS,
-        ...(names.length ? {} : {
-          note: using_defaults
-            ? 'No rules.json found, so no strategies are defined. Run rules_init, then add a "strategies" block.'
-            : `No "strategies" block in ${path}. bias_criteria are prose a model grades; strategies are data that can be scanned and tested.`,
-        }),
+        how_to_read: 'execution says WHEN the trade is closed out; evidence_tier says how much to believe it. The '
+          + 'horizon_evidence on each execution tier is the load-bearing part: the WEEKLY tier (2-10 days) is the '
+          + 'REVERSAL zone, so a continuation setup placed there is fighting its own horizon.',
       };
     }),
   );
