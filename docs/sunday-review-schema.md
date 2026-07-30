@@ -75,7 +75,7 @@ Each maps to a skill in this repo.
 | `horizon` | chart-analysis | `continuation_at_10d`, `reversal_at_10d`, `volatility_percentile` |
 | `risk` | risk-sizing | `atr_14`, `stopping_premium_verdict`, `stop_adds_expected_return`, `stop_guidance` |
 | `costs` | risk-sizing | `slippage_mean_pct`, `turnover_drag_10d_20bps_pct` |
-| `level_pressure` | market-structure | `on_resistance`, `on_support` with readings |
+| `level_pressure` | market-structure | `on_resistance`, `on_support` with readings. **Descriptive only** — the predictive claim failed out of sample (+39.1 in-sample, +4.6 on a fresh universe). Never write it as "likely to break" |
 | `channels` | chart-patterns | `found`, `direction`, `stable`, `windows_agreeing`, `windows_tested`, `best`, `noise_baseline` |
 | `trade_plans` | chart-patterns | array of `{pattern, status, family, bilateral, tradeable_now, legs, primary_leg, primary_note, base_rate}` |
 

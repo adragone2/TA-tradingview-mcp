@@ -52,10 +52,16 @@ TradingView and destructive against a healthy one.
 2. `ta_trading_context` — position and catalyst risk **before** analysing the setup, not after
 3. [walls-overlay](../skills/walls-overlay/SKILL.md) if it's in TA's wall coverage
 4. `data_get_study_values`, `data_get_pine_lines`, `data_get_ohlcv` (`summary: true`)
-5. `draw_trade_plan` once the levels are decided — one call, returns R:R
-6. `capture_screenshot` to confirm it rendered as intended
+5. `stage_plan` — is the longer timeframe even in a stage worth trading, and what does the shorter one say to do? Read it as a **description of alignment**, not as evidence: it was forward-tested and does not improve outcomes
+6. `legs_classify` — impulse, pullback, *and* time corrections. A flat, quiet digestion is a correction a depth rule reports as "no pullback"
+7. `draw_trade_plan` once the levels are decided — one call, returns R:R
+8. `position_size_constrained` with `adv` — the risk budget alone can produce a 65%-of-capital position, so read `binding_constraint`
+9. `pivot_trail` if the position is live, plus `stopping_premium` on the same bars, because a trail is a bet on persistence
+10. `capture_screenshot` to confirm it rendered as intended
 
 Cross-check the plan against `rules.risk_rules` and TA's regime sizing. A setup that fails the user's own R:R rule should be called out, not quietly drawn.
+
+For a short setup, or one where a squeeze is part of the thesis, add `short_interest`. It is **context, not a signal** — and squeeze pressure needs shorts who are *losing*, which is what `shorts_position` measures.
 
 ## Plotting gamma walls
 
@@ -79,6 +85,15 @@ draw_list include_points:true
 ```
 
 Returns every drawing with coordinates and a `created_by_mcp` flag, so a plan drawn by hand can be read back and evaluated. Then `ta_trading_context` for position and event risk.
+
+Over a set of *closed* trades, run both:
+
+```
+exit_mix      → planned vs discretionary. A backtest can only model a planned exit
+journal_slice → by direction, share size, share price, holding time
+```
+
+`journal_slice` exists because a profitable book can contain net-negative halves. Shannon's own broker report had two: stocks over $100 (159 trades, avg −3.82) and trades held 16–30 minutes (44 trades, avg −17.93), inside three profitable weeks. Neither is visible in a win rate. Buckets under `min_n` are flagged `underpowered` and not ranked — cut a small book four ways and one will look terrible by chance.
 
 ## Validating a rule (WRDS)
 

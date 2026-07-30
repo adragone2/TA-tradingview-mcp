@@ -145,7 +145,13 @@ And before assuming a tested level holds again:
 level_pressure level=554.66 side="support"
 ```
 
-Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier, so the level is more likely to break than hold. That shape *is* a descending or ascending triangle — which is why those patterns work.
+Lower highs into support (or higher lows into resistance) mean each attempt is failing earlier. That shape *is* a descending or ascending triangle, which is the appeal.
+
+**But it is a description, not a forecast — the predictive version was measured and failed.** On the sample it was found in, levels whose interim retreat extremes moved toward the level broke 39.1 points more often (z = 3.96, n = 103). On a *fresh universe of 20 different symbols* that collapsed to **+4.6 at z = 0.73 across a larger sample of 251 levels** — indistinguishable from the −1.4 a random walk carries. An earlier window on the original names gave +3.4. It holds in one of three arms: the one it came from. `level_test_history` has every arm.
+
+So use it to say whether attempts are strengthening or weakening. Do not size on it, and do not describe a level as "likely to break" on this basis.
+
+**And ignore the touch count entirely.** "Tested four times, so it's strong" and "tested four times, so it's about to break" are both unsupported: the break hazard rises 4.5–21.2 points across real arms where a random walk rises **40.3**. More tests just means more exposure.
 
 ## A worked sequence
 

@@ -33,20 +33,25 @@ If `tv_doctor` fails, fix that before anything else. It distinguishes "TradingVi
 | "What's on my chart?" | `chart_get_state` → `data_get_study_values` → `quote_get` |
 | "Analyse this chart" | [chart-analysis](../skills/chart-analysis/SKILL.md) skill |
 | "What's the trend?" / "where's the structure?" | [market-structure](../skills/market-structure/SKILL.md) skill — `structure_analyze`, never read off a screenshot |
+| "What do I DO right now?" | `stage_plan` — Shannon's gate: Stage 2 or 4 on the longer timeframe or NO setup, then ANTICIPATE / PARTICIPATE / EXIT / AVOID. **Forward-tested negative** — a description of alignment, not an edge |
+| "Is it pulling back?" (and it looks flat) | `legs_classify` — returns TIME corrections too. A depth rule scores a horizontal digestion as "no pullback" and skips a live setup |
 | "Supply/demand zones?" / "order blocks?" / "SMC" | [supply-demand-setup](../skills/supply-demand-setup/SKILL.md) skill — `zones_find` asks where price left fast, `levels_find` asks where it reversed |
 | "Any patterns here?" / "is this a double top?" | [chart-patterns](../skills/chart-patterns/SKILL.md) skill — check `status`: forming is NOT a signal |
-| "Was that breakout real?" | `breakout_check`, `level_pressure` — measurements, not adjectives |
+| "Was that breakout real?" | `breakout_check` — 5 measurements, not adjectives. `level_pressure` DESCRIBES the approach; its predictive claim failed out of sample |
 | "Where are support and resistance?" | `levels_find` → `levels_draw`. Quote each level's `reason` |
 | "Mark my entry / stop / targets" | `draw_trade_plan` — one call, never hand-built from `draw_shape` |
-| "How much should I buy?" | `position_size`, or `position_read` for a plan the user drew by hand |
+| "Where does my trailing stop go?" | `pivot_trail` — a new higher high promotes the stop to the last higher low. One-directional ratchet; it refuses to loosen. Check `stopping_premium` first |
+| "How much should I buy?" | `position_size_constrained` (or `position_size` for a drawn plan) — risk budget, concentration cap and liquidity, **smallest wins**. A tighter stop buys MORE shares, so a good entry is when the cap binds |
 | "What should I look at today?" | `morning_brief`, or [catalyst-aware-brief](../skills/catalyst-aware-brief/SKILL.md) for event risk |
 | "Add the walls" / "plot gamma levels" | [walls-overlay](../skills/walls-overlay/SKILL.md) skill |
 | "Do I already own this?" / "does it report soon?" | `ta_trading_context` |
 | "What's the market regime?" | `ta_regime` — also carries position sizing |
+| "How shorted is it?" / "squeeze setup?" | `short_interest` — FINRA, twice a month. Quote the `driver`, never bare days-to-cover: **93% of large moves in it are volume, not positioning** |
 | "Write a Pine indicator" | [pine-develop](../skills/pine-develop/SKILL.md) skill |
 | "Which of these qualify?" / a rule with numbers in it | [strategy-scan](../skills/strategy-scan/SKILL.md) skill — `strategy_check`, `strategy_scan` |
 | "Does this strategy work?" / "backtest this" | [backtest-strategy](../skills/backtest-strategy/SKILL.md) skill — always report the benchmark |
 | "How much should I risk?" / "is this edge worth trading?" | [risk-sizing](../skills/risk-sizing/SKILL.md) skill — expectancy first, then whether the account survives it |
+| "Which of my trades actually make money?" | `journal_slice` — by direction, share size, share price, holding time. A profitable book can contain net-negative halves |
 | "Did this setup ever work?" | WRDS `wrds_backtest_signal` |
 | "Write this up" / "preview the earnings" / "screen for ideas" | An FSI plugin skill — see [plugins.md](plugins.md) first |
 | "Clean up the chart" | `draw_clear` — removes only what these tools drew |

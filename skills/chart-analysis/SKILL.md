@@ -108,6 +108,8 @@ swing_strength             → which swings the market actually proved
 
 `legs_classify` also flags a "pullback" that travelled further than the impulse before it. That shape is a trend change, not a retracement.
 
+**And it returns `time_corrections`, which the leg measurements structurally cannot see.** A correction can be a retracement (depth) or a horizontal, low-volatility digestion (time). The second produces no leg with meaningful depth, so reporting "no pullback" on a chart that is quietly digesting a move is the mistake this prevents. Report it as a *state* — "digesting" — never as a direction: it fires on 88% of random walks.
+
 ## Step 4 — Where price is, relative to what
 
 ```

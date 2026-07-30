@@ -45,6 +45,25 @@ Recurring shapes exist. **They are the same shapes whether the outcome was a gai
 
 **This applies to `strategy_scan` and `rules.json` today.** Scanning N symbols against M rule combinations and reporting the winner is exactly the procedure these tests were written to invalidate. We currently apply no correction at all.
 
+### 1.3b A noise floor and a trial count are still not enough
+
+This is the lesson this repo learned the hard way, on its own findings, and it belongs beside White and Harvey rather than below them.
+
+Two claims here passed **every** honesty check the sections above prescribe — a random-walk null, a stated sample size, and a multiple-testing correction — and then died on a holdout:
+
+| Claim | With its floor and correction | On a holdout |
+|---|---|---|
+| `level_pressure` — interim retreat extremes moving toward a level | **+39.1 points, z = 3.96, n = 103**, null −1.4, Bonferroni-corrected for 3 tests | **+4.6, z = 0.73, n = 251** — a *larger* sample |
+| `stage_plan`'s Stage 2 gate | abstains on 54% of random walks, where `classifyPhase` abstains on 0% | long **33.5% vs a 36.4% baseline**; short **21.2% vs 28.9%**; 4 configurations, none favouring it |
+
+The first is the instructive one. Nothing about the procedure was wrong. The null was measured, not assumed. The correction was applied. The z was 3.96. And the result was a property of that sample, which no amount of in-sample rigour can detect.
+
+**The consequence for this repo:** a noise floor answers *"could this be arithmetic?"* and a trial count answers *"did I get here by searching?"* Neither answers *"does this hold on data I did not look at?"* Only a holdout does, and it is now a standing requirement — a different universe, a disjoint period, or both, before any single-sample finding is quoted as more than provisional.
+
+`scripts/level-test-inversion.js` and `scripts/stage-forward-test.js` are the working templates. Both run four arms: a random walk, an in-sample slice, a fresh universe, and an earlier non-overlapping window.
+
+**A second, duller failure mode worth naming.** Three measurement scripts set the symbol but not the *timeframe*, inherited the chart's 60-minute resolution, and recorded their results as "daily bars". Every number was a real measurement of the wrong thing, and nothing in the output revealed it. `scripts/_real_bars.js` now requires an explicit timeframe and verifies the resolution actually took. A result is only as trustworthy as the provenance recorded next to it.
+
 ### 1.4 What *does* replicate: trend and momentum
 
 **[Moskowitz, Ooi & Pedersen (2012), *Journal of Financial Economics*](https://www.sciencedirect.com/science/article/pii/S0304405X11002613)** documented time-series momentum across **58 futures and forwards over 25+ years**: a 12-month lookback with a 1-month holding period was positive and significant **for every single instrument examined**. Composite Sharpe **1.28 vs 0.38** for buy-and-hold on the same universe. The effect persists ~12 months, then partially reverses.
@@ -76,6 +95,9 @@ The **[volatility contraction pattern](https://trendspider.com/learning-center/v
 Implement the **[Deflated Sharpe Ratio](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551)** (Bailey & López de Prado), which adjusts the significance threshold for the number of trials, skewness and kurtosis. Track trial count in `strategy_scan` and `backtest_strategy` and report DSR alongside the raw number.
 
 This is the single biggest gap in the project. `docs/START-HERE.md` already says a backtest without a benchmark flatters itself — a backtest without a trial count flatters itself just as badly, and we don't count trials at all.
+
+**1b. An out-of-sample arm on every finding. BUILT, and it has already killed two.**
+A different universe, a disjoint period, or both. See 1.3b — two claims here cleared a measured null *and* a Bonferroni correction and did not replicate. This is not a refinement of the trial count; it tests a different thing. Templates: `scripts/level-test-inversion.js`, `scripts/stage-forward-test.js`.
 
 **2. Purged K-fold with embargo, and Combinatorial Purged CV.**
 [Purged cross-validation](https://en.wikipedia.org/wiki/Purged_cross-validation) removes training observations whose labels overlap the test window, plus an embargo after it. Standard k-fold assumes independent observations; financial labels are built over overlapping windows and are not. Required before any parameter fitting.

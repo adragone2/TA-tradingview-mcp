@@ -63,11 +63,37 @@ Seeded, so the same inputs always give the same answer.
 ## Where the stop goes, and how many shares
 
 ```
-position_size          → from a position already drawn on the chart
-position_size_atr      → from volatility
+position_size_constrained  → from prices, under ALL THREE constraints
+position_size              → from a position already drawn on the chart (same three)
+position_size_atr          → from volatility
 ```
 
-`position_size_atr` places the stop a multiple of ATR from entry, so the position shrinks automatically when the instrument gets more volatile. Read ATR off the chart first with `data_get_study_values` (add "Average True Range" via `chart_manage_indicator` if it isn't there).
+### The risk budget alone is not the answer
+
+**A fixed-risk formula is unsafe on its own, and the reason is counterintuitive: under fixed risk a TIGHTER stop buys MORE shares.** So the better the entry looks, the more likely the position is too big.
+
+Shannon's own worked example (ch. 16): a $50 stock, stop just below support at 49.25, so **$0.75 of risk per share**. Risking 1% of a $100,000 account is $1,000, which buys **1,333 shares** — $66,650, or **65% of the account in one idea**. Every step of that arithmetic is correct and the answer is unusable.
+
+There are three constraints and **the smallest one wins**:
+
+| Constraint | Default | Source |
+|---|---|---|
+| Risk budget | 1% of equity, never more than 2% | Shannon, and universal |
+| **Concentration cap** | **15–20% of equity in one position** | Shannon ch. 16 — the one people omit |
+| **Liquidity** | 2% of average daily volume | *This repo's choice* — Shannon raises liquidity but names no number |
+
+`position_size_constrained` returns the minimum, names `binding_constraint`, and reports what the risk budget alone *would* have bought so the difference is visible. His second example binds on liquidity instead: a $2.50 stock with support 15 cents away gives 6,666 shares, which is 2.2% of a 300,000-share ADV.
+
+**Pass `adv`.** Without it the liquidity constraint comes back as `NOT CHECKED` — unknown is not the same as satisfied, and one third of the answer was never tested. Get it from `data_get_ohlcv` or from `short_interest`, which returns FINRA's own ADV.
+
+Two things follow that are easy to miss:
+
+- **Actual risk taken can fall well below the budget.** In the example above the capped 400 shares risk $300, not $1,000. Someone reading only "1% risk" is wrong about the position in both directions.
+- **Reporting a constraint is not applying it.** `position_size` used to print `notional_pct_of_account` and then hand back the risk-derived quantity anyway. It no longer does.
+
+### Sizing from volatility instead
+
+`position_size_atr` places the stop a multiple of ATR from entry, so the position shrinks automatically when the instrument gets more volatile. Read ATR off the chart first with `data_get_study_values` (add "Average True Range" via `chart_manage_indicator` if it isn't there). It does **not** apply the concentration or liquidity caps — check the result against `position_size_constrained` before using it.
 
 Pass `manual_stop` to compare against a stop chosen from structure. The comparison is the useful part: **a stop closer than 1x ATR is inside the instrument's ordinary bar range and will be hit by noise rather than by being wrong.** That is a reason to widen the stop and take fewer shares, not to skip the check.
 
