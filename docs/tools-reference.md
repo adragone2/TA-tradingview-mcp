@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **180 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **182 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -423,6 +423,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### finra_* (1)
 
 - **`finra_status`** — Whether the FINRA credentials are configured and which short-interest dataset is in use, plus the reporting cadence
+
+### group_* (2)
+
+- **`group_context`** — The industry-group context Livermore put BEFORE every trade, and the one thing this toolchain had no equivalent for
+- **`group_top_down`** — Livermore's Top Down Trading as an explicit four-step GATE, in his order: the market the stock trades on, then the industry group, then the two leader
 
 ---
 

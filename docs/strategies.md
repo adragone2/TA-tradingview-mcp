@@ -6,12 +6,12 @@ Every strategy the toolchain can express, grouped by **execution tier** (when th
 tagged with an **evidence tier** (how much to believe it). Each row names its screener, entry and exit rules,
 TradingView indicators, and the skills, tools and risk rules to invoke.
 
-18 strategies — 12 machine-scannable, 6 tiered REJECTED.
+20 strategies — 13 machine-scannable, 7 tiered REJECTED.
 
 | | |
 |---|---|
-| By execution | monthly 5 · weekly 10 · intraday 3 |
-| By evidence | A 3 · B 4 · C 5 · REJECTED 6 |
+| By execution | monthly 6 · weekly 11 · intraday 3 |
+| By evidence | A 3 · B 4 · C 6 · REJECTED 7 |
 
 ## How to read this
 
@@ -365,6 +365,26 @@ _"Single-indicator divergence" is tiered REJECTED: One divergence fires on 99% o
 
 _"Shannon Stage 2 gate as an entry edge" is tiered REJECTED: FORWARD-TESTED NEGATIVE. Triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline: long 33.5% vs 36.4%, short 21.2% vs 28.9%. Four configurations, none favouring the gate. It is in the catalogue so it is not rediscovered, not so it can be scanned._
 
+### Two-leader (Key Price) confirmation as a filter  ·  ~~REJECTED~~
+
+`REJECTED_tandem_confirmation` · long · **not scannable**
+
+**Evidence.** MEASURED NEGATIVE. Livermore ch. 11: "There is danger of being caught in a false movement by depending upon only one stock." Tested over 14 S&P 500 industry groups on daily bars, new 40-bar closing high as the signal, triple-barrier forward labels, no lookahead: SOLO 544 signals / 91 independent / 30.9% win rate; TANDEM (sister stock also at a new high) 228 / 56 / 21.6%. Lift -9.3 points, z -2.57. Requiring confirmation discarded 58% of signals and made the survivors WORSE.
+
+**Caveat.** A bug initially hid the size of this: GOOG and GOOGL were being used as a group's two leaders — one company, 57 of 57 tautological confirmations — which diluted the effect to -5.6 at z -1.64. Deduplicating share classes strengthened it. Coherent with the other failures here: requiring two large names in one group to break out within days selects for moves already extended and already correlated. THIRD confirmation gate measured in this repo, third to fail.
+
+| | |
+|---|---|
+| **Screener** | _none — do not screen on this_ |
+| **Entry** | Do not require the sister stock to agree before entering. It costs most of your signals and does not improve the rest. |
+| **Exit** | n/a |
+| **TradingView indicators** | — |
+| **Skills** | — |
+| **Tools** | `group_context`, `group_top_down` |
+| **Risk rules** | — |
+
+_"Two-leader (Key Price) confirmation as a filter" is tiered REJECTED: MEASURED NEGATIVE. Livermore ch. 11: "There is danger of being caught in a false movement by depending upon only one stock." Tested over 14 S&P 500 industry groups on daily bars, new 40-bar closing high as the signal, triple-barrier forward labels, no lookahead: SOLO 544 signals / 91 independent / 30.9% win rate; TANDEM (sister stock also at a new high) 228 / 56 / 21.6%. Lift -9.3 points, z -2.57. Requiring confirmation discarded 58% of signals and made the survivors WORSE. It is in the catalogue so it is not rediscovered, not so it can be scanned._
+
 ### Supply/demand zone entry (standalone)  ·  ~~REJECTED~~
 
 `REJECTED_zone_entry` · long · **not scannable**
@@ -537,6 +557,37 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 | `sma_slope(50)` | `>` | `0` |  |
 | `close` | `>` | `sma(200)` |  |
 | `pullback_pct` | `<` | `12` | the final contraction must be tight |
+
+</details>
+
+### Leading stock in a leading group (Livermore)  ·  C
+
+`group_leader_momentum` · long
+
+**Evidence.** Livermore's Discovery 1 and 2: trade only the leaders, and group movement is the key to individual stock movement. "If you cannot make money out of the leading active issues, you are not going to make money out of the stock market." No measurement of the LEADER-selection part here either way.
+
+**Caveat.** The group-CONFIRMATION half of his rule was measured and FAILED — see REJECTED_tandem_confirmation. What survives untested is the narrower idea of preferring the largest name in a strong group over a laggard. Source is a biographer's reconstruction, n = 1 trader, 1890s-1930s, and Livermore went bankrupt four times.
+
+| | |
+|---|---|
+| **Screener** | `group_context (scanner industry field) + screens:rs_leadership` |
+| **Entry** | Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm — that filter was measured and hurts. |
+| **Exit** | Monthly rerank, or when the name's own trend breaks. His hard rule: never lose more than 10% of the capital committed to a trade, and never average down. |
+| **Exit reason keys** | `time_elapsed`, `trend_broken`, `stop_hit`, `gap_against_trend` — log these, `exit_mix` reads them |
+| **TradingView indicators** | `Simple Moving Average (50)`, `Simple Moving Average (200)`, `Volume` |
+| **Skills** | [market-structure](../skills/market-structure/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
+| **Tools** | `group_context`, `relative_strength`, `momentum_read`, `position_size_constrained`, `horizon_prior`, `edge_breadth` |
+| **Risk rules** | `max_risk_per_trade`, `concentration_cap`, `max_portfolio_heat` |
+
+<details><summary>Machine-evaluable criteria</summary>
+
+| Left | Op | Right | Note |
+|---|---|---|---|
+| `close` | `>` | `sma(200)` |  |
+| `sma_slope(50)` | `>` | `0` | the name itself is trending |
+| `close` | `>` | `sma(50)` |  |
+
+Group membership and leadership are not OPERANDS — they come from group_context, which resolves them from the scanner's industry field. The criteria here gate the individual name only.
 
 </details>
 

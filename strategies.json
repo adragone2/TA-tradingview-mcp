@@ -10,19 +10,28 @@
   "execution_tiers": {
     "intraday": {
       "label": "Intraday",
-      "horizon_days": [0, 1],
+      "horizon_days": [
+        0,
+        1
+      ],
       "closes_by": "the session close",
       "horizon_evidence": "NONE from the academic literature in this repo. Every intraday effect here comes from practitioner books, and several of these setups need sub-minute bars or the tape, which this toolchain does not have."
     },
     "weekly": {
       "label": "Weekly",
-      "horizon_days": [2, 10],
+      "horizon_days": [
+        2,
+        10
+      ],
       "closes_by": "within two trading weeks",
       "horizon_evidence": "THE REVERSAL ZONE. Below ~21 trading days the documented effect is REVERSAL, not continuation (see docs/swing-evidence-review.md, docs/strategy-horizons.md). Any CONTINUATION setup placed here is fighting its own horizon — that includes breakouts, flags, triangles and VCP. Run horizon_prior before acting."
     },
     "monthly": {
       "label": "Monthly",
-      "horizon_days": [11, 252],
+      "horizon_days": [
+        11,
+        252
+      ],
       "closes_by": "a month or more, rebalanced monthly",
       "horizon_evidence": "Partly the CONTESTED GAP. Continuation evidence only begins around ~63 trading days; 11 to 63 days has neither documented effect. Everything Tier A in this repo was measured at monthly cadence or longer, so this is where the evidence lives — but only past ~63 days."
     }
@@ -43,17 +52,47 @@
       "evidence_caveat": "A PORTFOLIO result on 58 diversified futures. Applied to ONE equity it retains ~13% of its information ratio (IR = IC x sqrt(breadth)) and would take ~136 years to prove. Run edge_breadth before quoting the Sharpe.",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(200)", "note": "long-term trend intact" },
-        { "left": "sma_slope(200)", "op": ">", "right": 0, "note": "and rising, not merely above" }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)",
+          "note": "long-term trend intact"
+        },
+        {
+          "left": "sma_slope(200)",
+          "op": ">",
+          "right": 0,
+          "note": "and rising, not merely above"
+        }
       ],
       "criteria_note": "The 12-month return itself is not an OPERAND, so these criteria are a proxy gate. momentum_read computes the real thing across 12m/6m/3m/1m and reports whether the horizons AGREE.",
       "entry": "Monthly rebalance. Long the top decile of 12-month return, skipping the most recent month (the skip exists because the sub-21-day window is the reversal zone).",
       "exit": "Monthly rerank. Exit when the name leaves the entry band — use the hysteresis exit, not a hard rank cut.",
-      "exit_reason_keys": ["time_elapsed", "trend_broken"],
-      "indicators": ["Simple Moving Average (200)", "Simple Moving Average (50)", "Rate of Change (252)"],
-      "skills": ["risk-sizing", "backtest-strategy"],
-      "tools": ["momentum_read", "edge_breadth", "tier_a_factors", "turnover_cost", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "max_portfolio_heat", "concentration_cap"]
+      "exit_reason_keys": [
+        "time_elapsed",
+        "trend_broken"
+      ],
+      "indicators": [
+        "Simple Moving Average (200)",
+        "Simple Moving Average (50)",
+        "Rate of Change (252)"
+      ],
+      "skills": [
+        "risk-sizing",
+        "backtest-strategy"
+      ],
+      "tools": [
+        "momentum_read",
+        "edge_breadth",
+        "tier_a_factors",
+        "turnover_cost",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "max_portfolio_heat",
+        "concentration_cap"
+      ]
     },
     "moving_average_distance": {
       "label": "Moving Average Distance (MAD)",
@@ -64,16 +103,42 @@
       "evidence_caveat": "A monthly cross-sectional STATE, not a crossover trigger. Reranking daily is 252 round trips a year — 50.4% drag at 20bps, 5.6x the whole effect. cadence.js enforces the monthly clock.",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
-        { "left": "sma(21)", "op": ">", "right": "sma(200)", "note": "short average above long — the MAD state" },
-        { "left": "close", "op": ">", "right": "sma(21)" }
+        {
+          "left": "sma(21)",
+          "op": ">",
+          "right": "sma(200)",
+          "note": "short average above long — the MAD state"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(21)"
+        }
       ],
       "entry": "Monthly. Long the top decile of sma(21)/sma(200) ratio across the universe. It is a RANK, not a threshold.",
       "exit": "Monthly rerank with a hysteresis band (~0.96% net drag vs 2.4% for a hard monthly cut).",
-      "exit_reason_keys": ["time_elapsed"],
-      "indicators": ["Simple Moving Average (21)", "Simple Moving Average (200)"],
-      "skills": ["risk-sizing", "backtest-strategy"],
-      "tools": ["tier_a_factors", "turnover_cost", "costs_vs_edge", "edge_breadth", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "concentration_cap"]
+      "exit_reason_keys": [
+        "time_elapsed"
+      ],
+      "indicators": [
+        "Simple Moving Average (21)",
+        "Simple Moving Average (200)"
+      ],
+      "skills": [
+        "risk-sizing",
+        "backtest-strategy"
+      ],
+      "tools": [
+        "tier_a_factors",
+        "turnover_cost",
+        "costs_vs_edge",
+        "edge_breadth",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "concentration_cap"
+      ]
     },
     "near_52w_high": {
       "label": "52-week high proximity",
@@ -84,18 +149,49 @@
       "evidence_caveat": "Cross-sectional. A single name near its high tells you nothing without the ranking.",
       "screener": "screens:near_52w_high",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(200)" },
-        { "left": "close", "op": ">", "right": "sma(50)" },
-        { "left": "sma_slope(50)", "op": ">", "right": 0 }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        },
+        {
+          "left": "sma_slope(50)",
+          "op": ">",
+          "right": 0
+        }
       ],
       "criteria_note": "Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_week_high directly.",
       "entry": "Monthly. Long names within a few percent of their 52-week high, ranked by proximity.",
       "exit": "Monthly rerank, or a close below the 50-day average.",
-      "exit_reason_keys": ["time_elapsed", "trend_broken", "ma_crossover"],
-      "indicators": ["Simple Moving Average (50)", "Simple Moving Average (200)"],
-      "skills": ["risk-sizing", "market-structure"],
-      "tools": ["momentum_read", "screens", "edge_breadth", "position_size_constrained", "gap_risk"],
-      "risk_rules": ["max_risk_per_trade", "concentration_cap"]
+      "exit_reason_keys": [
+        "time_elapsed",
+        "trend_broken",
+        "ma_crossover"
+      ],
+      "indicators": [
+        "Simple Moving Average (50)",
+        "Simple Moving Average (200)"
+      ],
+      "skills": [
+        "risk-sizing",
+        "market-structure"
+      ],
+      "tools": [
+        "momentum_read",
+        "screens",
+        "edge_breadth",
+        "position_size_constrained",
+        "gap_risk"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "concentration_cap"
+      ]
     },
     "high_volume_premium": {
       "label": "High-volume return premium",
@@ -106,16 +202,39 @@
       "evidence_caveat": "Measured as a MONTHLY sort, not as same-day breakout confirmation. Also: relative_volume_10d_calc from the TV scanner is the least trustworthy server-side field pre-open, so this factor is SUPPRESSED before the open — see scannerTrust().",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(50)" },
-        { "left": "rvol", "op": ">", "right": 1.5, "note": "intraday only — UNKNOWN on daily bars, which is correct" }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        },
+        {
+          "left": "rvol",
+          "op": ">",
+          "right": 1.5,
+          "note": "intraday only — UNKNOWN on daily bars, which is correct"
+        }
       ],
       "entry": "Monthly. Long names whose volume over the ranking window was unusually high relative to their own history.",
       "exit": "One month. This effect has a stated decay.",
-      "exit_reason_keys": ["time_elapsed"],
-      "indicators": ["Volume", "Relative Volume at Time"],
-      "skills": ["risk-sizing"],
-      "tools": ["tier_a_factors", "effort_vs_result", "turnover_cost", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade"]
+      "exit_reason_keys": [
+        "time_elapsed"
+      ],
+      "indicators": [
+        "Volume",
+        "Relative Volume at Time"
+      ],
+      "skills": [
+        "risk-sizing"
+      ],
+      "tools": [
+        "tier_a_factors",
+        "effort_vs_result",
+        "turnover_cost",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade"
+      ]
     },
     "vcp_base_breakout": {
       "label": "VCP base breakout (Minervini)",
@@ -126,18 +245,60 @@
       "evidence_caveat": "A 0% noise floor proves the detector is SELECTIVE, not that the setup is PROFITABLE. No return evidence at any cadence. And the breakout it sets up is a CONTINUATION bet — place it in monthly, not weekly.",
       "screener": "screens:volatility_contraction",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(50)" },
-        { "left": "sma_slope(50)", "op": ">", "right": 0 },
-        { "left": "close", "op": ">", "right": "sma(200)" },
-        { "left": "pullback_pct", "op": "<", "right": 12, "note": "the final contraction must be tight" }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        },
+        {
+          "left": "sma_slope(50)",
+          "op": ">",
+          "right": 0
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)"
+        },
+        {
+          "left": "pullback_pct",
+          "op": "<",
+          "right": 12,
+          "note": "the final contraction must be tight"
+        }
       ],
       "entry": "Buy the breakout above the base high. vcp_check names WHICH clause failed on a near miss, so a rejection is diagnosable.",
       "exit": "Stop below the last contraction low. Target by measured base depth; trail with pivot_trail once a higher high confirms.",
-      "exit_reason_keys": ["stop_hit", "target_hit", "trend_broken", "gap_against_trend"],
-      "indicators": ["Simple Moving Average (50)", "Simple Moving Average (200)", "Average True Range (14)", "Volume"],
-      "skills": ["market-structure", "chart-patterns", "risk-sizing"],
-      "tools": ["vcp_check", "volatility_state", "breakout_check", "pivot_trail", "position_size_constrained", "horizon_prior"],
-      "risk_rules": ["max_risk_per_trade", "min_rr", "concentration_cap"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "target_hit",
+        "trend_broken",
+        "gap_against_trend"
+      ],
+      "indicators": [
+        "Simple Moving Average (50)",
+        "Simple Moving Average (200)",
+        "Average True Range (14)",
+        "Volume"
+      ],
+      "skills": [
+        "market-structure",
+        "chart-patterns",
+        "risk-sizing"
+      ],
+      "tools": [
+        "vcp_check",
+        "volatility_state",
+        "breakout_check",
+        "pivot_trail",
+        "position_size_constrained",
+        "horizon_prior"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr",
+        "concentration_cap"
+      ]
     },
     "short_term_reversal": {
       "label": "Short-term reversal (liquidity provision)",
@@ -148,16 +309,46 @@
       "evidence_caveat": "CONDITIONAL. It 'earns essentially nothing unconditionally' — it is only active when VIX is elevated. tier_a_factors keeps it INACTIVE otherwise, and that gate is the strategy.",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
-        { "left": "rsi(2)", "op": "<", "right": 10, "note": "washed out short term" },
-        { "left": "close", "op": ">", "right": "sma(200)", "note": "but not broken long term" }
+        {
+          "left": "rsi(2)",
+          "op": "<",
+          "right": 10,
+          "note": "washed out short term"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)",
+          "note": "but not broken long term"
+        }
       ],
       "entry": "Only when VIX is elevated. Buy the biggest short-horizon losers that are still above their long-term trend.",
       "exit": "2 to 10 days, on mean reversion or the time stop — whichever comes first.",
-      "exit_reason_keys": ["target_hit", "time_elapsed", "stop_hit"],
-      "indicators": ["Relative Strength Index (2)", "Simple Moving Average (200)", "Volatility Index (external)"],
-      "skills": ["risk-sizing", "backtest-strategy"],
-      "tools": ["tier_a_factors", "ta_regime", "horizon_prior", "turnover_cost", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "max_portfolio_heat"]
+      "exit_reason_keys": [
+        "target_hit",
+        "time_elapsed",
+        "stop_hit"
+      ],
+      "indicators": [
+        "Relative Strength Index (2)",
+        "Simple Moving Average (200)",
+        "Volatility Index (external)"
+      ],
+      "skills": [
+        "risk-sizing",
+        "backtest-strategy"
+      ],
+      "tools": [
+        "tier_a_factors",
+        "ta_regime",
+        "horizon_prior",
+        "turnover_cost",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "max_portfolio_heat"
+      ]
     },
     "wyckoff_spring_reclaim": {
       "label": "Wyckoff spring / upthrust reclaim",
@@ -168,16 +359,45 @@
       "evidence_caveat": "A wick below support with a close still below is a BREAKDOWN, not a spring. wyckoff_spring returns those separately as unconfirmed, never mixed in. Note wyckoff_phase is the opposite: it fires on 100% of random walks because it never abstains, so a PHASE is descriptive and only the spring is selective. No return evidence.",
       "screener": "screens:structural_reversal",
       "criteria": [
-        { "left": "close", "op": ">", "right": "low", "note": "reclaim — the close must be back inside" },
-        { "left": "nearest_level_distance_pct", "op": "<", "right": 2 }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "low",
+          "note": "reclaim — the close must be back inside"
+        },
+        {
+          "left": "nearest_level_distance_pct",
+          "op": "<",
+          "right": 2
+        }
       ],
       "entry": "On the reclaim close, not on the wick. A REVERSAL setup, so it is one of the few structural entries the 2-10 day horizon actually supports.",
       "exit": "Stop below the spring low. Target the range high.",
-      "exit_reason_keys": ["stop_hit", "target_hit", "level_reached"],
-      "indicators": ["Volume", "Average True Range (14)"],
-      "skills": ["market-structure", "supply-demand-setup", "risk-sizing"],
-      "tools": ["wyckoff_spring", "effort_vs_result", "levels_find", "horizon_prior", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "min_rr"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "target_hit",
+        "level_reached"
+      ],
+      "indicators": [
+        "Volume",
+        "Average True Range (14)"
+      ],
+      "skills": [
+        "market-structure",
+        "supply-demand-setup",
+        "risk-sizing"
+      ],
+      "tools": [
+        "wyckoff_spring",
+        "effort_vs_result",
+        "levels_find",
+        "horizon_prior",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr"
+      ]
     },
     "momentum_pullback": {
       "label": "Momentum pullback to a rising average",
@@ -188,19 +408,68 @@
       "evidence_caveat": "The trend is monthly evidence; the entry is a weekly-horizon continuation bet, which is the reversal zone. This is the horizon problem in a single strategy, and the honest reading is that the trend selection is Tier A and the timing is Tier C.",
       "screener": "screens:momentum_pullback",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(200)" },
-        { "left": "sma_slope(50)", "op": ">", "right": 0 },
-        { "left": "pullback_pct", "op": ">", "right": 3 },
-        { "left": "pullback_pct", "op": "<", "right": 15 },
-        { "left": "close", "op": ">", "right": "ema(21)" }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)"
+        },
+        {
+          "left": "sma_slope(50)",
+          "op": ">",
+          "right": 0
+        },
+        {
+          "left": "pullback_pct",
+          "op": ">",
+          "right": 3
+        },
+        {
+          "left": "pullback_pct",
+          "op": "<",
+          "right": 15
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "ema(21)"
+        }
       ],
       "entry": "Enter on the first new higher high after the pullback, not on the touch. Shannon: the trigger is a new extreme, and a low-volume pullback is the better candidate.",
       "exit": "Stop below the most recent higher low. Trail with pivot_trail. Two exit triggers: the higher low breaks (PRICE correction) or the short average crosses the intermediate one (TIME correction).",
-      "exit_reason_keys": ["stop_hit", "trend_broken", "ma_crossover", "target_hit"],
-      "indicators": ["Exponential Moving Average (21)", "Simple Moving Average (50)", "Simple Moving Average (200)", "Average True Range (14)", "Volume"],
-      "skills": ["market-structure", "chart-analysis", "risk-sizing", "trade-journal"],
-      "tools": ["structure_analyze", "legs_classify", "momentum_read", "horizon_prior", "pivot_trail", "stopping_premium", "position_size_constrained", "draw_trade_plan"],
-      "risk_rules": ["max_risk_per_trade", "min_rr", "concentration_cap"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "trend_broken",
+        "ma_crossover",
+        "target_hit"
+      ],
+      "indicators": [
+        "Exponential Moving Average (21)",
+        "Simple Moving Average (50)",
+        "Simple Moving Average (200)",
+        "Average True Range (14)",
+        "Volume"
+      ],
+      "skills": [
+        "market-structure",
+        "chart-analysis",
+        "risk-sizing",
+        "trade-journal"
+      ],
+      "tools": [
+        "structure_analyze",
+        "legs_classify",
+        "momentum_read",
+        "horizon_prior",
+        "pivot_trail",
+        "stopping_premium",
+        "position_size_constrained",
+        "draw_trade_plan"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr",
+        "concentration_cap"
+      ]
     },
     "breakout_continuation": {
       "label": "Breakout of a tested level",
@@ -211,17 +480,52 @@
       "evidence_caveat": "A CONTINUATION bet at the horizon where continuation is weakest. Also: the TOUCH COUNT of the level carries nothing — the break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3. 'Tested three times so it is strong' is unsupported in both directions.",
       "screener": "screens:momentum_pullback",
       "criteria": [
-        { "left": "close", "op": ">", "right": "sma(50)" },
-        { "left": "nearest_level_distance_pct", "op": "<", "right": 1 },
-        { "left": "close", "op": ">", "right": "ema(8)" }
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        },
+        {
+          "left": "nearest_level_distance_pct",
+          "op": "<",
+          "right": 1
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "ema(8)"
+        }
       ],
       "entry": "A CLOSE beyond the level, with volume at least normal for the period. Shannon is explicit that volume CONFIRMS and never triggers — waiting for expansion produces late entries.",
       "exit": "Reclaimed next bar means it failed. Stop just beyond the broken level; measured move as the first target.",
-      "exit_reason_keys": ["stop_hit", "target_hit", "gap_against_trend"],
-      "indicators": ["Exponential Moving Average (8)", "Simple Moving Average (50)", "Volume", "Average True Range (14)"],
-      "skills": ["chart-patterns", "market-structure", "risk-sizing"],
-      "tools": ["breakout_check", "levels_find", "level_pressure", "horizon_prior", "luld_band", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "min_rr"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "target_hit",
+        "gap_against_trend"
+      ],
+      "indicators": [
+        "Exponential Moving Average (8)",
+        "Simple Moving Average (50)",
+        "Volume",
+        "Average True Range (14)"
+      ],
+      "skills": [
+        "chart-patterns",
+        "market-structure",
+        "risk-sizing"
+      ],
+      "tools": [
+        "breakout_check",
+        "levels_find",
+        "level_pressure",
+        "horizon_prior",
+        "luld_band",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr"
+      ]
     },
     "opening_range_break": {
       "label": "Opening range breakout",
@@ -232,19 +536,58 @@
       "evidence_caveat": "Needs sub-minute data this toolchain does not have. The 5-minute version below is a proxy, not Crabel's rule.",
       "screener": "none — intraday setups are not screened from daily bars",
       "criteria": [
-        { "left": "minutes_since_open", "op": ">=", "right": 5 },
-        { "left": "minutes_since_open", "op": "<=", "right": 30 },
-        { "left": "price", "op": ">", "right": "opening_range_high(5)" },
-        { "left": "price", "op": ">", "right": "vwap" },
-        { "left": "rvol", "op": ">", "right": 1.5 }
+        {
+          "left": "minutes_since_open",
+          "op": ">=",
+          "right": 5
+        },
+        {
+          "left": "minutes_since_open",
+          "op": "<=",
+          "right": 30
+        },
+        {
+          "left": "price",
+          "op": ">",
+          "right": "opening_range_high(5)"
+        },
+        {
+          "left": "price",
+          "op": ">",
+          "right": "vwap"
+        },
+        {
+          "left": "rvol",
+          "op": ">",
+          "right": 1.5
+        }
       ],
       "entry": "Break of the first 5-minute candle's high, above VWAP.",
       "exit": "Loss of VWAP. Flat by the close.",
-      "exit_reason_keys": ["stop_hit", "time_elapsed", "target_hit"],
-      "indicators": ["VWAP", "Volume", "Relative Volume at Time"],
-      "skills": ["chart-analysis", "risk-sizing"],
-      "tools": ["strategy_check", "luld_band", "depth_get", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "max_daily_loss"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "time_elapsed",
+        "target_hit"
+      ],
+      "indicators": [
+        "VWAP",
+        "Volume",
+        "Relative Volume at Time"
+      ],
+      "skills": [
+        "chart-analysis",
+        "risk-sizing"
+      ],
+      "tools": [
+        "strategy_check",
+        "luld_band",
+        "depth_get",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "max_daily_loss"
+      ]
     },
     "vwap_reclaim": {
       "label": "VWAP reclaim continuation (lightning bolt)",
@@ -255,17 +598,47 @@
       "evidence_caveat": "The intraday U-shaped volume curve is partly SELF-REINFORCING because VWAP-targeting execution algorithms trade a percentage of volume per time bucket. That makes VWAP a real reference point and not a forecast.",
       "screener": "none — intraday",
       "criteria": [
-        { "left": "minutes_since_open", "op": ">=", "right": 10 },
-        { "left": "price", "op": ">", "right": "vwap" },
-        { "left": "pullback_pct", "op": "<", "right": 50 }
+        {
+          "left": "minutes_since_open",
+          "op": ">=",
+          "right": 10
+        },
+        {
+          "left": "price",
+          "op": ">",
+          "right": "vwap"
+        },
+        {
+          "left": "pullback_pct",
+          "op": "<",
+          "right": 50
+        }
       ],
       "entry": "Breaks VWAP, pulls back less than half the move, then continues. Volume falls on the pullback and rises on the continuation.",
       "exit": "Beyond VWAP. Flat by the close.",
-      "exit_reason_keys": ["stop_hit", "time_elapsed", "tape_seller"],
-      "indicators": ["VWAP", "Volume"],
-      "skills": ["chart-analysis", "risk-sizing"],
-      "tools": ["anchored_vwap", "strategy_check", "depth_get", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "max_daily_loss"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "time_elapsed",
+        "tape_seller"
+      ],
+      "indicators": [
+        "VWAP",
+        "Volume"
+      ],
+      "skills": [
+        "chart-analysis",
+        "risk-sizing"
+      ],
+      "tools": [
+        "anchored_vwap",
+        "strategy_check",
+        "depth_get",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "max_daily_loss"
+      ]
     },
     "parabolic_fade": {
       "label": "Parabolic reversal (fade to the 9 EMA)",
@@ -276,16 +649,44 @@
       "evidence_caveat": "A counter-trend short. Shannon's rule is that shorts in an uptrend carry 'much higher' risk, and a squeeze can be violent — check short_interest and shorts_position first, since squeeze fuel needs shorts who are LOSING.",
       "screener": "none — intraday",
       "criteria": [
-        { "left": "price", "op": ">", "right": "ema(9) * 1.05", "note": "extended from the fast average" },
-        { "left": "rsi(14)", "op": ">", "right": 75 }
+        {
+          "left": "price",
+          "op": ">",
+          "right": "ema(9) * 1.05",
+          "note": "extended from the fast average"
+        },
+        {
+          "left": "rsi(14)",
+          "op": ">",
+          "right": 75
+        }
       ],
       "entry": "Fade back toward the 9 EMA once the extension stalls.",
       "exit": "Prior candle extreme as the stop. Cover into the 9 EMA.",
-      "exit_reason_keys": ["stop_hit", "target_hit", "too_steep"],
-      "indicators": ["Exponential Moving Average (9)", "Relative Strength Index (14)", "VWAP"],
-      "skills": ["chart-analysis", "risk-sizing"],
-      "tools": ["short_interest", "luld_band", "candle_read", "position_size_constrained"],
-      "risk_rules": ["max_risk_per_trade", "max_daily_loss"]
+      "exit_reason_keys": [
+        "stop_hit",
+        "target_hit",
+        "too_steep"
+      ],
+      "indicators": [
+        "Exponential Moving Average (9)",
+        "Relative Strength Index (14)",
+        "VWAP"
+      ],
+      "skills": [
+        "chart-analysis",
+        "risk-sizing"
+      ],
+      "tools": [
+        "short_interest",
+        "luld_band",
+        "candle_read",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "max_daily_loss"
+      ]
     },
     "REJECTED_candlestick_reversal": {
       "label": "Candlestick reversal patterns",
@@ -301,7 +702,10 @@
       "exit_reason_keys": [],
       "indicators": [],
       "skills": [],
-      "tools": ["candle_read", "patterns_detect"],
+      "tools": [
+        "candle_read",
+        "patterns_detect"
+      ],
       "risk_rules": []
     },
     "REJECTED_zone_entry": {
@@ -317,8 +721,13 @@
       "exit": "n/a",
       "exit_reason_keys": [],
       "indicators": [],
-      "skills": ["supply-demand-setup"],
-      "tools": ["zones_find", "levels_find"],
+      "skills": [
+        "supply-demand-setup"
+      ],
+      "tools": [
+        "zones_find",
+        "levels_find"
+      ],
       "risk_rules": []
     },
     "REJECTED_single_divergence": {
@@ -333,9 +742,16 @@
       "entry": "Only with two or more independent indicators agreeing, and then as context.",
       "exit": "n/a",
       "exit_reason_keys": [],
-      "indicators": ["Relative Strength Index (14)", "MACD", "On Balance Volume", "Money Flow Index (14)"],
+      "indicators": [
+        "Relative Strength Index (14)",
+        "MACD",
+        "On Balance Volume",
+        "Money Flow Index (14)"
+      ],
       "skills": [],
-      "tools": ["divergence_survey"],
+      "tools": [
+        "divergence_survey"
+      ],
       "risk_rules": []
     },
     "REJECTED_stage_gate_as_edge": {
@@ -350,9 +766,18 @@
       "entry": "Do not enter because the gate is open. Use it to EXCLUDE, never to justify.",
       "exit": "n/a",
       "exit_reason_keys": [],
-      "indicators": ["Simple Moving Average (10)", "Simple Moving Average (20)", "Simple Moving Average (50)"],
-      "skills": ["market-structure"],
-      "tools": ["stage_plan", "horizon_prior"],
+      "indicators": [
+        "Simple Moving Average (10)",
+        "Simple Moving Average (20)",
+        "Simple Moving Average (50)"
+      ],
+      "skills": [
+        "market-structure"
+      ],
+      "tools": [
+        "stage_plan",
+        "horizon_prior"
+      ],
       "risk_rules": []
     },
     "REJECTED_level_touch_count": {
@@ -369,7 +794,10 @@
       "exit_reason_keys": [],
       "indicators": [],
       "skills": [],
-      "tools": ["level_pressure", "level_test_history"],
+      "tools": [
+        "level_pressure",
+        "level_test_history"
+      ],
       "risk_rules": []
     },
     "REJECTED_crabel_contraction": {
@@ -384,9 +812,93 @@
       "entry": "Do not trade the contraction as a directional signal. It is a state.",
       "exit": "n/a",
       "exit_reason_keys": [],
-      "indicators": ["Average True Range (14)", "Bollinger Bands"],
+      "indicators": [
+        "Average True Range (14)",
+        "Bollinger Bands"
+      ],
       "skills": [],
-      "tools": ["volatility_state", "legs_classify"],
+      "tools": [
+        "volatility_state",
+        "legs_classify"
+      ],
+      "risk_rules": []
+    },
+    "group_leader_momentum": {
+      "label": "Leading stock in a leading group (Livermore)",
+      "execution": "monthly",
+      "direction": "long",
+      "evidence_tier": "C",
+      "evidence": "Livermore's Discovery 1 and 2: trade only the leaders, and group movement is the key to individual stock movement. \"If you cannot make money out of the leading active issues, you are not going to make money out of the stock market.\" No measurement of the LEADER-selection part here either way.",
+      "evidence_caveat": "The group-CONFIRMATION half of his rule was measured and FAILED — see REJECTED_tandem_confirmation. What survives untested is the narrower idea of preferring the largest name in a strong group over a laggard. Source is a biographer's reconstruction, n = 1 trader, 1890s-1930s, and Livermore went bankrupt four times.",
+      "screener": "group_context (scanner industry field) + screens:rs_leadership",
+      "criteria": [
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)"
+        },
+        {
+          "left": "sma_slope(50)",
+          "op": ">",
+          "right": 0,
+          "note": "the name itself is trending"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        }
+      ],
+      "criteria_note": "Group membership and leadership are not OPERANDS — they come from group_context, which resolves them from the scanner's industry field. The criteria here gate the individual name only.",
+      "entry": "Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm — that filter was measured and hurts.",
+      "exit": "Monthly rerank, or when the name's own trend breaks. His hard rule: never lose more than 10% of the capital committed to a trade, and never average down.",
+      "exit_reason_keys": [
+        "time_elapsed",
+        "trend_broken",
+        "stop_hit",
+        "gap_against_trend"
+      ],
+      "indicators": [
+        "Simple Moving Average (50)",
+        "Simple Moving Average (200)",
+        "Volume"
+      ],
+      "skills": [
+        "market-structure",
+        "risk-sizing"
+      ],
+      "tools": [
+        "group_context",
+        "relative_strength",
+        "momentum_read",
+        "position_size_constrained",
+        "horizon_prior",
+        "edge_breadth"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "concentration_cap",
+        "max_portfolio_heat"
+      ]
+    },
+    "REJECTED_tandem_confirmation": {
+      "label": "Two-leader (Key Price) confirmation as a filter",
+      "execution": "weekly",
+      "direction": "long",
+      "evidence_tier": "REJECTED",
+      "evidence": "MEASURED NEGATIVE. Livermore ch. 11: \"There is danger of being caught in a false movement by depending upon only one stock.\" Tested over 14 S&P 500 industry groups on daily bars, new 40-bar closing high as the signal, triple-barrier forward labels, no lookahead: SOLO 544 signals / 91 independent / 30.9% win rate; TANDEM (sister stock also at a new high) 228 / 56 / 21.6%. Lift -9.3 points, z -2.57. Requiring confirmation discarded 58% of signals and made the survivors WORSE.",
+      "evidence_caveat": "A bug initially hid the size of this: GOOG and GOOGL were being used as a group's two leaders — one company, 57 of 57 tautological confirmations — which diluted the effect to -5.6 at z -1.64. Deduplicating share classes strengthened it. Coherent with the other failures here: requiring two large names in one group to break out within days selects for moves already extended and already correlated. THIRD confirmation gate measured in this repo, third to fail.",
+      "screener": "none — do not screen on this",
+      "criteria": [],
+      "entry": "Do not require the sister stock to agree before entering. It costs most of your signals and does not improve the rest.",
+      "exit": "n/a",
+      "exit_reason_keys": [],
+      "indicators": [],
+      "skills": [],
+      "tools": [
+        "group_context",
+        "group_top_down"
+      ],
       "risk_rules": []
     }
   }

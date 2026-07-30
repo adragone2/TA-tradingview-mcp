@@ -39,6 +39,7 @@ import { registerPaneTools } from "./tools/pane.js";
 import { registerTabTools } from "./tools/tab.js";
 import { registerMorningTools } from "./tools/morning.js";
 import { registerFinraTools } from "./tools/finra.js";
+import { registerGroupTools } from "./tools/groups.js";
 
 const server = new McpServer(
   {
@@ -48,7 +49,7 @@ const server = new McpServer(
       "AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol",
   },
   {
-    instructions: `TradingView MCP — 180 tools. A live TradingView Desktop chart, plus the
+    instructions: `TradingView MCP — 182 tools. A live TradingView Desktop chart, plus the
 Tactical Alpha (TA) API for the investing context a chart cannot show.
 
 FIRST: read docs/START-HERE.md in this repo. It is the entry point and explains
@@ -382,6 +383,7 @@ registerPaneTools(server);
 registerTabTools(server);
 registerMorningTools(server);
 registerFinraTools(server);
+registerGroupTools(server);
 
 // Startup notice (stderr so it doesn't interfere with MCP stdio protocol)
 process.stderr.write(

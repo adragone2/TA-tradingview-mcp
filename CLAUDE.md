@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-180 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+182 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 180 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 182 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 18 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
@@ -33,6 +33,7 @@
 | [docs/swing-evidence-review.md](docs/swing-evidence-review.md) | **Read first.** The owner's own evidence review — tiers A/B/C, and the horizon problem |
 | [docs/literature.md](docs/literature.md) | 25 papers, paper by paper — including the ones that contradict our own modules |
 | [docs/book-notes-shannon.md](docs/book-notes-shannon.md) | Shannon, *Multiple Timeframes*, read in full — what was built, what is still unbuilt, and the claims that need a noise floor |
+| [docs/book-notes-livermore.md](docs/book-notes-livermore.md) | Smitten, *Trade Like Jesse Livermore*, read in full — the group/tandem system, and the measurement that killed its confirmation rule |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Known breakages and causes |
 | `skills/` | Step-by-step procedures, invoked by name |
 
@@ -58,6 +59,7 @@
 | "Add the walls" | `walls-overlay` skill (needs the **TA-Trading** layout) |
 | "Do I own this? Does it report soon?" | `ta_trading_context` — call **before** acting on a setup |
 | "What's the regime?" | `ta_regime` — also carries position sizing |
+| "Is its SECTOR/GROUP moving?" / "who leads this group?" | `group_context` — Livermore's Group (scanner `industry`) vs Sector, the two leaders, and the laggards. CONTEXT only: two-leader confirmation was measured and HURTS by 9.3 points |
 | "How shorted is it?" / "squeeze setup?" | `short_interest` — FINRA, twice a month. Quote the `driver`, never bare days-to-cover, and check `shorts_position`: squeeze fuel needs shorts who are LOSING |
 | "Write a Pine script" | `pine-develop` skill |
 | "What's the trend?" / "key levels?" | `market-structure` skill — `structure_analyze`, `levels_find`. Quote each level's evidence |
@@ -122,6 +124,10 @@ Each of these exists because it has already gone wrong here.
 **A strategy lives in strategies.json, not in prose.** 18 strategies are catalogued as DATA — criteria, screener, entry, exit, indicators, skills, tools, risk rules and an evidence tier each — so `strategy_check` and `strategy_scan` can evaluate them. Before this existed `strategy_list` returned `count: 0` while four pieces of machinery waited for input. `rules.json` still wins a name clash; it holds the owner's own criteria and a shared catalogue must not override them. **Six entries are tiered REJECTED and kept deliberately** — candlesticks, standalone zones, single divergences, the stage gate as an edge, level touch count, Crabel contraction — each with the measurement that killed it, so nobody rediscovers one and believes it is new. They carry no criteria and `strategy_check` refuses them with the reason.
 
 **The owner's WEEKLY bucket is the reversal zone, and most setups in it are continuation bets.** Execution tiers are intraday, weekly (2–10 days), monthly (11+ days). Below ~21 trading days the documented effect is REVERSAL; 11–63 days is the contested gap where neither effect is documented. So a breakout, flag, triangle or VCP placed in the weekly tier is fighting its own horizon — `docs/strategies.md` says so on every tier heading, and `horizon_prior` says which side a given setup is on.
+
+**Three confirmation gates measured here, three failures. Stop building them.** `level_pressure` collapsed out of sample (+39.1 → +4.6 on more data). `stage_plan`'s Stage 2 gate made forward outcomes WORSE (long 33.5% vs a 36.4% baseline). Livermore's two-leader **Key Price** discarded 58% of signals and cost **9.3 points** of win rate (21.6% vs 30.9%, z −2.57). The shared mechanism: a confirmation rule describes what has ALREADY happened, and below ~21 trading days the documented effect is reversal. `group_context` is still worth having as a DESCRIPTION — which group, who leads, who lags — but agreement between leaders is not evidence the trade is better.
+
+**Dual share classes are not two stocks.** GOOG/GOOGL were being used as a group's "two leaders" and confirmed each other on **57 of 57** signals — a tautology that diluted the tandem measurement from −9.3 to −5.6. `dedupeShareClasses` collapses them by issuer name *and* by market cap matching to within rounding, because dual classes report the same company cap. Any group, peer or correlation work must dedupe first.
 
 **Never invent a price.** Levels come from `drawn_levels`, `drawn_labels`, `price_action`, or TA. If nothing supports one, write `n/a`.
 
