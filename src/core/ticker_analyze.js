@@ -413,11 +413,29 @@ export async function analyzeTicker({
       };
     }
     const { evaluateCriteria, buildContext } = await import('./strategy.js');
+    /**
+     * TA's report review (2026-07-31), fourth instance of the same disease:
+     * `screens.strategies` carries `strategiesForScreen`'s DISPLAY projection —
+     * {name, execution, evidence_tier} — and this section evaluated those thin
+     * objects, so `st.criteria` was undefined and every one of the 14 active
+     * strategies answered "no criteria in the catalogue entry" while the
+     * catalogue held criteria for all of them. The section now re-resolves the
+     * FULL entry by name; the projection stays thin because the screens
+     * display neither needs nor wants the criteria payload.
+     */
+    const { mergedStrategies } = await import('./catalogue.js');
+    const { rules } = (await import('./rules.js')).resolveRules(null);
+    const full = mergedStrategies(rules);
     const ctx = buildContext(bars, {});
-    return named.map((st) => ({
-      name: st.name, tier: st.evidence_tier, execution: st.execution,
-      ...(st.criteria ? evaluateCriteria(st, ctx) : { verdict: 'no criteria in the catalogue entry' }),
-    }));
+    return named.map((thin) => {
+      const st = { name: thin.name, ...(full[thin.name] || {}), ...thin };
+      return {
+        name: st.name, tier: st.evidence_tier, execution: st.execution,
+        ...(full[thin.name]?.criteria
+          ? evaluateCriteria({ name: thin.name, ...full[thin.name] }, ctx)
+          : { verdict: 'no criteria in the catalogue entry' }),
+      };
+    });
   });
 
   // Bars-only measurements — nothing here needs an input we do not have.
@@ -495,7 +513,7 @@ export async function analyzeTicker({
    * cross-position quantity — six 1% positions are not 6% if they move together —
    * so a single-symbol slice of it is not a smaller answer, it is a wrong one.
    */
-  await section(results, 'portfolio_heat', async () => {
+  const heat = await section(results, 'portfolio_heat', async () => {
     const p = shared?.portfolio_response || await ta.portfolio();
     const book = p?.data?.positions || [];
     if (!book.length) throw new Error('TA returned an empty portfolio');
@@ -536,21 +554,42 @@ export async function analyzeTicker({
     }
     const leg = hypothesis?.long?.available ? hypothesis.long : hypothesis?.short;
     if (!leg?.available) throw new Error('no tradeable entry hypothesis to size');
+    /**
+     * The owner's rule (2026-07-31), verbatim: "the total portfolio is one
+     * thing, the amount to trade is the maximum portfolio heat allowed by TA."
+     * So the trading account is DERIVED — TA's equity × TA's max-heat cap —
+     * not a static number: 1.582M × 6% ≈ $94.9k on the day this landed. The
+     * rules.json figure remains the FALLBACK when TA is unreachable, because
+     * unknown is not zero and a run without TA must still size honestly and
+     * say which basis it used.
+     */
+    const taBudget = (heat?.available
+      && Number.isFinite(heat?.equity_basis) && Number.isFinite(heat?.max_heat_pct))
+      ? Math.round(heat.equity_basis * (heat.max_heat_pct / 100))
+      : null;
+    const accountSize = taBudget ?? cfg.account_size;
+    const remainingHeat = (taBudget != null && Number.isFinite(heat?.total_risk))
+      ? Math.round(taBudget - heat.total_risk)
+      : null;
+    const sized = sizeWithConstraints({
+      account_size: accountSize, entry: leg.trigger, stop: leg.stop,
+      risk_percent: cfg.risk_percent ?? 1,
+    });
     return {
-      ...sizeWithConstraints({
-        account_size: cfg.account_size, entry: leg.trigger, stop: leg.stop,
-        risk_percent: cfg.risk_percent ?? 1,
-      }),
-      /**
-       * The mirror of portfolio_heat's note, added after TA read this section
-       * against its own book and called the constraint meaningless. Both layers
-       * now state the split where each is computed.
-       */
-      account_source: `account.account_size in ${cfg.rules_path}`,
-      layer_note: `The TRADING-account layer, deliberately: a chart-layer trade sized against the `
-        + `${cfg.account_size} trading account in rules.json, NOT against TA's investing book. `
-        + `portfolio_heat carries the book, sized against TA's own equity — the two layers must `
-        + 'not be divided into each other.',
+      ...sized,
+      account_basis: taBudget != null ? 'ta_max_heat' : 'rules_json_fallback',
+      account_source: taBudget != null
+        ? `TA equity ${Math.round(heat.equity_basis)} × max_heat_pct ${heat.max_heat_pct}% — the maximum portfolio heat TA allows`
+        : `account.account_size in ${cfg.rules_path} — TA heat unavailable, so the static fallback`,
+      ...(remainingHeat != null ? {
+        remaining_heat: remainingHeat,
+        heat_room_note: (Number.isFinite(sized?.risk_amount) && sized.risk_amount > remainingHeat)
+          ? `this trade's risk ${sized.risk_amount} EXCEEDS the remaining heat room ${remainingHeat} — the book is nearly at TA's cap`
+          : `remaining heat room ${remainingHeat} of the ${taBudget} budget (book currently risks ${Math.round(heat.total_risk)})`,
+      } : {}),
+      layer_note: 'The TRADING budget, per the owner\'s rule: the maximum portfolio heat TA allows, derived from '
+        + "TA's own equity and cap — not TA's full book, and not a static account. portfolio_heat carries the "
+        + 'book itself; the two layers must not be divided into each other.',
     };
   });
 

@@ -43,7 +43,10 @@ export function bareTicker(symbol) {
 
 /**
  * Fetch and index the newest wall snapshot per ticker.
- * Returns { asOf, byTicker: Map<ticker, {Daily, Weekly, Monthly}>, tickers, rows }
+ * Returns { asOf, byTicker: Map, tickers, rows } — and, when a `symbol` was
+ * asked for, { requested, covered, walls, coverage } with the map narrowed to
+ * it. See wallsManifest and symbolView below for why both shapes are built in
+ * one place.
  */
 /**
  * Where walls come from, in preference order.
@@ -104,8 +107,88 @@ export function parseTvJsonCsv(text) {
   return { byTicker, bad };
 }
 
-export async function loadWalls({ force = false } = {}) {
-  if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
+/**
+ * Build the manifest both parse branches return.
+ *
+ * `byTicker` is a Map — and `JSON.stringify(new Map())` is `{}`. Silently: no
+ * throw, no warning, no missing-field to notice. That is how every walls block
+ * in the Sunday review came out `rows: 40, byTicker: {}` while forty entries
+ * sat in memory with AMD's levels in them. The count and the coverage list
+ * survived because the same parse had already materialised them into a number
+ * and an array; only the Map — the part carrying the actual walls — did not.
+ *
+ * So the wire shape is built HERE, once, and `byTicker`, `tickers` and `rows`
+ * are ALL read off the same Map at serialisation time. They cannot disagree
+ * again, because there is nowhere left for them to disagree: a populated count
+ * beside an empty map is no longer a representable state.
+ *
+ * `rows` therefore means "entries indexed", in both branches. walls_history's
+ * raw line count is a different quantity (it is append-only, so one ticker owns
+ * many lines) and is reported separately as `source_rows`.
+ */
+function wallsManifest(byTicker, fields = {}) {
+  const wire = () => ({
+    tickers: [...byTicker.keys()].sort(),
+    rows: byTicker.size,
+  });
+  const view = { ...fields, byTicker, ...wire() };
+  // Non-enumerable so a spread or Object.keys of the manifest is unchanged, and
+  // so the plain object toJSON returns carries no toJSON of its own to recurse
+  // into.
+  Object.defineProperty(view, 'toJSON', {
+    enumerable: false,
+    value() {
+      const { byTicker: map, ...rest } = view;
+      return { ...rest, ...wire(), byTicker: Object.fromEntries(map) };
+    },
+  });
+  return view;
+}
+
+/**
+ * The view for one requested symbol.
+ *
+ * `loadWalls({ symbol })` used to ignore `symbol` entirely — the argument was
+ * never in the signature — so `ticker_analyze`'s per-ticker call answered with
+ * the whole coverage manifest and nothing about the ticker it had asked for.
+ *
+ * The narrowed map keeps the invariant above intact: `byTicker`, `tickers` and
+ * `rows` describe the ANSWER, and the full coverage is preserved verbatim under
+ * `coverage`. So a covered-but-unrequested symbol is absent from `byTicker` and
+ * present in `coverage.tickers` — a distinction the caller can act on, rather
+ * than 39 other tickers' payloads copied into every row of the report.
+ */
+function symbolView(full, symbol) {
+  const ticker = bareTicker(symbol);
+  const entry = full.byTicker.get(ticker) || null;
+  const { byTicker, tickers, rows, ...rest } = full;
+  return wallsManifest(entry ? new Map([[ticker, entry]]) : new Map(), {
+    ...rest,
+    requested: ticker,
+    covered: Boolean(entry),
+    // The indexed entry verbatim. Building the indicator payload from it is
+    // buildWallsJson's job and must not be duplicated here.
+    walls: entry,
+    coverage: { ticker_count: tickers.length, tickers, rows },
+  });
+}
+
+/**
+ * `get` is injectable so the parse can be tested against the REAL file's shape
+ * without the network — the same fixture style buildWallsJson and
+ * applyWallsForSymbols already use. An injected fetch NEVER touches the process
+ * cache, in either direction: a fixture must not be served to a live caller,
+ * and a live snapshot must not be served to a test.
+ */
+export async function loadWalls({ force = false, symbol = null, get } = {}) {
+  const full = await loadAllWalls({ force, get });
+  return symbol ? symbolView(full, symbol) : full;
+}
+
+async function loadAllWalls({ force = false, get } = {}) {
+  const fetchOne = get || ta.get;
+  const shared = !get;
+  if (shared && !force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
 
   let text = '';
   let source = null;
@@ -114,7 +197,7 @@ export async function loadWalls({ force = false } = {}) {
 
   for (const src of WALLS_SOURCES) {
     try {
-      const res = await ta.get(src.path, { timeoutMs: 120000, raw: true });
+      const res = await fetchOne(src.path, { timeoutMs: 120000, raw: true });
       const body = res.text || (typeof res.data === 'string' ? res.data : '');
       if (body && /ticker/i.test(body)) {
         text = body;
@@ -138,18 +221,15 @@ export async function loadWalls({ force = false } = {}) {
   if (header.includes('tv_json')) {
     const { byTicker, bad } = parseTvJsonCsv(text);
     const staleHours = freshness?.age_hours;
-    const value = {
+    const value = wallsManifest(byTicker, {
       asOf: freshness?.generated_at || null,
       age_hours: staleHours ?? null,
-      byTicker,
-      tickers: [...byTicker.keys()].sort(),
-      rows: byTicker.size,
       source: source.name,
       format: 'tv_json',
       coverage_scope: source.scope,
       ...(bad.length ? { unparsed: bad } : {}),
-    };
-    cache = { at: Date.now(), value };
+    });
+    if (shared) cache = { at: Date.now(), value };
     return value;
   }
 
@@ -195,18 +275,19 @@ export async function loadWalls({ force = false } = {}) {
     };
   }
 
-  const value = {
+  const value = wallsManifest(byTicker, {
     asOf,
-    byTicker,
-    tickers: [...byTicker.keys()].sort(),
-    rows: lines.length - 1,
+    // The file is append-only history, so its line count and the number of
+    // tickers indexed are different quantities. `rows` is the second one, in
+    // both branches; this is the first, and it is named for what it counts.
+    source_rows: lines.length - 1,
     source: source.name,
     coverage_scope: source.scope,
     ...(source.name === 'walls_history'
       ? { limitation: 'Using the SHARED sector-ETF archive because the per-user walls_json dataset has no API route (it is PORTFOLIO_SPECIFIC and /api/v1/sync serves SHARED only). Equities on the watchlist are not covered until TA exposes it.' }
       : {}),
-  };
-  cache = { at: Date.now(), value };
+  });
+  if (shared) cache = { at: Date.now(), value };
   return value;
 }
 
@@ -237,9 +318,13 @@ export async function buildWallsJson({ symbol, walls, vol } = {}) {
   const data = walls || await loadWalls();
   const entry = data.byTicker.get(ticker);
   if (!entry) {
+    // A narrowed per-symbol view holds one ticker in byTicker and the whole
+    // universe under `coverage`. Reporting the narrowed count as "TA's walls
+    // coverage" would tell the reader the coverage had collapsed to 1.
+    const covered = data.coverage?.tickers || data.tickers || [];
     throw new Error(
-      `No wall data for ${ticker}. TA's walls coverage is ${data.tickers.length} tickers ` +
-      `(${data.tickers.slice(0, 8).join(', ')}…). Options-derived walls only exist for names with a liquid chain.`,
+      `No wall data for ${ticker}. TA's walls coverage is ${covered.length} tickers ` +
+      `(${covered.slice(0, 8).join(', ')}…). Options-derived walls only exist for names with a liquid chain.`,
     );
   }
 
@@ -648,6 +733,9 @@ export async function listCoverage() {
     ticker_count: data.tickers.length,
     tickers: data.tickers,
     rows: data.rows,
+    // walls_history is append-only, so it holds many lines per ticker. Absent
+    // for walls_json, where one line IS one ticker.
+    ...(data.source_rows != null ? { source_rows: data.source_rows } : {}),
     ...(data.limitation ? { limitation: data.limitation } : {}),
   };
 }

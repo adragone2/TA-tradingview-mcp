@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { parseCsv, freshnessWarnings } from '../src/core/ta_decisions.js';
-import { parseTvJsonCsv, bareTicker, buildWallsJson } from '../src/core/ta_walls.js';
+import { parseTvJsonCsv, bareTicker, buildWallsJson, loadWalls } from '../src/core/ta_walls.js';
 
 /**
  * The TA layer had 907 lines of pure parsing and level-building with no tests
@@ -134,6 +134,116 @@ describe('parseTvJsonCsv — one bad row must not lose the others', () => {
     const { byTicker } = parseTvJsonCsv(`ticker,payload\n${row('SMH', { d: 1 })}\n`);
     assert.ok(!byTicker.has('TICKER'));
     assert.equal(byTicker.size, 1);
+  });
+});
+
+describe('loadWalls — the manifest has to survive JSON.stringify', () => {
+  /**
+   * Three rows copied verbatim from the live /api/walls: header `Ticker,TV_JSON`,
+   * then ticker + UNQUOTED JSON full of commas. Every other fixture in this file
+   * quote-wraps the JSON and doubles its inner quotes — a form the parser
+   * tolerates but the served file never uses — so the shape TA actually sends
+   * had no test at all, which is how the defect below survived a green suite.
+   *
+   * The defect: `byTicker` is a Map, and `JSON.stringify(new Map())` is `{}`.
+   * Silently. Every walls block written to reports/sunday-review-2026-07-30.json
+   * read `rows: 40`, a 40-ticker coverage list, and `byTicker: {}` — the count
+   * and the list survived because the same parse had already materialised them
+   * into a number and an array, and the walls themselves did not.
+   */
+  const REAL_CSV = [
+    'Ticker,TV_JSON',
+    'AMD,{"dCW":500,"dPW":400,"dCGX":450,"dPGX":430,"dS":4,"wCW":495,"wPW":400,"wCGX":300,"wPGX":290,"wS":2,"mCW":500,"mPW":140,"mCGX":210,"mPGX":150,"mS":4,"flip":295,"im":18.29,"vix":17.52,"vvix":96.34,"ts":1785439844}',
+    'AMZN,{"dCW":265,"dPW":200,"dCGX":237,"dPGX":225,"dS":4,"wCW":265,"wPW":215,"wCGX":200,"wPGX":170,"wS":2,"mCW":260,"mPW":140,"mCGX":175,"mPGX":155,"mS":4,"flip":192,"im":16.56,"vix":17.52,"vvix":96.34,"ts":1785439844}',
+    'SMH,{"dCW":580,"dPW":500,"dCGX":550,"dPGX":520,"dS":4,"wCW":580,"wPW":527,"wCGX":730,"wPGX":435,"wS":2,"mCW":600,"mPW":475,"mCGX":600,"mPGX":475,"mS":4,"flip":573,"im":5.52,"vix":17.52,"vvix":96.34,"ts":1785439844}',
+  ].join('\n');
+
+  const FRESHNESS = { generated_at: '2026-07-30T19:30:56.871364+00:00', age_hours: 20.55 };
+  const served = (text = REAL_CSV) => async () => ({ text, freshness: FRESHNESS });
+  const load = (opts = {}) => loadWalls({ get: served(), ...opts });
+  // What ticker_analyze's `walls` section actually writes to the report.
+  const wire = async (opts) => JSON.parse(JSON.stringify(await load(opts)));
+
+  test('byTicker reaches the JSON — a Map alone stringifies to {}', async () => {
+    const w = await wire();
+    assert.equal(Object.keys(w.byTicker).length, 3, 'byTicker serialised empty');
+    assert.equal(w.byTicker.AMD.ready.dCW, 500, "AMD's daily call wall did not land");
+    assert.equal(w.byTicker.SMH.ready.flip, 573);
+  });
+
+  test('the count and the map come from ONE parse, so they cannot disagree', async () => {
+    // The regression pin. `rows: 40` beside `byTicker: {}` was representable
+    // because the two were computed at different moments from different things.
+    for (const opts of [{}, { symbol: 'AMD' }, { symbol: 'NOPE' }]) {
+      const w = await wire(opts);
+      const size = Object.keys(w.byTicker).length;
+      assert.equal(w.rows, size, `rows ${w.rows} != byTicker ${size} for ${JSON.stringify(opts)}`);
+      assert.equal(w.tickers.length, size, `tickers != byTicker for ${JSON.stringify(opts)}`);
+    }
+  });
+
+  test('the in-memory Map and the serialised object agree, entry for entry', async () => {
+    const live = await load();
+    const w = JSON.parse(JSON.stringify(live));
+    assert.equal(live.byTicker.size, Object.keys(w.byTicker).length);
+    for (const [t, entry] of live.byTicker) assert.deepEqual(w.byTicker[t], entry);
+  });
+
+  test('the requested symbol is honoured — it used to be ignored entirely', async () => {
+    // loadWalls({ symbol }) had no `symbol` in its signature, so ticker_analyze
+    // asked per ticker and got the whole coverage manifest and nothing else.
+    const w = await wire({ symbol: 'AMD' });
+    assert.equal(w.requested, 'AMD');
+    assert.equal(w.covered, true);
+    assert.equal(w.walls.ready.flip, 295, "the requested symbol's walls are missing");
+    assert.equal(w.byTicker.AMD.ready.dPW, 400);
+  });
+
+  test('the exchange prefix is stripped, so a chart symbol resolves', async () => {
+    const w = await wire({ symbol: 'BATS:amd' });
+    assert.equal(w.requested, 'AMD');
+    assert.equal(w.covered, true);
+  });
+
+  test('a covered-but-unrequested symbol is out of byTicker and in coverage', async () => {
+    const w = await wire({ symbol: 'AMD' });
+    assert.ok(!('AMZN' in w.byTicker), 'the narrowed view leaked other tickers into the answer');
+    assert.deepEqual(w.coverage.tickers, ['AMD', 'AMZN', 'SMH']);
+    assert.equal(w.coverage.ticker_count, 3);
+  });
+
+  test('an uncovered symbol is a definite NEGATIVE, not a broken section', async () => {
+    const w = await wire({ symbol: 'ZZZZ' });
+    assert.equal(w.covered, false);
+    assert.equal(w.walls, null);
+    assert.equal(w.rows, 0);
+    assert.equal(w.coverage.ticker_count, 3, 'coverage must survive a miss — it is the reason');
+  });
+
+  test('freshness and source travel with the manifest', async () => {
+    const w = await wire({ symbol: 'AMD' });
+    assert.equal(w.age_hours, 20.55);
+    assert.equal(w.source, 'walls_json');
+    assert.equal(w.format, 'tv_json');
+  });
+
+  test('a narrowed view still builds its own symbol, and names the FULL coverage on a miss', async () => {
+    const view = await load({ symbol: 'AMD' });
+    const built = await buildWallsJson({ symbol: 'AMD', walls: view, vol: { vix: 1, vvix: 1, source: 'ta' } });
+    assert.equal(built.payload.flip, 295);
+    await assert.rejects(
+      () => buildWallsJson({ symbol: 'AMZN', walls: view, vol: { vix: 1, vvix: 1, source: 'ta' } }),
+      // Not "coverage is 1 tickers" — the narrowing is the answer's scope, not TA's.
+      (e) => /coverage is 3 tickers/.test(e.message),
+    );
+  });
+
+  test('an injected fetch never enters the shared cache, in either direction', async () => {
+    // A fixture served to a live caller would be far worse than the bug above.
+    const one = await loadWalls({ get: served(REAL_CSV) });
+    const two = await loadWalls({ get: served('Ticker,TV_JSON\nXLK,{"dCW":1,"dS":4}') });
+    assert.deepEqual(one.tickers, ['AMD', 'AMZN', 'SMH']);
+    assert.deepEqual(two.tickers, ['XLK'], 'the first fixture was cached and served to the second');
   });
 });
 

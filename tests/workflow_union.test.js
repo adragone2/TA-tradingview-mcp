@@ -644,3 +644,23 @@ describe('the three sections TA found dead — producer call shapes (2026-07-31)
       "Array.isArray('CORT') is false — every row read as having no short-interest data");
   });
 });
+
+describe('sizing follows the owner\'s rule: the budget IS TA\'s max heat (2026-07-31)', () => {
+  const t = src(ORCH);
+  test('the budget derives from TA equity × max_heat_pct, with rules.json as the stated fallback', () => {
+    assert.match(t, /heat\.equity_basis \* \(heat\.max_heat_pct \/ 100\)/);
+    assert.match(t, /taBudget \?\? cfg\.account_size/);
+    assert.match(t, /'ta_max_heat' : 'rules_json_fallback'/,
+      'the basis must be NAMED in output — a fallback that reads like the real thing is the walls bug again');
+  });
+  test('heat is computed BEFORE sizing, so the derivation cannot read the temporal dead zone', () => {
+    const heatIdx = t.indexOf("const heat = await section(results, 'portfolio_heat'");
+    const sizingIdx = t.indexOf("await section(results, 'sizing'");
+    assert.ok(heatIdx > 0 && sizingIdx > heatIdx,
+      'sizing references `heat`; if it ever moves above portfolio_heat the section dies at runtime');
+  });
+  test('remaining heat room is reported, and a breach says so', () => {
+    assert.match(t, /remaining_heat/);
+    assert.match(t, /EXCEEDS the remaining heat room/);
+  });
+});
