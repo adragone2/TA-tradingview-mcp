@@ -483,18 +483,47 @@ describe('the numbers still hold', () => {
   });
 });
 
-describe('the detector stays unexposed while its floor is half-measured', () => {
-  test('it is not registered as an MCP tool', async () => {
-    /**
-     * CLAUDE.md: every detector carries its noise floor. This one carries half
-     * of one — the synthetic arm exists, the real-data arm does not — so
-     * nothing may consume it yet. If someone wires it up, this fails first.
-     */
-    const { readdirSync, readFileSync } = await import('node:fs');
-    const hits = readdirSync('src/tools')
-      .filter((f) => f.endsWith('.js'))
-      .filter((f) => /core\/gaps\.js|classifyGaps|describeGap/.test(readFileSync(`src/tools/${f}`, 'utf8')));
-    assert.deepEqual(hits, [],
-      `gaps.js is consumed by ${hits.join(', ')} but its real-data arm has never been run`);
+describe('the detector EARNED its tool surface — both arms run', () => {
+  /**
+   * This block used to assert the opposite: no tool may consume gaps.js while
+   * its floor was half-measured. The real-data arm was then run (2026-07-30,
+   * GAP_NOISE_BASELINE.real_arm — every class at or above its null, the free
+   * volume parameter measured, exhaustion's bracket collapsed to a floor), so
+   * the module met the bar the original test stated. The assertion flipped
+   * WITH the evidence, which is the only direction it may ever flip.
+   */
+  test('gap_classify is registered, from evidence.js', async () => {
+    const { readFileSync } = await import('node:fs');
+    const t = readFileSync('src/tools/evidence.js', 'utf8');
+    assert.match(t, /core\/gaps\.js/);
+    assert.match(t, /'gap_classify'/);
+    assert.match(t, /classifyGaps\(bars\)/);
+  });
+
+  test('the real_arm block the registration rests on still exists', () => {
+    assert.ok(GAP_NOISE_BASELINE.real_arm, 'if the real arm is ever removed, the tool loses its justification');
+    assert.match(GAP_NOISE_BASELINE.real_arm.still_missing, /one universe, one period/,
+      'and the PROVISIONAL caveat must survive into the registration era');
+  });
+});
+
+describe('the assess() projection — how the morning and Sunday reports see gaps', () => {
+  /**
+   * Wiring test (2026-07-30): the block is ADDITIVE in the Sunday schema and
+   * compact by design. `verdict` is a STRING for every gap — 'unclassified'
+   * and 'pending' are real values, not nulls — and the first live run showed
+   * an 'unclassified' entry inside `last_classified` because the filter
+   * assumed null. Pinned here.
+   */
+  test('by_class counts every verdict; last_classified carries only real classes', async () => {
+    const { assess } = await import('../src/core/assessment.js');
+    const { bars } = randomWalkWithGaps({ n: 300, seed: 7001 });
+    const a = assess(bars, null);
+    assert.ok(a.gaps, 'the gaps block must exist');
+    assert.equal(typeof a.gaps.total, 'number');
+    for (const g of a.gaps.last_classified) {
+      assert.ok(!['unclassified', 'pending'].includes(g.verdict),
+        `${g.verdict} is the classifier declining to guess — it is counted in by_class, never shown as classified`);
+    }
   });
 });

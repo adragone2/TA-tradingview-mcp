@@ -50,6 +50,7 @@ export const SECTIONS = Object.freeze([
   { key: 'elliott', required: false, tool: 'elliott_survey', why: 'Every rule-valid count, never one. Disagreement across sensitivities is the finding.' },
   { key: 'fibonacci', required: false, tool: 'fib_levels / fib_targets', why: 'Extensions find exits, retracements find entries. They get confused constantly.' },
   { key: 'liquidity', required: false, tool: 'liquidity_pools', why: 'Where stops are likely clustered.' },
+  { key: 'gaps', required: false, tool: 'gap_classify', why: 'Common / breakaway / runaway / exhaustion, both noise arms run. common fires AT its null — breakaway is the one selective class.' },
   { key: 'candlesticks', required: false, tool: 'candle_read', why: 'A DESCRIPTION of what the bar did. Failed two independent academic tests as a signal.' },
   { key: 'volume_analysis', required: false, tool: 'volume_profile / effort_vs_result', why: 'Whether the move is being paid for.' },
   { key: 'level_pressure', required: false, tool: 'level_pressure', why: 'Whether attempts are strengthening. Its predictive claim FAILED out of sample - description only.' },

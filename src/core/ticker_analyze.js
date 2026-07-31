@@ -215,7 +215,7 @@ export async function analyzeTicker({
     ['multi_timeframe', a.multi_timeframe], ['volatility', a.volatility_contraction],
     ['vcp', a.volatility_contraction], ['divergence', a.divergence], ['zones', a.supply_demand_zones],
     ['wyckoff', a.wyckoff], ['elliott', a.elliott], ['fibonacci', a.fibonacci],
-    ['liquidity', a.liquidity], ['candlesticks', a.candlesticks], ['volume_analysis', a.volume_analysis],
+    ['liquidity', a.liquidity], ['gaps', a.gaps], ['candlesticks', a.candlesticks], ['volume_analysis', a.volume_analysis],
     ['level_pressure', a.level_pressure], ['channels', a.channels], ['costs', a.costs],
     ['risk', a.risk],
   ]) results[key] = block ? { ok: true } : { ok: false, error: 'assess() returned null for this block' };

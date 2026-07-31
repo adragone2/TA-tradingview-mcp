@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **187 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **189 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -333,9 +333,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`costs_vs_edge`** — What transaction costs do to a stated edge
 
-### gap_* (1)
+### gap_* (2)
 
 - **`gap_risk`** — How often price GAPPED past a given stop distance on this chart
+- **`gap_classify`** — Classify every gap on the chart — common, breakaway, runaway (measuring), exhaustion — as numbered clauses with the failing ones named, in the Edwards
 
 ### luld_* (1)
 
@@ -377,6 +378,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### vcp_* (1)
 
 - **`vcp_check`** — Minervini's volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior 
+
+### cup_* (1)
+
+- **`cup_check`** — Is this a proper CUP WITH HANDLE? Eight numbered clauses in the vcp_check style — U-shape not V (time in the bottom quarter of the cup, 35% between a 
 
 ### pivots_* (1)
 

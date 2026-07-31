@@ -43,6 +43,7 @@ import * as costs from './costs.js';
 import * as breadth from './breadth.js';
 import { findChannels } from './channels.js';
 import { tradePlans } from './pattern_trades.js';
+import * as G from './gaps.js';
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 const safe = (fn, fallback = null) => { try { return fn(); } catch { return fallback; } };
@@ -417,6 +418,32 @@ export function assess(bars, spy) {
     fair_value_gaps: (fvg.gaps || []).length,
   };
 
+  // ── gaps ──────────────────────────────────────────────────────────────────
+  /**
+   * Compact projection — the weekly report holds 70+ tickers, so the full
+   * per-clause detail stays in `gap_classify`. `unclassified` is the
+   * classifier declining to guess (68% of real gaps, mirroring its null) and
+   * is reported as such, never folded into a class. ADDITIVE key: the Sunday
+   * schema TA imports must never lose one.
+   */
+  const gapRes = safe(() => G.classifyGaps(bars), null);
+  const gapsBlock = gapRes ? {
+    total: gapRes.count ?? 0,
+    by_class: (() => {
+      const m = {};
+      for (const g of (gapRes.gaps || [])) { const k = g.verdict ?? 'unclassified'; m[k] = (m[k] || 0) + 1; }
+      return m;
+    })(),
+    // `verdict` is a STRING for every gap — 'unclassified' and 'pending' are
+    // real values, not nulls — so "classified" must exclude them by name.
+    last_classified: (gapRes.gaps || [])
+      .filter((g) => g.verdict && g.verdict !== 'unclassified' && g.verdict !== 'pending')
+      .slice(-2)
+      .map((g) => ({ index: g.index, direction: g.direction, verdict: g.verdict, size_atr: g.size_atr ?? null })),
+    note: 'Description of what already happened, never a signal. common fires AT its null (zero information); '
+      + 'breakaway is the one selective class (~7x null on real bars). gap_classify has the clauses.',
+  } : null;
+
   // ── volatility_contraction ────────────────────────────────────────────────
   const v = safe(() => vcp.detectVCP(bars), { qualifies: false });
   const volatility_contraction = {
@@ -513,7 +540,7 @@ export function assess(bars, spy) {
     market_regime, market_structure, multi_timeframe, key_levels, supply_demand_zones,
     chart_patterns, candlesticks, momentum: momentumBlock, relative_strength,
     volume_analysis, divergence: divergenceBlock, wyckoff, elliott, fibonacci,
-    liquidity, volatility_contraction, horizon: horizonBlock, risk, costs: costsBlock,
+    liquidity, gaps: gapsBlock, volatility_contraction, horizon: horizonBlock, risk, costs: costsBlock,
     level_pressure, channels, trade_plans,
     _raw_patterns: pats.structural || [],   // not serialised; used only for drawing
     _raw_channel: ch.best || null,

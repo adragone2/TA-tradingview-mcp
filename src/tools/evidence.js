@@ -14,6 +14,8 @@ import * as selection from '../core/selection.js';
 import * as costs from '../core/costs.js';
 import * as crabel from '../core/crabel.js';
 import * as factors from '../core/factors.js';
+import * as cup from '../core/cup.js';
+import * as gaps from '../core/gaps.js';
 import { scan } from '../core/scanner.js';
 
 const wrap = (fn) => async (args = {}) => {
@@ -66,6 +68,46 @@ export function registerEvidenceTools(server) {
         success: true, symbol, timeframe, bars: bars.length,
         ...vcp.detectVCP(bars, clean),
         noise_baseline: vcp.VCP_NOISE_BASELINE,
+      };
+    }),
+  );
+
+  server.tool(
+    'cup_check',
+    'Is this a proper CUP WITH HANDLE? Eight numbered clauses in the vcp_check style — U-shape not V (time in the bottom quarter of the cup, 35% between a V\'s 25% and a parabola\'s 50%), rim tolerance, handle in the upper half, duration 35-325 bars both sides checked, handle length and retrace bounds, completion on a CLOSE above the right lip — and a near miss names the clause that failed. Bulkowski ranks the pattern 3 of 39 (5% break-even failure, 54% average rise, 61% meeting target, 913 trades he selected BY EYE) — and the gap between an eye and eight numeric clauses is the floor: 23.5% of 300-bar random walks carry a qualifying cup, CLIMBING with series length (7/11/23.5/35% at 150/200/300/400 bars), because a cup needs a rim PAIR and pairs grow quadratically in pivot highs. NOT selective — it belongs beside breakout (32.5%), not VCP (0%). Quote candidates_scored beside any hit. Volume is SUPPORTING evidence only, never in the verdict.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 400 — a cup can span 325)'),
+    },
+    wrap(async ({ count = 400 }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        ...cup.detectCup(bars, {}),
+        noise_baseline: cup.CUP_NOISE_BASELINE,
+      };
+    }),
+  );
+
+  server.tool(
+    'gap_classify',
+    'Classify every gap on the chart — common, breakaway, runaway (measuring), exhaustion — as numbered clauses with the failing ones named, in the Edwards & Magee / Bulkowski taxonomy with every threshold cited or marked ours. BOTH noise-floor arms have been run, which is what earned this a tool surface (the ignition.js bar): on a gap-injecting null calibrated to real bars, common fires at the null exactly (zero information — 46.5% of walks), runaway close behind (69.5%), while BREAKAWAY is the one selective class (~7x its null on real data) and exhaustion carries ~4x once the gap-day volume multiple is MEASURED (1.21, not the guessed 2.0). 68% of real gaps match no class — the classifier declining to guess, in both arms. A DESCRIPTION of what already happened, never a signal; three of the four classes are settled by bars AFTER the gap, so a recent gap reports `pending`. Closure-rate validation against Bulkowski\'s own numbers and a disjoint universe are still missing: PROVISIONAL under the repo\'s holdout rule.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      summary: z.coerce.boolean().optional().describe('Counts by class plus the last few classified gaps only (default true). Pass false for every gap with full clause detail.'),
+    },
+    wrap(async ({ count = 300, summary = true }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const res = gaps.classifyGaps(bars);
+      const all = res.gaps || [];
+      const by_class = {};
+      for (const g of all) { const v = g.verdict ?? 'unclassified'; by_class[v] = (by_class[v] || 0) + 1; }
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        total_gaps: all.length, by_class,
+        ...(summary
+          ? { last_classified: all.filter((g) => g.verdict).slice(-3), note: 'summary: true — pass false for every gap with full clause detail' }
+          : { gaps: all }),
+        citations: res.citations, base_rates: res.base_rates, noise_floor: res.noise_floor,
       };
     }),
   );

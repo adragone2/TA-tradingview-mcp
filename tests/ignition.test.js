@@ -160,9 +160,12 @@ describe('the detector stays unexposed while unmeasured', () => {
      * so nothing may consume it. If someone wires it up, this fails first.
      */
     const { readdirSync, readFileSync } = await import('node:fs');
+    // Import path and exported API names, NOT the bare word — gap_classify's
+    // tool description legitimately cites "the ignition.js bar" as the
+    // registration precedent, and a prose mention is not consumption.
     const hits = readdirSync('src/tools')
       .filter((f) => f.endsWith('.js'))
-      .filter((f) => /ignition|one_two_three|oneTwoThree/.test(readFileSync(`src/tools/${f}`, 'utf8')));
+      .filter((f) => /core\/ignition\.js|one_two_three|oneTwoThree/.test(readFileSync(`src/tools/${f}`, 'utf8')));
     assert.deepEqual(hits, [],
       `ignition.js is consumed by ${hits.join(', ')} but its noise floor is NOT ESTABLISHED`);
   });
