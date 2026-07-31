@@ -113,7 +113,7 @@ READING THE NEWER BLOCKS — these have specific traps:
 - `analysis.assessment.channels`: consume `stable` and `windows_agreeing`, NOT `found`. Channels appear on 33.5% of random walks; only 12% of walks produce a stable one. A single-window channel is a fit, not a shape.
 - `analysis.assessment.divergence`: read `indicators_agreeing`, never `count`. A lone divergence appears on 99% of random walks; two or more agreeing on 13.5%.
 - `analysis.completeness`: this is the mechanism that makes a skipped section impossible to miss, so do not paraphrase it away. `complete: true` with an empty `missing` is the normal case and is worth one line, not a paragraph.
-- `analysis.drawings`: `patterns_skipped` and `plans_suppressed` are findings withheld from the CHART because their direction contradicted the verdict. They were still measured — do not report them as things that failed.
+- `analysis.drawings`: `patterns_skipped` and `plans_suppressed` are findings withheld from the CHART for one of two stated reasons — their direction contradicted the verdict, or the pattern was STALE (confirmed more than `max_age_bars` ago, default 21; the entry carries the age and the threshold). They were still measured — do not report them as things that failed. `pattern_age` says whether the cutoff ran and how many it excluded.
 
 RULES — these are not optional:
 - TA is the master system for WHAT to own. Never present the chart assessment as overriding it. The output is "our read agrees / disagrees / is silent", and what to do about it is the user's call.

@@ -85,7 +85,10 @@ describe('every fix survives the union', () => {
 
   test('patterns are drawn as geometry, and only once each', () => {
     const d = src(DRAW);
-    assert.match(d, /planPatternDrawings\(stable/, 'duplicate shapes must be collapsed');
+    // UPDATED by P2.4 (2026-07-30): the selector's input is `agePlan.fresh`, the
+    // stale-filtered form of `stable`. It is still the selector that collapses
+    // duplicate shapes — only what reaches it changed.
+    assert.match(d, /planPatternDrawings\(agePlan\.fresh/, 'duplicate shapes must be collapsed');
     // `hline` is passed too, so the pattern's own levels dedupe against every other
     // block's — the wedge break level and the trade plan's ENTRY landed on the same
     // price and overprinted before this.
@@ -110,12 +113,28 @@ describe('every fix survives the union', () => {
      */
     assert.match(src(ORCH), /bias: verdict\?\.bias/, 'the analysis path must pass its own verdict');
     const d = src(DRAW);
-    assert.match(d, /planPatternDrawings\(stable, \{ max_patterns: 6, bias \}\)/);
+    /**
+     * UPDATED by P2.4 (2026-07-30): the selector is now fed `agePlan.fresh` rather
+     * than `stable`, because the max-age cutoff has to run BEFORE the selection —
+     * see 'stale geometry is excluded before anything selects or draws' below. The
+     * `{ max_patterns: 6, bias }` half is unchanged and still asserted.
+     */
+    assert.match(d, /planPatternDrawings\(agePlan\.fresh, \{ max_patterns: 6, bias \}\)/);
+    assert.match(d, /const stable = \(rawPatterns \|\| \[\]\)\.filter/,
+      'and the stability filter must still be the input to the age filter');
     assert.match(d, /const wantLeg = \{ BULLISH: 'long', BEARISH: 'short' \}/,
       'trade-plan legs must be filtered too — geometry alone leaves the contradicting stop and target');
     assert.match(d, /plans_suppressed/, 'what was withheld must be reported, never silently dropped');
-    // A plan whose pattern was not drawn must not draw its levels either.
-    assert.match(d, /drawnPatterns\.size && tp\.pattern && !drawnPatterns\.has\(tp\.pattern\)/);
+    /**
+     * P2.4 review (2026-07-30): the two plan-level rules moved into `planGate`,
+     * a PURE function, after a neutered-condition mutation (`if (false && ...)`)
+     * passed the old source-text regexes while killing the behaviour. The
+     * behavioural contract now lives in tests/drawing_natives.test.js
+     * ('planGate — the plan-level gate, behaviourally'); what this file pins is
+     * the WIRING and the ORDERING.
+     */
+    assert.match(d, /drawnPatterns\?\.size && tp\?\.pattern && !drawnPatterns\.has\(tp\.pattern\)/,
+      'the not-drawn rule must live in planGate');
 
     /**
      * ADAPTED for the native position tool.
@@ -126,15 +145,15 @@ describe('every fix survives the union', () => {
      * and a box placed above both guards would reintroduce exactly the ALM
      * failure in a shape the line-based assertions cannot see.
      *
-     * So the ordering is asserted directly: both `continue` guards must precede
-     * the position-tool decision inside the same loop.
+     * So the ordering is asserted directly: the planGate call must precede the
+     * position-tool decision inside the same loop, and the verdict filter too.
      */
-    const patternGuard = d.indexOf('!drawnPatterns.has(tp.pattern)');
+    const gateCall = d.indexOf('const gate = planGate(tp, stalePatterns, drawnPatterns)');
     const verdictGuard = d.indexOf('leg contradicts the ${bias} verdict');
     const positionCall = d.indexOf('planLegDrawing(l, side, acct)');
     assert.ok(positionCall > 0, 'the verdict-side plan must go through planLegDrawing');
-    assert.ok(patternGuard > 0 && patternGuard < positionCall,
-      'the position tool must sit BELOW the pattern-was-not-drawn guard, or a suppressed '
+    assert.ok(gateCall > 0 && gateCall < positionCall,
+      'the position tool must sit BELOW the planGate call, or a suppressed '
       + 'head-and-shoulders gets a shaded risk box instead of three suppressed lines');
     assert.ok(verdictGuard > 0 && verdictGuard < positionCall,
       'and BELOW the verdict filter, or a bilateral plan draws two opposing position boxes');
@@ -145,6 +164,123 @@ describe('every fix survives the union', () => {
     // one by default would answer a different question than the one asked. Only an
     // explicit NEUTRAL — a verdict, not the absence of one — collapses to the best.
     assert.match(src('src/core/patterns_draw.js'), /verdict === 'NEUTRAL' && candidates\.length > 1/);
+  });
+
+  // ── P2.4 (2026-07-30) — the max-age cutoff for drawn geometry ──────────────
+
+  test('stale geometry is excluded BEFORE anything selects or draws', () => {
+    /**
+     * A confirmed pattern 45 bars old drew at full weight: `patternRank` puts
+     * recency THIRD, so age only ever broke a tie between two patterns competing
+     * for one slot — it never excluded one. P2.3 made the oldest shapes start
+     * ageing out EMERGENTLY (a denser pivot backbone stopped surfacing a 41-bar-old
+     * inverse head-and-shoulders inside the 300-bar scan), which is the wrong kind
+     * of fix: silent, and it moves whenever the smoothing bandwidth moves.
+     *
+     * The ORDER is the contract. `planPatternDrawings` collapses a NEUTRAL verdict
+     * to the single best-ranked candidate, and a stale CONFIRMED pattern outranks a
+     * fresh forming one — so filtering afterwards would hand NEUTRAL a stale winner
+     * and then delete it, drawing nothing while a live shape sat unused.
+     */
+    const d = src(DRAW);
+    assert.match(d, /export const MAX_PATTERN_AGE_BARS = 21;/,
+      'the default must be a named exported constant, not a literal buried in the drawer');
+    assert.match(d, /export function patternAgePlan/,
+      'the decision must be PURE — a display rule that needs a chart to test is untested');
+    assert.match(d, /max_pattern_age_bars = MAX_PATTERN_AGE_BARS,/,
+      'and drawFindings must take it as an option, defaulting to the constant');
+    assert.match(d, /const agePlan = patternAgePlan\(stable, max_pattern_age_bars\)/);
+
+    const ageFilter = d.indexOf('patternAgePlan(stable, max_pattern_age_bars)');
+    const selection = d.indexOf('planPatternDrawings(agePlan.fresh');
+    const geometry = d.indexOf('drawPatternGeometry(p, bars, group, put, hline)');
+    assert.ok(ageFilter > 0 && ageFilter < selection,
+      'the age filter must run BEFORE the selector, or NEUTRAL picks a stale winner');
+    assert.ok(selection < geometry, 'and both before anything is drawn');
+
+    // Nothing is deleted — what was withheld is reported, the same contract the
+    // bias filter already has.
+    assert.match(d, /const patternsSkipped = agePlan\.stale\.concat\(plan\.skipped\)/,
+      'stale patterns must reach patterns_skipped alongside the bias-filtered ones');
+    assert.match(d, /drawn\.pattern_age = \{/,
+      '"the cutoff excluded nothing" and "the cutoff did not run" must be distinguishable');
+  });
+
+  test('a stale pattern takes its trade-plan legs with it', () => {
+    /**
+     * Same rule the bias filter has: "a plan whose pattern was not drawn cannot
+     * leave an orphaned stop and target behind." Geometry alone is the confusing
+     * half of both options — the shape is gone from the chart and three bright
+     * lines from it are still on it.
+     *
+     * The stale set is checked SEPARATELY from `drawnPatterns` on purpose. That
+     * guard reads `drawnPatterns.size && ...`, which fails OPEN when nothing was
+     * drawn at all — and "every candidate was stale" is exactly the case that
+     * empties it.
+     */
+    /**
+     * P2.4 review (2026-07-30): the rules moved into the pure `planGate`, whose
+     * BEHAVIOUR — including the fails-open case with an empty drawn set — is
+     * pinned by calls in tests/drawing_natives.test.js. Here: the map is built
+     * from the age plan, the gate is called inside the plan loop, and the call
+     * precedes every drawing decision.
+     */
+    const d = src(DRAW);
+    assert.match(d, /const stalePatterns = new Map\(agePlan\.stale\.map/);
+    assert.match(d, /stalePatterns\?\.has\(tp\.pattern\)/, 'the stale rule must live in planGate');
+    assert.match(d, /past the \$\{s\.max_age_bars\}-bar max age/,
+      'the suppression reason must carry the threshold, not just the fact');
+
+    const staleRule = d.indexOf('stalePatterns?.has(tp.pattern)');
+    const notDrawnRule = d.indexOf('!drawnPatterns.has(tp.pattern)');
+    const gateCall = d.indexOf('const gate = planGate(tp, stalePatterns, drawnPatterns)');
+    const positionCall = d.indexOf('planLegDrawing(l, side, acct)');
+    const entryLine = d.indexOf('text: `ENTRY ${side}');
+    assert.ok(gateCall > 0 && gateCall < positionCall,
+      'the gate must sit ABOVE the position tool, or a suppressed shape gets a shaded risk '
+      + 'box instead of three suppressed lines — the ALM failure in a new costume');
+    assert.ok(gateCall < entryLine, 'and above the three-line fallback');
+    assert.ok(staleRule > 0 && notDrawnRule > 0 && staleRule < notDrawnRule,
+      'inside planGate the stale rule must come FIRST — the not-drawn rule fails open '
+      + 'when drawnPatterns is EMPTY, which is exactly the all-stale case');
+  });
+
+  test('the cutoff reaches the workflow by DEFAULT — no caller has to remember it', () => {
+    /**
+     * "A step you have to REMEMBER is a step that will eventually not happen." The
+     * option exists so it can be turned OFF deliberately; it must not need turning
+     * ON. `ticker_analyze` passes `{ clear_scope, bias, earnings }` and the Sunday
+     * review goes through `analyzeTicker`, so both inherit the default — neither
+     * file needed a change, and neither may quietly opt out.
+     */
+    for (const f of [ORCH, 'scripts/sunday-review.js', 'scripts/morning-screen.js']) {
+      assert.ok(!/max_pattern_age_bars/.test(src(f)),
+        `${f} must inherit the default rather than restating it — a second copy of the number drifts`);
+    }
+    assert.match(src(ORCH), /\{ clear_scope, bias: verdict\?\.bias \?\? null, earnings: earningsForDraw \}/,
+      'the analysis path passes an options OBJECT, so an added option is additive and cannot break it');
+  });
+
+  test('patterns_draw is ungated by CONSTRUCTION, not by an opt-out', () => {
+    /**
+     * The tool the owner calls to SEE the patterns must keep showing all of them,
+     * including old ones. It reaches `planPatternDrawings` and `drawPatternGeometry`
+     * directly and never touches `drawFindings`, so the cutoff cannot reach it — no
+     * flag to pass, nothing to forget.
+     */
+    const t = src('src/tools/patterns.js');
+    assert.ok(!/drawFindings/.test(t), 'patterns_draw must not route through the workflow drawer');
+    assert.ok(!/max_pattern_age_bars|patternAgePlan/.test(t),
+      'and must not grow its own copy of the cutoff');
+
+    // The selector it shares with the workflow stays age-blind: `patternRank` ranks
+    // BY recency and never excludes on it. Selecting and excluding are different
+    // jobs, and putting the cutoff here would gate the inspection tool too.
+    const sel = src('src/core/patterns_draw.js');
+    assert.match(sel, /Number\(p\.bars_ago\) \?\? 1e9,/,
+      'patternRank must still rank by recency');
+    assert.ok(!/max_pattern_age|bars_ago >/.test(sel),
+      'and must not acquire a threshold — patterns_draw shares this module and must stay ungated');
   });
 
   test('a definite negative ANSWER is not scored as a failure', () => {

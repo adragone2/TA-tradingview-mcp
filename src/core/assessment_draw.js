@@ -341,6 +341,167 @@ export function planLegDrawing(leg, side, account) {
 }
 
 /**
+ * How old a pattern may be and still be DRAWN, in bars.
+ *
+ * ── The failure ──
+ *
+ * A confirmed pattern was drawn at full weight however long ago it happened. On
+ * GRMN a bearish head-and-shoulders that had stopped forming 45 bars earlier still
+ * got its seven shapes on a chart whose verdict was BULLISH. `patternRank` puts
+ * recency THIRD, behind status and Bulkowski's meeting-target rate, so age only
+ * ever broke a TIE between two patterns competing for one slot — it never excluded
+ * anything. P2.3 then made the oldest shapes start ageing out EMERGENTLY: a denser
+ * pivot backbone stopped surfacing a 41-bar-old inverse head-and-shoulders in the
+ * 300-bar scan. That is the wrong kind of fix — it is a side effect of a smoothing
+ * bandwidth, it is silent, and it moves whenever the bandwidth moves.
+ *
+ * ── Why 21, and not a round number ──
+ *
+ * Two independent sources land on the same window, and neither is taste:
+ *
+ *   BULKOWSKI. Every base rate a drawn pattern carries — `meeting_target_pct`,
+ *   `average_move_pct`, the throwback arms — is measured FROM THE BREAKOUT ONWARD,
+ *   and his own convention bounds that measurement: "By convention, a throwback
+ *   occurs within 30 calendar days after the breakout" (`THROWBACK_STATS` in
+ *   breakout.js, `measured_on: 'daily bars'`). Thirty CALENDAR days is ~21 trading
+ *   bars. Using 30 BARS instead would repeat the exact error `readThrowback` calls
+ *   out beside its own window — "30 bars and 30 days are the same thing only on a
+ *   chart nobody trades". Past that window the numbers printed on the shape
+ *   describe a period that has already elapsed.
+ *
+ *   THIS REPO'S OWN HORIZON BOUNDARY. `HORIZON_ZONES.reversal.max_days` is 21
+ *   trading days — below it the documented effect is REVERSAL. A pattern whose
+ *   structure completed more than a full reversal window ago is being drawn into
+ *   the stretch where its own continuation logic has the least support.
+ *
+ * BARS rather than days, deliberately: a lookback scales LINEARLY with the
+ * timeframe ratio (`timeframe_scale`), so 21 bars is 21 bars' worth of context on
+ * the 5-minute intraday chart as well as on the daily one. And it sits INSIDE
+ * `detectPatterns`' own `max_age_bars` (60) on purpose — a cutoff at or beyond the
+ * detector's own filter could never fire, and this one has to bite.
+ *
+ * It is a DISPLAY rule, not a claim. Nothing here says an old pattern is more
+ * likely to fail; it says the measured window its statistics come from has passed,
+ * so the chart should stop presenting it with the same weight as a live one.
+ */
+export const MAX_PATTERN_AGE_BARS = 21;
+
+/**
+ * Split patterns into the ones still worth drawing and the ones that are history.
+ *
+ * ── What `bars_ago` measures, because it decides who this can apply to ──
+ *
+ * `detectPatterns` sets `bars_ago = lastIndex - indexOf(p.to_time)`: bars since the
+ * pattern's last defining bar. `to_time` means two different things:
+ *
+ *   STRUCTURAL (double and triple tops and bottoms, head and shoulders, inverse
+ *   head and shoulders) — the last defining PIVOT (`c.time`, `p3.time`, `t3.time`).
+ *   So `bars_ago` here IS time since the shape last made structural progress, which
+ *   is exactly the quantity a forming pattern needs to be aged by: a double top
+ *   whose second peak was 45 bars back has done nothing since, whether or not price
+ *   has meanwhile closed through its neckline.
+ *
+ *   TRENDLINE (wedges, triangles, rectangles, broadening), FLAGS and PENNANTS —
+ *   the last bar of the SERIES. Their windows end at the current bar by
+ *   construction, so `bars_ago` is 0 and this cutoff can never fire on them. That
+ *   is correct rather than a gap: a wedge fitted through the bars up to today is
+ *   not stale.
+ *
+ * So the cutoff covers BOTH statuses and the reason names which. Forming is
+ * included because for the only family where `bars_ago` is ever non-zero it
+ * genuinely measures time-since-last-structural-progress — and "a bearish head and
+ * shoulders that had stopped forming 45 bars earlier" is the original complaint.
+ *
+ * ── The age is the STRUCTURE's, not the breakout's, and that is stated ──
+ *
+ * A structural pattern's `status` is recomputed against the LAST bar's close
+ * (`confirm()` in patterns.js), so "confirmed" means price is beyond the level NOW,
+ * not that it broke N bars ago. `bars_ago` therefore bounds the age of the break
+ * from above and can be larger than it. This excludes on the age of the SHAPE,
+ * which is the thing the geometry draws.
+ *
+ * ── What it deliberately does NOT do ──
+ *
+ * `bars_ago == null` — the detector could not locate `to_time` among the bars — is
+ * NOT stale. Unknown is not evidence, the same rule `prune` follows when
+ * `currentSymbol()` returns null and the liquidity constraint follows when `adv` is
+ * absent. An age that could not be measured must not be treated as a large one.
+ *
+ * PURE, so "is this shape too old to draw" is testable without a chart.
+ */
+export function patternAgePlan(patterns, max_pattern_age_bars = MAX_PATTERN_AGE_BARS) {
+  /**
+   * `num`, not `Number`. `Number(null)` is **0**, and a 0-bar cutoff skips every
+   * pattern with any age at all — so the caller who meant "no cutoff" would get the
+   * harshest one possible, silently. That conversion has bitten this repo three
+   * times already (the fibonacci `retraced_pct` read, a position leg's null stop,
+   * the equal-weight breadth spread computed from a missing field). null, undefined,
+   * '' and Infinity therefore all mean DISABLED here, and so does a negative, which
+   * is not a window.
+   */
+  const n = num(max_pattern_age_bars);
+  const limit = Number.isFinite(n) && n >= 0 ? n : Infinity;
+  const fresh = [];
+  const stale = [];
+  for (const p of (patterns || [])) {
+    const age = num(p?.bars_ago);
+    if (!Number.isFinite(limit) || !Number.isFinite(age) || age <= limit) {
+      fresh.push(p);
+      continue;
+    }
+    stale.push({
+      pattern: p.pattern,
+      status: p.status ?? null,
+      stale: true,
+      bars_ago: age,
+      max_age_bars: limit,
+      why: `${p.status || 'detected'} ${age} bars ago, past the ${limit}-bar max age — stale; the market `
+        + 'this pattern described has moved on, and the base rates printed on it are measured over a '
+        + 'window that has already elapsed',
+    });
+  }
+  return { fresh, stale, max_age_bars: limit, cutoff_applied: Number.isFinite(limit) };
+}
+
+/**
+ * The plan-level gate: may this trade plan draw its legs?
+ *
+ * Pure and exported so the decision is BEHAVIOURALLY testable — the review of
+ * P2.4 found the inline version's contract was a source-text regex, and a
+ * short-circuited condition (`if (false && ...)`) passed every test while
+ * killing the behaviour. A source contract pins presence; only a call pins
+ * effect.
+ *
+ * Two rules, in order:
+ * 1. A plan whose pattern was excluded for AGE is suppressed with the age and
+ *    threshold in the reason. Checked BEFORE the drawn-set rule because that
+ *    one reads `drawnPatterns.size && ...`, which fails OPEN when nothing was
+ *    drawn at all — and "every candidate was stale" is precisely the case
+ *    that empties it. Without this the suppressed geometry's ENTRY, STOP and
+ *    TARGET would still land on the chart: the ALM failure with the shapes
+ *    removed and the bright lines left behind.
+ * 2. A plan whose pattern was not drawn (bias filter, rank) must not draw its
+ *    levels either.
+ */
+export function planGate(tp, stalePatterns, drawnPatterns) {
+  if (tp?.pattern && stalePatterns?.has(tp.pattern)) {
+    const s = stalePatterns.get(tp.pattern);
+    return {
+      keep: false,
+      entry: {
+        pattern: tp.pattern, stale: true, bars_ago: s.bars_ago,
+        why: `its pattern is ${s.bars_ago} bars old, past the ${s.max_age_bars}-bar max age — `
+          + 'see patterns_skipped',
+      },
+    };
+  }
+  if (drawnPatterns?.size && tp?.pattern && !drawnPatterns.has(tp.pattern)) {
+    return { keep: false, entry: { pattern: tp.pattern, why: 'its pattern was not drawn — see patterns_skipped' } };
+  }
+  return { keep: true };
+}
+
+/**
  * Alternating swing pivots inside a pattern's own window, for the native tools.
  *
  * ── `windowPivots` used to live here, and it is GONE ──
@@ -624,6 +785,16 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    * on it would silently delete every bearish finding on an undecided chart.
    */
   bias = null,
+  /**
+   * MAX AGE, in bars, for a pattern's geometry and its trade-plan legs.
+   *
+   * See `MAX_PATTERN_AGE_BARS` for where 21 comes from. `null` or `Infinity`
+   * disables the cutoff cleanly — and it has to be possible to disable it without
+   * `Number(null)` turning "no cutoff" into a 0-bar one; `patternAgePlan` owns that
+   * guard. Passing nothing at all keeps the default, which is what every caller in
+   * the workflow does.
+   */
+  max_pattern_age_bars = MAX_PATTERN_AGE_BARS,
   /**
    * Sizing inputs for the native position tool, `{ account_size, risk_percent }`.
    *
@@ -910,9 +1081,42 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    * consolidation and counting one setup as two.
    */
   const stable = (rawPatterns || []).filter((p) => a.chart_patterns.stable_across_sensitivities.includes(p.pattern));
-  const plan = planPatternDrawings(stable, { max_patterns: 6, bias });
+  /**
+   * AGE FIRST, then the verdict side.
+   *
+   * The order is load-bearing for the NEUTRAL case. `planPatternDrawings` collapses
+   * a NEUTRAL verdict to the single best-ranked pattern, and `patternRank` puts
+   * recency THIRD — so a stale CONFIRMED pattern outranks a fresh forming one and
+   * would be the one drawn. Filtering age BEFORE the selection means the best of
+   * the NON-stale candidates is chosen, and when every candidate is stale the
+   * selection has nothing to choose from and draws NOTHING. Drawing the least-stale
+   * would repaint exactly what the cutoff exists to stop.
+   *
+   * `patterns_draw` — the tool the owner calls to SEE the patterns — reaches
+   * `planPatternDrawings` and `drawPatternGeometry` DIRECTLY, never through here,
+   * so it stays ungated by construction. Same principle as `bias`: an explicit
+   * verdict narrows what the workflow draws; the inspection tool answers the
+   * question it was asked.
+   */
+  const agePlan = patternAgePlan(stable, max_pattern_age_bars);
+  const plan = planPatternDrawings(agePlan.fresh, { max_patterns: 6, bias });
   for (const p of plan.patterns) await drawPatternGeometry(p, bars, group, put, hline);
-  if (plan.skipped.length) drawn.patterns_skipped = plan.skipped;
+  const patternsSkipped = agePlan.stale.concat(plan.skipped);
+  if (patternsSkipped.length) drawn.patterns_skipped = patternsSkipped;
+  drawn.pattern_age = {
+    /**
+     * NULL when disabled, not `Infinity`. `JSON.stringify(Infinity)` is `null`, so
+     * carrying the raw value would give the in-process object and the serialised
+     * one different contents — the silent divergence this repo pays for elsewhere.
+     * `cutoff_applied` is the field that actually answers "did it run".
+     */
+    max_age_bars: agePlan.cutoff_applied ? agePlan.max_age_bars : null,
+    cutoff_applied: agePlan.cutoff_applied,
+    stale_not_drawn: agePlan.stale.length,
+    considered: stable.length,
+    note: 'Bars since the pattern last made structural progress. Reported even when nothing was stale, '
+      + 'so "the cutoff ran and excluded nothing" and "the cutoff did not run" are different answers.',
+  };
 
   /**
    * The CHANNEL, as ONE native parallel_channel anchored to the same geometry.
@@ -1074,18 +1278,21 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    */
   const wantLeg = { BULLISH: 'long', BEARISH: 'short' }[String(bias || '').toUpperCase()] || null;
   const drawnPatterns = new Set(plan.patterns.map((p) => p.pattern));
+  /**
+   * Patterns excluded for AGE, checked SEPARATELY from `drawnPatterns`.
+   *
+   * The guard below is `drawnPatterns.size && ...`, which fails OPEN when nothing
+   * was drawn at all — and "every candidate was stale" is precisely the case that
+   * empties that set. Without this the suppressed geometry's ENTRY, STOP and TARGET
+   * would still land on the chart: the ALM failure with the shapes removed and the
+   * bright lines left behind, which is the confusing half of both options.
+   */
+  const stalePatterns = new Map(agePlan.stale.map((s) => [s.pattern, s]));
   const suppressedPlans = [];
   for (const tp of (a.trade_plans || [])) {
     if (!tp.tradeable_now) continue;
-    /**
-     * A plan whose pattern was not drawn must not draw its levels either. Otherwise
-     * the suppressed head-and-shoulders is invisible as a shape but still puts a
-     * stop and a target on the chart, which is the confusing half of both options.
-     */
-    if (drawnPatterns.size && tp.pattern && !drawnPatterns.has(tp.pattern)) {
-      suppressedPlans.push({ pattern: tp.pattern, why: 'its pattern was not drawn — see patterns_skipped' });
-      continue;
-    }
+    const gate = planGate(tp, stalePatterns, drawnPatterns);
+    if (!gate.keep) { suppressedPlans.push(gate.entry); continue; }
     for (const [side, l] of Object.entries(tp.legs || {})) {
       if (wantLeg && side !== wantLeg) {
         suppressedPlans.push({ pattern: tp.pattern, side, why: `${side} leg contradicts the ${bias} verdict` });

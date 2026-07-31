@@ -20,11 +20,21 @@ import {
   planLegDrawing, drawPatternGeometry, patternPivots,
   labelPlacements, LABEL_COLLISION, fibDrawPlan, elliottDrawPlan, earningsLinePlan,
   EARNINGS_LINE, VOLUME_PROFILE_WINDOW,
+  // P2.4 (2026-07-30) — the max-age cutoff for drawn geometry.
+  MAX_PATTERN_AGE_BARS, patternAgePlan,
+  // P2.4 review (2026-07-30) — the plan-level gate, extracted pure after a
+  // neutered-condition mutation slipped past the source-text contract.
+  planGate,
 } from '../src/core/assessment_draw.js';
 import { NATIVE_PATTERN_SHAPES, MULTIPOINT_SETTLE, drawShape } from '../src/core/drawing.js';
 import { accountSettings } from '../src/core/rules.js';
 import { isMcpText } from '../src/core/orphans.js';
 import { assess } from '../src/core/assessment.js';
+// P2.4 (2026-07-30) — the two sources the default is derived from, and the
+// selector the cutoff has to run in front of.
+import { THROWBACK_STATS } from '../src/core/breakout.js';
+import { HORIZON_ZONES } from '../src/core/horizon.js';
+import { planPatternDrawings } from '../src/core/patterns_draw.js';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -660,5 +670,303 @@ describe('the fixed-range volume profile spans assess()\'s own window', () => {
     const a = readFileSync(`${process.cwd()}/src/core/assessment.js`, 'utf8');
     assert.match(a, /C\.volumeProfile\(bars\.slice\(-90\)\)/,
       'assess() must still measure over 90 bars, or VOLUME_PROFILE_WINDOW is now a lie');
+  });
+});
+
+// ── P2.4 (2026-07-30) — the max-age cutoff: old geometry is REPORTED, not drawn ──
+
+describe('patternAgePlan — a pattern past its measured window is reported, not drawn', () => {
+  /** A structural pattern, the only family whose `bars_ago` is ever non-zero. */
+  const hns = (bars_ago, over = {}) => ({
+    pattern: 'head_and_shoulders', direction: 'bearish', status: 'confirmed',
+    completion_level: 100, meeting_target_pct: 55,
+    measurements: { left_shoulder: 104, head: 108, right_shoulder: 105, neckline: 100 },
+    bars_ago, ...over,
+  });
+
+  test('the default is 21 bars, and every term of it is DERIVED', () => {
+    /**
+     * Not taste, and not a round number. Two independent sources land on the same
+     * window, and the constant has to keep agreeing with both of them.
+     */
+    assert.equal(MAX_PATTERN_AGE_BARS, 21);
+
+    // BULKOWSKI. Every base rate a drawn pattern carries is measured from the
+    // breakout onward, and his own convention bounds that measurement at 30
+    // CALENDAR days — ~21 trading bars. Taking the 30 literally as 30 BARS is the
+    // error readThrowback calls out beside its own window.
+    assert.equal(THROWBACK_STATS.window_days, 30);
+    assert.match(THROWBACK_STATS.window_quote, /within 30 calendar days/);
+    assert.equal(THROWBACK_STATS.measured_on, 'daily bars');
+    assert.equal(Math.round(THROWBACK_STATS.window_days * (5 / 7)), MAX_PATTERN_AGE_BARS,
+      '30 calendar days in trading bars IS the cutoff — if these stop agreeing, one of them moved');
+
+    // THIS REPO'S OWN HORIZON BOUNDARY, measured in trading days.
+    assert.equal(HORIZON_ZONES.reversal.max_days, MAX_PATTERN_AGE_BARS,
+      'below ~21 trading days the documented effect is REVERSAL — a shape older than a full '
+      + 'reversal window is being drawn into the stretch its own logic is weakest in');
+
+    // And it must sit INSIDE the detector's own age filter, or it is dead code:
+    // nothing older than 60 bars is ever returned to be excluded.
+    const p = readFileSync(`${process.cwd()}/src/core/patterns.js`, 'utf8');
+    assert.match(p, /max_age_bars = 60/, "detectPatterns' own filter must still be the outer bound");
+    assert.ok(MAX_PATTERN_AGE_BARS < 60, 'a cutoff at or beyond the detector\'s could never fire');
+  });
+
+  test('a STALE CONFIRMED pattern is excluded, with the age AND the threshold in the reason', () => {
+    /**
+     * The GRMN case, in the owner's own numbers: a confirmed head-and-shoulders
+     * whose structure completed 41 bars ago still drew its seven shapes at full
+     * weight. `patternRank` never excluded it — recency is its THIRD key, so age
+     * only ever broke a tie.
+     */
+    const r = patternAgePlan([hns(41)]);
+    assert.equal(r.fresh.length, 0);
+    assert.equal(r.stale.length, 1);
+    assert.equal(r.stale[0].pattern, 'head_and_shoulders');
+    assert.equal(r.stale[0].bars_ago, 41);
+    assert.equal(r.stale[0].max_age_bars, 21);
+    assert.equal(r.stale[0].stale, true);
+    assert.match(r.stale[0].why, /confirmed 41 bars ago/, 'the reason must carry the AGE');
+    assert.match(r.stale[0].why, /21-bar max age/, 'and the THRESHOLD it failed');
+    assert.match(r.stale[0].why, /moved on/);
+  });
+
+  test('a FRESH confirmed pattern is drawn, untouched', () => {
+    const r = patternAgePlan([hns(3)]);
+    assert.equal(r.stale.length, 0);
+    assert.deepEqual(r.fresh, [hns(3)], 'the pattern object must pass through whole — the geometry '
+      + 'is reconstructed from its measurements');
+  });
+
+  test('the boundary is EXACTLY N: N is drawn, N+1 is not', () => {
+    // `>` rather than `>=`. A pattern at exactly the cutoff is inside the window
+    // its statistics were measured over.
+    assert.equal(patternAgePlan([hns(21)]).stale.length, 0, '21 bars is inside a 21-bar window');
+    assert.equal(patternAgePlan([hns(22)]).stale.length, 1, 'and 22 is past it');
+    assert.equal(patternAgePlan([hns(7)], 7).stale.length, 0, 'the same boundary on an override');
+    assert.equal(patternAgePlan([hns(8)], 7).stale.length, 1);
+  });
+
+  test('NULL and INFINITY disable the cutoff — and null must not become a ZERO-bar one', () => {
+    /**
+     * `Number(null)` is 0, and 0 is finite: the obvious implementation turns "no
+     * cutoff" into the harshest cutoff possible, silently. Three live bites in this
+     * repo already — the fibonacci `retraced_pct` read, a position leg's null stop,
+     * the breadth spread computed from a missing field.
+     */
+    for (const off of [null, Infinity, '', NaN, -1]) {
+      const r = patternAgePlan([hns(0), hns(45), hns(400)], off);
+      assert.equal(r.stale.length, 0, `${String(off)} must disable the cutoff, not tighten it`);
+      assert.equal(r.fresh.length, 3);
+      assert.equal(r.cutoff_applied, false);
+      assert.equal(r.max_age_bars, Infinity);
+    }
+    // UNDEFINED is different and must stay so: it is the JS default-parameter
+    // spelling of "I did not pass one", which means the DEFAULT, not "disabled".
+    assert.equal(patternAgePlan([hns(45)], undefined).stale.length, 1);
+    assert.equal(patternAgePlan([hns(45)]).stale.length, 1);
+    // 0 is a real window — only the patterns ending on the current bar survive it.
+    const zero = patternAgePlan([hns(0), hns(1)], 0);
+    assert.deepEqual([zero.fresh.length, zero.stale.length], [1, 1]);
+    assert.equal(zero.cutoff_applied, true);
+  });
+
+  test('an UNMEASURABLE age is not a large one — unknown never excludes', () => {
+    /**
+     * `detectPatterns` writes `bars_ago: null` when it cannot locate `to_time`
+     * among the bars. Unknown is not evidence: the same rule `prune` follows when
+     * `currentSymbol()` returns null, and the liquidity constraint follows when
+     * `adv` is absent.
+     */
+    for (const missing of [null, undefined, '']) {
+      const r = patternAgePlan([hns(missing)]);
+      assert.equal(r.stale.length, 0, `bars_ago ${String(missing)} must not read as stale`);
+      assert.equal(r.fresh.length, 1);
+    }
+    const noKey = { pattern: 'double_top', status: 'forming', completion_level: 10 };
+    assert.equal(patternAgePlan([noKey]).fresh.length, 1);
+  });
+
+  test('FORMING patterns are covered too, because bars_ago is their last structural progress', () => {
+    /**
+     * The original complaint was a bearish head-and-shoulders "that had stopped
+     * forming 45 bars earlier". For structural patterns `to_time` is the last
+     * defining PIVOT, so `bars_ago` measures exactly that: a shape whose last swing
+     * was 45 bars back has made no progress since, whatever price has done to its
+     * neckline meanwhile.
+     */
+    const r = patternAgePlan([hns(45, { status: 'forming' })]);
+    assert.equal(r.stale.length, 1);
+    assert.match(r.stale[0].why, /^forming 45 bars ago/, 'the reason must name the status it excluded');
+    assert.equal(r.stale[0].status, 'forming');
+  });
+
+  test('a wedge or a flag can never be stale — their windows end at the current bar', () => {
+    /**
+     * Stated as a test rather than as a comment because it is the honest scope of
+     * this cutoff. `trendlinePatterns`, `flagPatterns` and `pennantPatterns` all set
+     * `to_time` to the LAST BAR of the series, so `bars_ago` is 0 by construction
+     * and nothing in that family can ever trip the threshold. Correct: a wedge
+     * fitted through the bars up to today is not old.
+     */
+    const p = readFileSync(`${process.cwd()}/src/core/patterns.js`, 'utf8');
+    assert.match(p, /p\.bars_ago = endIdx >= 0 \? lastIndex - endIdx : null;/,
+      'bars_ago must still be measured from to_time, or this cutoff keys on something else');
+    assert.equal(patternAgePlan([{ pattern: 'rising_wedge', status: 'confirmed', bars_ago: 0 }]).stale.length, 0);
+  });
+
+  test('the report says the cutoff RAN even when it excluded nothing', () => {
+    // "Excluded nothing" and "did not run" are different answers, and a reader who
+    // cannot tell them apart cannot trust either.
+    const r = patternAgePlan([hns(2)]);
+    assert.equal(r.cutoff_applied, true);
+    assert.equal(r.max_age_bars, 21);
+  });
+
+  test('degenerate input does not throw', () => {
+    for (const input of [null, undefined, []]) {
+      assert.deepEqual(patternAgePlan(input).stale, []);
+      assert.deepEqual(patternAgePlan(input).fresh, []);
+    }
+  });
+});
+
+describe('the age cutoff runs BEFORE the NEUTRAL selection, never after', () => {
+  const P = (pattern, bars_ago, over = {}) => ({
+    pattern, direction: 'bearish', status: 'confirmed', completion_level: 100,
+    measurements: { resistance_now: 102, support_now: 97 }, bars_ago, ...over,
+  });
+
+  test('NEUTRAL picks the best of the NON-stale, not the best overall', () => {
+    /**
+     * `patternRank` is [confirmed first, then meeting-target rate, then recency], so
+     * a STALE CONFIRMED pattern outranks a FRESH FORMING one on the first key alone.
+     * Filtering after the selection would therefore hand NEUTRAL a stale winner and
+     * then delete it, drawing nothing while a live shape sat unused.
+     */
+    const staleConfirmed = P('head_and_shoulders', 45);
+    const freshForming = P('double_top', 2, { status: 'forming' });
+
+    const unfiltered = planPatternDrawings([staleConfirmed, freshForming], { bias: 'NEUTRAL' });
+    assert.deepEqual(unfiltered.patterns.map((x) => x.pattern), ['head_and_shoulders'],
+      'without the age filter the stale confirmed pattern is the one NEUTRAL draws');
+
+    const { fresh } = patternAgePlan([staleConfirmed, freshForming]);
+    const filtered = planPatternDrawings(fresh, { bias: 'NEUTRAL' });
+    assert.deepEqual(filtered.patterns.map((x) => x.pattern), ['double_top'],
+      'with it, the live shape is drawn instead');
+  });
+
+  test('when EVERY candidate is stale, NEUTRAL draws NOTHING', () => {
+    /**
+     * Drawing the least-stale would repaint exactly what this cutoff exists to
+     * stop. Nothing is lost — every one of them comes back in `stale`, which the
+     * drawer concatenates into `patterns_skipped`.
+     */
+    const all = [P('head_and_shoulders', 45), P('double_top', 51), P('triple_bottom', 33)];
+    const { fresh, stale } = patternAgePlan(all);
+    assert.equal(stale.length, 3);
+    const plan = planPatternDrawings(fresh, { bias: 'NEUTRAL' });
+    assert.deepEqual(plan.patterns, [], 'a stale-only chart draws no geometry at all');
+    assert.deepEqual(plan.skipped, [], 'and the selector reports nothing, because the age filter already did');
+  });
+
+  test('a BULLISH/BEARISH verdict is unaffected in kind — age removes, bias filters', () => {
+    // The two gates are independent and both report. A pattern can fail either.
+    const staleOnSide = P('head_and_shoulders', 45);
+    const freshOffSide = P('double_bottom', 3, { direction: 'bullish' });
+    const { fresh, stale } = patternAgePlan([staleOnSide, freshOffSide]);
+    assert.deepEqual(stale.map((s) => s.pattern), ['head_and_shoulders']);
+    const plan = planPatternDrawings(fresh, { bias: 'BEARISH' });
+    assert.deepEqual(plan.patterns, []);
+    assert.match(plan.skipped[0].why, /contradicts the BEARISH verdict/);
+  });
+});
+
+describe('patterns_draw stays UNGATED — it is the tool for SEEING patterns', () => {
+  test('it never goes through drawFindings, so no cutoff can reach it', () => {
+    /**
+     * The same principle `bias` follows: an explicit verdict narrows what the
+     * WORKFLOW puts on the chart, while `patterns_draw` answers the question the
+     * owner actually asked — show me the patterns. It calls `planPatternDrawings`
+     * and `drawPatternGeometry` directly, so it is ungated by construction rather
+     * than by an opt-out somebody has to remember to pass.
+     */
+    const t = readFileSync(`${process.cwd()}/src/tools/patterns.js`, 'utf8');
+    assert.match(t, /import \{ planPatternDrawings \} from '\.\.\/core\/patterns_draw\.js'/);
+    assert.match(t, /import \{ drawPatternGeometry \} from '\.\.\/core\/assessment_draw\.js'/);
+    assert.ok(!/drawFindings/.test(t),
+      'patterns_draw must not route through the workflow drawer — that is where the cutoff lives');
+    assert.ok(!/max_pattern_age_bars|patternAgePlan/.test(t),
+      'and it must not acquire its own copy of the cutoff either');
+  });
+
+  test('the selector itself is age-blind, so the tool draws a 200-bar-old shape', () => {
+    const old = {
+      pattern: 'head_and_shoulders', direction: 'bearish', status: 'confirmed',
+      completion_level: 100, bars_ago: 200,
+      measurements: { left_shoulder: 104, head: 108, right_shoulder: 105, neckline: 100 },
+    };
+    assert.equal(planPatternDrawings([old]).patterns.length, 1,
+      'planPatternDrawings must stay the SELECTOR; the age cutoff belongs to the caller that draws '
+      + 'a verdict, not to the one that answers "show me what is there"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2.4 review (2026-07-30). The original plan-suppression contract was a
+// source-text regex, and a neutered condition — `if (false && ...)` — passed
+// all 97 tests while letting a stale pattern's ENTRY, STOP and TARGET back
+// onto the chart. These are calls, not greps: they fail when the BEHAVIOUR
+// dies, whatever the source looks like.
+// ---------------------------------------------------------------------------
+describe('planGate — the plan-level gate, behaviourally', () => {
+  const staleMap = new Map([['inverse_head_and_shoulders', {
+    pattern: 'inverse_head_and_shoulders', bars_ago: 41, max_age_bars: 21,
+  }]]);
+
+  test('a stale pattern\'s plan is suppressed with the age AND the threshold in the reason', () => {
+    const g = planGate({ pattern: 'inverse_head_and_shoulders', tradeable_now: true }, staleMap, new Set());
+    assert.equal(g.keep, false);
+    assert.equal(g.entry.stale, true);
+    assert.equal(g.entry.bars_ago, 41);
+    assert.match(g.entry.why, /41 bars old/);
+    assert.match(g.entry.why, /21-bar max age/);
+  });
+
+  test('the fails-open case: EMPTY drawn set still suppresses a stale plan', () => {
+    /**
+     * "Every candidate was stale" empties drawnPatterns, and the drawn-set rule
+     * reads `drawnPatterns.size && ...` — open when empty. The stale rule must
+     * fire FIRST or the all-stale chart keeps three bright lines and no shape.
+     */
+    const g = planGate({ pattern: 'inverse_head_and_shoulders' }, staleMap, new Set());
+    assert.equal(g.keep, false, 'an empty drawn set must not admit a stale plan');
+    assert.equal(g.entry.stale, true);
+  });
+
+  test('a fresh, drawn pattern keeps its plan', () => {
+    const g = planGate({ pattern: 'double_bottom' }, staleMap, new Set(['double_bottom']));
+    assert.equal(g.keep, true);
+  });
+
+  test('a fresh pattern NOT in a non-empty drawn set is suppressed by the second rule', () => {
+    const g = planGate({ pattern: 'double_bottom' }, staleMap, new Set(['flag']));
+    assert.equal(g.keep, false);
+    assert.equal(g.entry.stale, undefined);
+    assert.match(g.entry.why, /was not drawn/);
+  });
+
+  test('a plan with no pattern passes both rules', () => {
+    const g = planGate({ pattern: null }, staleMap, new Set(['flag']));
+    assert.equal(g.keep, true);
+  });
+
+  test('drawFindings actually CALLS it — the wiring is a call, not a copy', () => {
+    const d = readFileSync(new URL('../src/core/assessment_draw.js', import.meta.url), 'utf8');
+    const inBody = d.slice(d.indexOf('const stalePatterns = new Map'));
+    assert.match(inBody, /const gate = planGate\(tp, stalePatterns, drawnPatterns\)/);
+    assert.match(inBody, /if \(!gate\.keep\) \{ suppressedPlans\.push\(gate\.entry\); continue; \}/);
   });
 });
