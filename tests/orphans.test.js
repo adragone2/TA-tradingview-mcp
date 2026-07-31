@@ -44,6 +44,14 @@ describe('isMcpText — recognises what this toolchain writes', () => {
     'Gamma Flip 1195',
     'M Call Wall / D Put Wall 1195',
     'D Call Wall / W Call GEX / M Put Wall 900',
+    // zones_draw rectangles — unregistered until draw-smoke's label audit
+    // (P3.3, 2026-07-30) found every one of them invisible to the sweep
+    'demand fresh · 2.1x',
+    'supply tested · 1.4x',
+    'demand fresh · aggressive · 3.04x',
+    'supply broken · aggressive · 2x',   // integer multiple; broken reachable via include_broken
+    'demand tested · 12.75x',
+    'supply fresh · nullx',              // avgBody 0 → momentum_x null → String(null)
   ];
 
   for (const t of OURS) {
@@ -86,6 +94,13 @@ describe('isMcpText — leaves everything else alone', () => {
     'Call Wall 1250',                 // no TA prefix and no horizon
     'my TA Stop 100',                 // prefixed by a person
     'D Call Wall 1250 — mine',        // ours with something appended
+    'demand fresh',                   // hand-typed shorthand — ours always carries the momentum suffix
+    'demand fresh · 2.1',             // missing the x
+    'demand fresh - 2.1x',            // ASCII hyphen, not the middle dot the builder writes
+    'demand fresh · plain · 2.1x',    // 'plain' is a real grade but is never printed
+    'supply aggressive · 2.1x',       // the builder always prints the status
+    'note: demand fresh · 2.1x',      // our format embedded in a person's note
+    'demand fresh · 2.1x — mine',     // ours with something appended
     '',
     '   ',
   ];
@@ -181,6 +196,54 @@ describe('signatures cover every label format the code writes', () => {
     }
     assert.deepEqual(unmatched, [],
       `these labels would leave permanently unrecoverable orphans:\n${JSON.stringify(unmatched, null, 2)}`);
+  });
+});
+
+describe('zones_draw labels — the builder and the signature stay in step', () => {
+  /**
+   * zones_draw builds its label into a variable before handing it to drawShape,
+   * so the `text: \`...\`` scan above cannot see it — which is exactly how it
+   * shipped unregistered and leaked (draw-smoke's label audit, P3.3,
+   * 2026-07-30). So this block pins the template VERBATIM: if the builder's
+   * label line changes in any way, the first assertion fails and says to update
+   * the signature and this test together. The render below is the same
+   * expression with local variables, so it cannot drift from what is pinned.
+   */
+  const TEMPLATE = "${z.kind} ${z.status}${z.grade === 'aggressive' ? ' · aggressive' : ''} · ${z.momentum_x}x";
+
+  test('every form the builder can emit is recognised', () => {
+    const src = readFileSync('src/tools/zones.js', 'utf8');
+    const m = src.match(/const label = `([^`]+)`/);
+    assert.ok(m, 'zones_draw no longer builds `label` where this test expects — '
+      + 'update this test AND the zones signature in orphans.js together');
+    assert.equal(m[1], TEMPLATE, 'the label template changed — every NEW wording '
+      + 'needs a signature appended in orphans.js (never narrowed), then update this test');
+
+    // The real vocabularies (src/core/zones.js): kind from the departure
+    // direction, status from broken/tests, grade from the three aggression
+    // flags, momentum_x = round(x, 2) — a number or null.
+    for (const kind of ['demand', 'supply']) {
+      for (const status of ['fresh', 'tested', 'broken']) {
+        for (const grade of ['aggressive', 'plain']) {
+          for (const momentum_x of [2, 2.1, 3.04, null]) {
+            const label = `${kind} ${status}${grade === 'aggressive' ? ' · aggressive' : ''} · ${momentum_x}x`;
+            assert.equal(isMcpText(label), true,
+              `would leak as a permanently unrecoverable orphan: "${label}"`);
+          }
+        }
+      }
+    }
+  });
+
+  test('the vocabularies the signature enumerates still exist in src/core/zones.js', () => {
+    // The signature hard-codes demand|supply, fresh|tested|broken and
+    // ' · aggressive'. If any of these expressions change in the core, the
+    // label space changes with them: re-derive it, EXTEND the signature in
+    // orphans.js (never narrow — signatures are append-only), then update this.
+    const core = readFileSync('src/core/zones.js', 'utf8');
+    assert.ok(core.includes("bullish ? 'demand' : 'supply'"), 'kind vocabulary moved or changed');
+    assert.ok(core.includes("broken ? 'broken' : t.tests === 0 ? 'fresh' : 'tested'"), 'status vocabulary moved or changed');
+    assert.ok(core.includes("aggressive ? 'aggressive' : 'plain'"), 'grade vocabulary moved or changed');
   });
 });
 
