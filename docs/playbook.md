@@ -18,6 +18,8 @@ Nothing here has been backtested. Every setup below is a hypothesis until `backt
 | **Pullback to MA** | Strong trend (SMA20 sloping sharply); price pulls back to the MA and *bounces* | Beyond the MA | 1.5–2R |
 | **Swing breakout long** | Above 200 SMA; riding/reclaiming the 8 EMA; breakout above resistance tested 2–3× | Close below the 8 EMA | Sell into extension from the 8 EMA, in quarters |
 
+**Expect the throwback.** Price returning to the breakout price within 30 calendar days follows **58%** of upward breakouts and **70%** of the above-average-volume ones (Bulkowski, [thepatternsite.com/throwbacks.html](https://thepatternsite.com/throwbacks.html); the downward mirror is 58% and 66%). Its presence is therefore not a signal. What separates is the ARM once one happens: a 40% average rise when price stayed at or above the breakout price against 29% when it dropped below — and 97% of patterns do better with no throwback at all ([studystudy.html](https://thepatternsite.com/studystudy.html)). `breakout_check` reports `throwback.status`; quote the arm, never the bare rate.
+
 ### Intraday (day-trading setups)
 
 | Setup | Window | Core idea | Stop |

@@ -73,7 +73,7 @@
 | "Draw the patterns" | `patterns_draw` — each pattern's COMPLETION level, the price where a shape becomes a fact. Bullish *completes*, bearish *breaks at*. Never hand-draw one with `draw_shape`: a hand-written label matches no signature and leaks a permanent orphan |
 | "Which symbols qualify?" / a rule with numbers | `strategy-scan` skill — criteria as data, not prose |
 | "What strategies do we have?" / "how do I play X?" | [docs/strategies.md](docs/strategies.md), or `strategy_list` — grouped by execution tier with the screener, entry/exit, indicators, skills and tools per strategy. Filter with `execution` and `evidence_tier` |
-| "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed |
+| "Did that breakout hold?" | `breakout_check` — 5 measurements; reclaimed next bar = failed. Also reports `throwback.status` — 58% of upward breakouts return to the level within 30 days, so quote the arm (held above vs dropped below), never the bare rate |
 | "Will this level hold?" | `level_pressure` — describes whether attempts are strengthening. Its predictive claim FAILED out of sample (+39.1 in-sample → +4.6 on a fresh universe). Ignore touch count entirely |
 | "Backtest this" / "does it work?" | `backtest-strategy` skill — **always report buy-and-hold** |
 | "How much should I risk?" / "what's my expectancy?" | `risk-sizing` skill — expectancy AND risk of ruin. A win rate means nothing without its payoff |
@@ -223,6 +223,8 @@ Each of these exists because it has already gone wrong here.
 **Turnover decides whether a swing strategy can exist.** A 5-day hold is ~50 round trips a year; at 20bps each that is ~10% annually before any edge. `turnover_cost` does the arithmetic, and computes the hysteresis exit that halved turnover while raising net returns.
 
 **A stop-loss is a bet on persistence, not free insurance.** Kaminski & Lo prove the stopping premium is ALWAYS NEGATIVE under a random walk — a stop in a no-persistence market lowers expected return without benefit. It turns positive under momentum, proportional to persistence. Run `stopping_premium` before claiming a stop helps; it may still be right as a solvency constraint, but say which reason applies.
+
+**A throwback is what most breakouts do, so on its own it discriminates nothing.** 58% of Bulkowski's 10,305 upward breakouts returned to the breakout price within 30 calendar days, 70% of the high-volume ones — so `breakout_check` reports `throwback.status` as a DESCRIPTION and deliberately not as a sixth check: folding a 58% base rate into `score` would claim the opposite of what it means. His separating numbers are the two arms — a 40% average rise when price held at or above the breakout price against 29% when it dropped below — and the 97% of patterns that did better without one; none carries a noise floor, unlike the breakout itself at 32.5% on random walks. `verdict: "failed"` still means reclaimed on the NEXT bar; an immediate reclaim IS a throwback that completed on bar 1, so the two are derived from one measurement and verified equivalent over 600 generated series rather than left free to drift.
 
 **Candlesticks failed two independent academic tests.** Marshall/Young/Rose (2006, DJIA, random-OHLC bootstrap) and Marshall/Young/Cahan (2008, Tokyo 1975-2004) both found no value — in any sub-period, bull or bear. Report a candle as a description of what the bar did, never as a signal.
 

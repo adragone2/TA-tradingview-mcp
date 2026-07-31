@@ -249,7 +249,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 ### breakout_* (1)
 
-- **`breakout_check`** — Score a breakout of a price level against five measurable criteria: momentum (body vs recent average), how far beyond the level it CLOSED, volume vs a
+- **`breakout_check`** — Score a breakout of a price level against five measurable criteria, and report its THROWBACK — whether price came back to the level afterwards
 
 ### market_* (1)
 
