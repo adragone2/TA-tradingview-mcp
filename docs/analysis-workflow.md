@@ -17,7 +17,7 @@ is the architecture: what connects to what, which piece was missing, and where t
   │ 0  POSITION & CALENDAR    ta_trading_context        │  can end it: earnings inside the hold
   ├─────────────────────────────────────────────────────┤
   │ 1  WHICH SCREENS?         ticker_playbook           │  can end it: passes nothing, no near miss
-  │      reverse screener — 8 swing + 1 intraday        │
+  │      reverse screener — 8 swing + 2 intraday        │
   │      clause by clause, with near misses             │
   │                    ↓                               │
   │    WHICH STRATEGIES?     from strategies.json       │  ranked by evidence tier

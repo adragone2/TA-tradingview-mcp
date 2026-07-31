@@ -526,17 +526,33 @@ const report = {
     NEUTRAL: ok.filter((t) => t.analysis?.verdict?.bias === 'NEUTRAL').length,
     BEARISH: ok.filter((t) => t.analysis?.verdict?.bias === 'BEARISH').length,
   },
-  // A market-wide condition belongs here, not repeated on every row.
+  /**
+   * A market-wide condition belongs here, not repeated on every row.
+   *
+   * Every read below is `t.analysis.assessment.market_regime`, and the `analysis.`
+   * was MISSING until this was fixed: the block kept the flat 1.0 paths through the
+   * 2.0 move, when per-ticker data went under `analysis`. **A dead optional-chain
+   * path yields `undefined`, not an error**, so the block assembled itself out of
+   * nothing and emitted `{regime_counts:{}, choppy_share_pct:null,
+   * median_efficiency:null, broad_chop:false}` on every real 2.0 report. On
+   * 2026-07-30 the truth was 50 choppy / 6 mixed / 3 trending — 84.7%, median
+   * efficiency 0.174 against the 0.183 random-walk baseline. `broad_chop: false`
+   * there was not a finding that the market was fine; it was the block failing to
+   * read anything. Same defect class as the stale scheduled prompt (P0.1), one
+   * layer down — which is why tests/sunday_prompt.test.js now asserts as a source
+   * contract that no 1.0 `t.assessment?.` read survives in this file.
+   */
   market_condition: (() => {
-    const regs = ok.map((t) => t.assessment?.market_regime?.regime).filter(Boolean);
+    const regs = ok.map((t) => t.analysis?.assessment?.market_regime?.regime).filter(Boolean);
     const choppy = regs.filter((r) => r === 'choppy').length;
     const share = regs.length ? choppy / regs.length : null;
-    const effs = ok.map((t) => t.assessment?.market_regime?.efficiency).filter((e) => e != null).sort((a, b) => a - b);
+    const effs = ok.map((t) => t.analysis?.assessment?.market_regime?.efficiency)
+      .filter((e) => e != null).sort((a, b) => a - b);
     return {
       regime_counts: regs.reduce((m, r) => ({ ...m, [r]: (m[r] || 0) + 1 }), {}),
       choppy_share_pct: share == null ? null : r2(share * 100, 1),
       median_efficiency: effs.length ? effs[Math.floor(effs.length / 2)] : null,
-      random_walk_efficiency: ok[0]?.assessment?.market_regime?.random_walk_efficiency ?? null,
+      random_walk_efficiency: ok[0]?.analysis?.assessment?.market_regime?.random_walk_efficiency ?? null,
       broad_chop: share != null && share >= 0.5,
       note: share != null && share >= 0.5
         ? `${r2(share * 100, 1)}% of names are below the 0.3 efficiency gate. This is a statement about the WEEK'S `

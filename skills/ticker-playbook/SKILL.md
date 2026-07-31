@@ -90,7 +90,7 @@ ticker_playbook symbol="TICKER"
 
 This is the reverse screener. It returns, clause by clause:
 
-- which of the **8 swing screens** and **1 intraday screen** the symbol passes
+- which of the **8 swing screens** and **2 intraday screens** the symbol passes
 - **near misses** — one clause away, with the gap. This is often the more useful output: "fails RSI
   by 2 points" tells you what to wait for
 - the **strategies** each passing screen implies, ranked by evidence tier, each with its entry

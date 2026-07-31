@@ -90,9 +90,32 @@ Scheduled for Sunday mornings. Run it directly with:
 node scripts/sunday-review.js --out-dir reports
 ```
 
-7–12 minutes for ~60 tickers. It walks every ticker TA wants action on, on the
-daily, computes the full assessment offline, draws the findings on each chart,
-and restores the original symbol.
+~15–20 minutes for ~62 tickers. It walks **TA's whole book** — not only the
+names TA wants action on — on the daily, runs the same unified `analyzeTicker`
+workflow the morning screen uses, draws the findings on each chart, and
+restores the original symbol.
+
+**Holdings are included by default.** `--holdings` used to be opt-in and the
+scheduled job never passed it, so on 2026-07-30 TA's 73 positions yielded an
+actionable list of 53 and **35 holdings were never queued**. The owner's rule:
+*"The sunday routine analyzes all TA tickers period. no exclusions."* An opt-in
+flag on a scheduled job is an exclusion by default. `--no-holdings` opts out.
+
+That book resolves to roughly **59 analysed, ~25 crypto excluded with a reason
+each, and a handful of data failures** (too few bars, or a NAV-priced fund with
+no intraday range). **EXCLUDED is not FAILED** — a failed ticker was attempted
+and could not be read, an excluded one was never charted here at all, and
+`counts.excluded` plus `excluded_from_review[]` report it as a scope boundary
+rather than as breakage. Crypto is excluded because TA owns that book on the
+investing layer, and because charting it lies: `BTC-USD` silently resolves to
+the spread `CRYPTOCAP:BTC-BATS:USD`.
+
+The report is **schema 2.0** — every ticker's analysis lives under a single
+`analysis` key (`analysis.assessment`, `analysis.verdict`, `analysis.drawings`,
+plus the new `analysis.completeness` and `analysis.context`). **TA imports
+`reports/sunday-review-YYYY-MM-DD.json`**, so a moved key needs a migration:
+[ta-importer-migration-2.0.md](ta-importer-migration-2.0.md) is the paste-ready
+prompt for TA's importer.
 
 The procedure and the guardrails are in [skills/sunday-review/SKILL.md](../skills/sunday-review/SKILL.md);
 the output contract is [sunday-review-schema.md](sunday-review-schema.md).
@@ -100,8 +123,12 @@ the output contract is [sunday-review-schema.md](sunday-review-schema.md).
 Scheduled for **Sunday 08:00**, and it appears in the app under **Routines**
 (Code tab) — not under **Scheduled** (Home tab). Those are two views, not two
 stores; a task created through the `scheduled-tasks` MCP server surfaces in
-Routines only. The prompt it runs is version-controlled at
-[skills/sunday-review/scheduled-task-prompt.md](../skills/sunday-review/scheduled-task-prompt.md).
+Routines only. The prompt is version-controlled at
+[skills/sunday-review/scheduled-task-prompt.md](../skills/sunday-review/scheduled-task-prompt.md),
+but the scheduler reads a **second copy** at
+`~/.claude/scheduled-tasks/sunday-review/SKILL.md` — editing the repo copy alone
+changes nothing about what runs on Sunday. `tests/sunday_prompt.test.js` compares
+them where the live copy exists.
 
 It must run on **this computer** — it drives TradingView Desktop over CDP, so
 it cannot run in the cloud, and the machine has to be awake with the app open.

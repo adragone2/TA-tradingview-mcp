@@ -4,7 +4,7 @@ How to find candidate trades across the whole US market each morning, using
 TradingView's own scanner as the coarse filter and this repo's detectors as the
 verdict.
 
-Status: **built and running.** Scheduled weekdays 07:00 ET.
+Status: **built and running.** Scheduled weekdays 05:30 PT (08:30 ET).
 
 | | |
 |---|---|

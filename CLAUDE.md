@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-184 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+187 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,12 +19,12 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 184 tools (generated — `node scripts/gen-tools-doc.js`) |
-| [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 18 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 187 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 20 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), 7 of them kept as REJECTED so nobody rediscovers one, each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
 | [docs/routines.md](docs/routines.md) | Daily and weekly workflows |
-| [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict. **8 swing screens + 1 intraday**, one per strategy family |
+| [docs/screening.md](docs/screening.md) | Morning screen — design and reasoning. TV scanner as coarse filter, our detectors as verdict. **8 swing screens + 2 intraday**, one per strategy family |
 | [docs/screening-parameters.md](docs/screening-parameters.md) | The exact screen parameters (generated — `node scripts/gen-screens-doc.js`) |
 | [docs/plugins.md](docs/plugins.md) | FSI plugin skills and how to feed them data |
 | [docs/architecture.md](docs/architecture.md) | How the layers connect |
@@ -126,7 +126,7 @@ Each of these exists because it has already gone wrong here.
 
 **Pin the timeframe, or the measurement is of something else.** Three measurement scripts called `setSymbol` but never `setTimeframe`, inherited the chart's 60-minute resolution, and recorded their results as "daily bars". Nothing in the output revealed it. `scripts/_real_bars.js` now requires an explicit timeframe, verifies the resolution actually took, and restores both symbol and resolution afterwards. Use it for any real-data measurement.
 
-**A strategy lives in strategies.json, not in prose.** 18 strategies are catalogued as DATA — criteria, screener, entry, exit, indicators, skills, tools, risk rules and an evidence tier each — so `strategy_check` and `strategy_scan` can evaluate them. Before this existed `strategy_list` returned `count: 0` while four pieces of machinery waited for input. `rules.json` still wins a name clash; it holds the owner's own criteria and a shared catalogue must not override them. **Six entries are tiered REJECTED and kept deliberately** — candlesticks, standalone zones, single divergences, the stage gate as an edge, level touch count, Crabel contraction — each with the measurement that killed it, so nobody rediscovers one and believes it is new. They carry no criteria and `strategy_check` refuses them with the reason.
+**A strategy lives in strategies.json, not in prose.** 20 strategies are catalogued as DATA — criteria, screener, entry, exit, indicators, skills, tools, risk rules and an evidence tier each — so `strategy_check` and `strategy_scan` can evaluate them. Before this existed `strategy_list` returned `count: 0` while four pieces of machinery waited for input. `rules.json` still wins a name clash; it holds the owner's own criteria and a shared catalogue must not override them. **Seven entries are tiered REJECTED and kept deliberately** — candlesticks, standalone zones, single divergences, the stage gate as an edge, level touch count, Crabel contraction, two-leader confirmation — each with the measurement that killed it, so nobody rediscovers one and believes it is new. They carry no criteria and `strategy_check` refuses them with the reason.
 
 **The owner's WEEKLY bucket is the reversal zone, and most setups in it are continuation bets.** Execution tiers are intraday, weekly (2–10 days), monthly (11+ days). Below ~21 trading days the documented effect is REVERSAL; 11–63 days is the contested gap where neither effect is documented. So a breakout, flag, triangle or VCP placed in the weekly tier is fighting its own horizon — `docs/strategies.md` says so on every tier heading, and `horizon_prior` says which side a given setup is on.
 
