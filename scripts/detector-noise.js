@@ -11,12 +11,14 @@
  *
  *   node scripts/detector-noise.js [--walks 200]
  */
-import { randomWalk, barsFromPath } from '../src/core/synthetic.js';
+import { randomWalk, barsFromPath, randomWalkWithGaps } from '../src/core/synthetic.js';
 import * as Z from '../src/core/zones.js';
 import * as W from '../src/core/wyckoff.js';
 import * as E from '../src/core/elliott.js';
 import * as D from '../src/core/divergence.js';
 import * as B from '../src/core/breakout.js';
+import * as G from '../src/core/gaps.js';
+import * as P from '../src/core/pip.js';
 
 const args = process.argv.slice(2);
 const i = args.indexOf('--walks');
@@ -87,3 +89,127 @@ for (const [k, v] of Object.entries(out)) {
 }
 console.log('\nFor comparison: structural patterns 68% of walks, LMW definitions 43.4%,');
 console.log('channels 33.5% (12% stable), VCP 0%, pennants 0%.');
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * gaps.js — and the reason it could not use the walk above.
+ *
+ * `barsFromPath` builds bar i's open from path[i-1], so consecutive bars always
+ * overlap and the gap condition (low > prior high) is UNREACHABLE. Measured
+ * against that null every gap class scores 0.0%, which reads as a perfect
+ * detector and is in fact a fixture bug — the same shape that left ignition.js
+ * without a floor, where the null moved the GATE instead of the pattern.
+ *
+ * So the gap arm runs against randomWalkWithGaps, which injects gaps at a
+ * stated rate and size. Both volume regimes are measured because the choice
+ * moves the answer for every clause that reads volume, and picking one silently
+ * would repeat the mistake.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const GAP_CLASSES = ['common', 'breakaway', 'runaway', 'exhaustion', 'unclassified', 'pending'];
+
+function gapArm(label, makeBars) {
+  const walksWith = {}, totals = {};
+  let anyGapWalks = 0, totalGaps = 0, errors = 0;
+  for (let s = 0; s < WALKS; s++) {
+    try {
+      const res = G.classifyGaps(makeBars(s));
+      const gaps = res.gaps || [];
+      if (gaps.length) anyGapWalks++;
+      totalGaps += gaps.length;
+      const seen = new Set();
+      for (const g of gaps) {
+        totals[g.verdict] = (totals[g.verdict] || 0) + 1;
+        seen.add(g.verdict);
+      }
+      for (const v of seen) walksWith[v] = (walksWith[v] || 0) + 1;
+    } catch { errors++; }
+  }
+  return {
+    label,
+    any_gap: { walks_pct: Number(((anyGapWalks / WALKS) * 100).toFixed(1)), per_walk: Number((totalGaps / WALKS).toFixed(2)) },
+    by_class: Object.fromEntries(GAP_CLASSES.map((c) => [c, {
+      walks_pct: Number((((walksWith[c] || 0) / WALKS) * 100).toFixed(1)),
+      per_walk: Number(((totals[c] || 0) / WALKS).toFixed(2)),
+    }])),
+    errors,
+  };
+}
+
+const gapArms = [
+  gapArm('gap-aware null, gap_elevated volume (THE FLOOR)',
+    (s) => randomWalkWithGaps({ n: BARS, seed: 7000 + s, volume_mode: 'gap_elevated' }).bars),
+  gapArm('gap-aware null, dispersed volume, gaps NOT elevated',
+    (s) => randomWalkWithGaps({ n: BARS, seed: 7000 + s, volume_mode: 'lognormal' }).bars),
+  gapArm('gap-aware null, FLAT volume (fixture contrast)',
+    (s) => randomWalkWithGaps({ n: BARS, seed: 7000 + s, volume_mode: 'flat' }).bars),
+  gapArm('NAIVE null — barsFromPath, no gaps injected', (s) => walk(s)),
+];
+
+console.log(`\n\n=== gaps.js — ${WALKS} walks of ${BARS} bars ===`);
+for (const arm of gapArms) {
+  console.log(`\n${arm.label}`);
+  console.log(`  any gap at all      ${String(arm.any_gap.walks_pct).padStart(6)}%  ${String(arm.any_gap.per_walk).padStart(7)} per walk`);
+  for (const c of GAP_CLASSES) {
+    const v = arm.by_class[c];
+    console.log(`  ${c.padEnd(18)}${String(v.walks_pct).padStart(6)}%  ${String(v.per_walk).padStart(7)} per walk`);
+  }
+  if (arm.errors) console.log(`  (${arm.errors} errors)`);
+}
+console.log('\nRead the FIRST arm as the floor. The naive arm is the contrast that justifies');
+console.log('the generator: a reconstructed price path barely produces overnight gaps at all,');
+console.log('so a near-zero rate there measures the fixture and not the detector.');
+console.log('The real-data arm is NOT RUN here — no chart access. A class firing LESS on real');
+console.log('bars than on this null means the null is broken and nothing may be quoted.');
+
+/**
+ * Breakaway and exhaustion are the only two classes with a volume clause, and
+ * the three arms above already show their rates swinging from 0% to something
+ * substantial purely on how the null models gap-day volume. That is the shape
+ * of the defect that left ignition.js without a floor, so it gets measured
+ * rather than asserted: sweep the ONE free parameter and print how far the
+ * answer travels.
+ */
+console.log('\n--- sensitivity: gap_volume_multiple (the null\'s one free volume parameter) ---');
+console.log('  multiple   breakaway walks%   exhaustion walks%');
+for (const mult of [1.0, 1.5, 2.0, 2.5, 3.0]) {
+  const arm = gapArm(`x${mult}`, (s) => randomWalkWithGaps({
+    n: BARS, seed: 7000 + s, volume_mode: 'gap_elevated', gap_volume_multiple: mult,
+  }).bars);
+  console.log(`  x${mult.toFixed(1)}      ${String(arm.by_class.breakaway.walks_pct).padStart(14)}%   ${String(arm.by_class.exhaustion.walks_pct).padStart(15)}%`);
+}
+console.log('If these two columns move a lot, neither class has a single floor — it has a');
+console.log('bracket, and the bracket is what may be quoted. common and runaway read no');
+console.log('volume and are identical across every arm, so their floors ARE established.');
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * pip.js — closes only, so the standard path-based null is legitimate.
+ *
+ * Swept across thresholds because a threshold with no floor beside it is not a
+ * threshold. `windows_pct` is the number that matters: the share of ALL windows
+ * in pure noise that meet T, not the share of walks containing one somewhere.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const PIP_THRESHOLDS = [3, 4, 5, 6, 7, 8];
+const PIP_MAPPINGS = ['pip', 'rank'];
+
+console.log(`\n\n=== pip.js bull flag — ${WALKS} walks of ${BARS} bars, 20-day window ===`);
+for (const mapping of PIP_MAPPINGS) {
+  console.log(`\nmapping: ${mapping}   (template wang_chan_2007, max fit 10)`);
+  console.log('  threshold   walks%   windows%   hits/walk');
+  for (const T of PIP_THRESHOLDS) {
+    let walksWithAny = 0, hits = 0, windows = 0, errors = 0;
+    for (let s = 0; s < WALKS; s++) {
+      try {
+        const r = P.scanBullFlag(walk(s), { mapping, min_fit: T, window: 20 });
+        if (r.count > 0) walksWithAny++;
+        hits += r.count;
+        windows += r.windows_scored;
+      } catch { errors++; }
+    }
+    const walksPct = ((walksWithAny / WALKS) * 100).toFixed(1);
+    const winPct = windows ? ((hits / windows) * 100).toFixed(1) : 'n/a';
+    console.log(`  T>=${T.toFixed(1)}   ${String(walksPct).padStart(7)}   ${String(winPct).padStart(8)}   ${String((hits / WALKS).toFixed(2)).padStart(9)}${errors ? `   (${errors} errors)` : ''}`);
+  }
+}
+console.log('\nThe published threshold is T = 3 at a 20-day window (Fernandes 2022, p = 20,');
+console.log('T = 3). Read the windows% column at that row before quoting any match.');

@@ -173,6 +173,155 @@ export function randomWalk({ n = 200, start = 100, drift = 0, vol = 0.015, seed 
 }
 
 /**
+ * A random walk WITH overnight gaps — and it returns BARS, not a path.
+ *
+ * Read that again. `randomWalk` and every entry in GENERATORS return a PATH of
+ * closes, which a caller turns into bars with `barsFromPath`. This one returns
+ * `{ bars, injected_gaps, params }`, because a detector that reads open, high,
+ * low or volume cannot be measured against a path and the mistake is invisible:
+ * it produces a 0% noise floor, which reads as a perfect detector rather than
+ * as a broken fixture. Returning a different shape makes the error a crash.
+ *
+ * ── Why this generator has to exist ──
+ *
+ * A reconstructed price path has NO overnight discontinuity. `barsFromPath`
+ * builds bar i's open from path[i-1], so bar i always overlaps bar i-1 and the
+ * gap condition (low > prior high) is unreachable by construction. Measuring a
+ * gap detector against it returns 0.0% for every class — a number about the
+ * generator, not the detector. It is the same failure that left ignition.js
+ * without a noise floor: the null moved the GATE instead of the pattern.
+ *
+ * So gaps are INJECTED, and what gets measured is the classifier's selectivity
+ * rather than whether gaps exist at all.
+ *
+ * ── How, and what each parameter assumes ──
+ *
+ * A gap is applied as a shift to bar i AND EVERY BAR AFTER IT, so the bar
+ * shapes built by `barsFromPath` are untouched and the discontinuity sits
+ * strictly between bar i-1 and bar i. That matters: true range counts a gap and
+ * bar range does not, so a null that rebuilds bars would change the ATR-to-range
+ * ratio and shift every ATR-gated clause. Shifting whole bars preserves it.
+ *
+ *   gap_rate            share of bars that gap.
+ *   gap_median_atr      median gap size in units of the mean bar range.
+ *   gap_sigma           lognormal spread, so sizes are heavy-tailed like real ones.
+ *   volume_mode         'flat'          — the harness's near-constant volume.
+ *                       'lognormal'     — dispersed, gap bars NOT elevated.
+ *                       'gap_elevated'  — dispersed, gap bars multiplied.
+ *
+ * ── The defaults are CALIBRATED, not guessed ──
+ *
+ * ignition.js's floor died on one statistic: ATR counts overnight gaps and bar
+ * range does not, so the ATR-to-range ratio is what any gap-gated rule actually
+ * keys on. That investigation measured it on real daily bars — **1.070** —
+ * against **1.001** for a reconstructed gapless path
+ * (IGNITION_NOISE_BASELINE.why_not_established).
+ *
+ * So the defaults here were swept against that number rather than picked:
+ * gap_rate 0.06 with gap_median_atr 0.35 produces **1.068**, and 7.1% of bars
+ * carrying a visible gap. Every other combination tried misses it — 0.10/0.50
+ * gives 1.126, which would gate very differently. If a better real-data
+ * estimate arrives, re-sweep and say so; this is a calibration to one measured
+ * statistic, not a claim to have modelled real gaps.
+ *
+ * `volume_mode` is exposed rather than fixed because the choice MOVES THE
+ * ANSWER for any clause that reads volume, and quietly picking one would be the
+ * ignition.js mistake again. Measure both and report both.
+ *
+ * Sign is symmetric, so the injected gaps add no drift. They do add variance;
+ * that is intended and stated rather than corrected away.
+ */
+export function randomWalkWithGaps({
+  n = 200, start = 100, drift = 0, vol = 0.015, seed = 1,
+  noise = 0.006,
+  gap_rate = 0.06,
+  gap_median_atr = 0.35,
+  gap_sigma = 0.8,
+  volume_mode = 'gap_elevated',
+  base_volume = 1_000_000,
+  volume_sigma = 0.35,
+  gap_volume_multiple = 2.0,
+} = {}) {
+  const path = randomWalk({ n, start, drift, vol, seed });
+  const bars = barsFromPath(path, { noise, seed: seed + 1 });
+
+  // Scale gaps to the bars actually produced, so gap_median_atr means the same
+  // thing at any volatility.
+  const ranges = bars.map((b) => b.high - b.low).filter((r) => Number.isFinite(r) && r > 0);
+  const refRange = ranges.length ? ranges.reduce((a, b) => a + b, 0) / ranges.length : 1;
+
+  const r = rng(seed + 977);
+  /** Box-Muller, so the lognormal draw is a real lognormal and not a uniform. */
+  const normal = () => {
+    const u1 = Math.max(1e-12, r());
+    const u2 = r();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+
+  const injected = [];
+  let shift = 0;
+  for (let i = 1; i < bars.length; i++) {
+    if (r() < gap_rate) {
+      /**
+       * The shift is solved for the gap it is supposed to PRODUCE, not drawn
+       * and hoped over. Consecutive bars from `barsFromPath` overlap by roughly
+       * a bar range, so a drawn offset smaller than that overlap leaves no gap
+       * at all — and a first cut of this generator, which simply discarded
+       * those, achieved 1.6% of bars gapping while reporting `gap_rate: 0.10`.
+       * A null whose stated frequency is six times its actual one answers a
+       * different question than the one asked of it.
+       *
+       * Solving instead makes `gap_rate` exact and `gap_median_atr` the median
+       * size of the RESULTING gap, which is the quantity a reviewer can
+       * re-estimate from real bars.
+       */
+      const g = gap_median_atr * Math.exp(gap_sigma * normal()) * refRange;
+      const up = r() < 0.5;
+      // bars[i-1] already carries the running shift; bars[i] does not yet. So
+      // the new shift is solved absolutely, NOT added to the old one — adding
+      // applies the accumulated shift twice and compounds a 100 into 79,600
+      // over 200 bars, which a per-walk price range check caught immediately.
+      shift = up
+        ? bars[i - 1].high + g - bars[i].low
+        : bars[i - 1].low - g - bars[i].high;
+      injected.push({ index: i, size: g, size_in_ref_ranges: g / refRange, direction: up ? 'up' : 'down' });
+    }
+    bars[i] = { ...bars[i], open: bars[i].open + shift, high: bars[i].high + shift, low: bars[i].low + shift, close: bars[i].close + shift };
+  }
+
+  // Keep prices positive without touching the gap structure.
+  const minLow = Math.min(...bars.map((b) => b.low));
+  if (minLow <= 1) {
+    const lift = 1 - minLow + start * 0.1;
+    for (let i = 0; i < bars.length; i++) {
+      bars[i] = { ...bars[i], open: bars[i].open + lift, high: bars[i].high + lift, low: bars[i].low + lift, close: bars[i].close + lift };
+    }
+  }
+
+  if (volume_mode !== 'flat') {
+    const gapAt = new Set(injected.map((g) => g.index));
+    const vr = rng(seed + 4231);
+    const vnormal = () => {
+      const u1 = Math.max(1e-12, vr());
+      const u2 = vr();
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+    for (let i = 0; i < bars.length; i++) {
+      const mult = volume_mode === 'gap_elevated' && gapAt.has(i) ? gap_volume_multiple : 1;
+      bars[i] = { ...bars[i], volume: Math.round(base_volume * Math.exp(volume_sigma * vnormal()) * mult) };
+    }
+  }
+
+  return {
+    bars,
+    injected_gaps: injected,
+    params: { n, start, drift, vol, seed, noise, gap_rate, gap_median_atr, gap_sigma, volume_mode, base_volume, volume_sigma, gap_volume_multiple },
+    note: 'Returns BARS, not a path. gap_rate and gap_median_atr are stated assumptions about real markets, not '
+      + 'measurements from them — re-estimate from real bars before quoting any floor measured with this.',
+  };
+}
+
+/**
  * Measure a detector against constructed truth.
  *
  * `detect(bars)` must return an array of pattern-name strings.

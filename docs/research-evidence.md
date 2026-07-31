@@ -348,3 +348,37 @@ above — his control is an unconditional market rate, not a randomised one — 
 he was asking the right question, which is more than most of the literature
 does.
 
+
+## Gap classification — the null was the problem, and both arms have now been run
+
+`src/core/gaps.js` implements the Edwards & Magee four-way gap classification (common/area, breakaway, runaway/measuring, exhaustion) as numbered clauses, with every threshold cited to [Bulkowski's gap page](https://thepatternsite.com/gaps.html) or explicitly marked `ours` where the source gives words and no number. Deliberately **not** registered as an MCP tool (the `ignition.js` precedent); a test asserts nothing in `src/tools/` imports it.
+
+**The null was the whole problem, and it is the same one that killed `ignition.js`.** A random-walk price path has almost no overnight gaps — `barsFromPath` builds bar *i*'s open from `path[i-1]`, so consecutive bars overlap. Measured: **0.24 gaps per 200-bar walk against 9.05** once gaps are injected. Every class then floors near zero, which reads as a perfect classifier and is a fixture artefact. `randomWalkWithGaps` injects gaps by shifting whole bars, calibrated against the one real-data anchor available — ATR ÷ mean bar range **1.070** on real daily bars (the statistic that broke ignition's null) — which the defaults reproduce at 1.068.
+
+**The real arm ran 2026-07-30** (20 large caps, 299 daily bars each, `scripts/gaps-real-arm.js`), and it came out the healthy way — every class fires AT or ABOVE its null, where ignition fired below:
+
+| class | real (per 200 bars) | null | reading |
+|---|---|---|---|
+| any gap | 10.13 | 9.05 | real is slightly gappier; ATR/range 1.093 vs anchor 1.070 |
+| common | 0.80 (55% of symbols) | 0.79 (46.5% of walks) | **zero information, confirmed** — describes noise and real charts identically |
+| runaway | 1.54 (90%) | 1.35 (69.5%) | descriptive |
+| breakaway | 0.07 (10%) | 0.01 at the measured multiple | **~7× lift — the one selective class** |
+| exhaustion | 0.40 (55%) | 0.10 at the measured multiple | 4× lift once the volume parameter is measured |
+| unclassified | 6.86 | 6.24 | the classifier declines to guess 68% of real gaps — in both arms |
+
+**The free parameter was wrong by ~2× and measuring it changed a verdict.** The generator guessed gap-day volume at 2.0× average; the real median across 303 gaps is **1.21**. Re-running the null AT the measured value (same seeds as the published table, which reproduces it exactly) turned exhaustion's 4.5–37.0% bracket into a **floor of 9.5% of walks** — the pattern of `level_pressure`'s lesson in reverse: this time the extra arm strengthened the claim. Still missing: closure-rate validation against Bulkowski's own numbers (breakaway ~1% filled within a week, common ~85–90%), any forward test, and a disjoint universe/period — one sample means PROVISIONAL under the repo's holdout rule.
+
+## Bull-flag template matching — the published threshold cannot tell real charts from noise
+
+`src/core/pip.js` implements the Leigh 10×10 weight-template bull flag (via [Fernandes 2022](https://repositorio-aberto.up.pt/bitstream/10216/146608/2/597048.pdf), corroborated by [Cervelló-Royo et al. 2015](https://doi.org/10.1016/j.eswa.2015.03.017); the [2002 original](https://www.sciencedirect.com/science/article/abs/pii/S0957417402000349) is paywalled and unread, recorded as such), plus PIP downsampling. Also unregistered.
+
+The published threshold is **T = 3 at a 20-day window**. Two arms, same scan:
+
+| threshold | real windows % | noise windows % |
+|---|---|---|
+| T=3 pip | **17.6** | **17.1** |
+| T=3 rank | 10.0 | 6.7 |
+| T=5 rank | 0.2 | 0.2 |
+| T=7 pip | 0.7 | 0.3 |
+
+**At the published threshold the PIP mapping matches real charts and pure noise at the same rate.** Real charts trend; a bull-flag template firing no more on real data than on noise is the template failing to see what it claims to see — the strongest evidence yet that the 62–104% annualised excess returns those studies report did not come from the template. Every 200-bar walk of pure noise contains at least one T = 3 match (12 under rank, 31 under PIP). Selectivity exists only at thresholds the papers never used (T ≥ 5 rank, T ≥ 7 PIP), and even there the real-over-noise lift is at most ~2× on sub-1% rates. The two mappings disagree on purpose — rank reads only ordering (a 4% and a 40% pullback map identically), PIP scales prices — and the disagreement is the output, in the `lmw_patterns.js` second-opinion sense.
