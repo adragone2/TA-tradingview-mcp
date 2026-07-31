@@ -15,6 +15,7 @@
  * when that horizon has no data.
  */
 import * as ta from './ta_api.js';
+import { resolveTaSymbol } from './ta_symbols.js';
 
 // Matches STRENGTH_THRESHOLD in walls_scanner.py. If that constant changes,
 // this must change with it or the indicator's strength banding will disagree
@@ -384,29 +385,68 @@ export async function applyWalls({ symbol, walls, vol, dry_run = false } = {}) {
 /**
  * Apply walls across several symbols, switching the chart to each in turn.
  * The chart is returned to where it started.
+ *
+ * Every ticker goes through resolveTaSymbol BEFORE the chart is driven:
+ * TradingView reads a hyphen as a SPREAD operator, so a TA ticker like BTC-USD
+ * does not fail — it silently loads CRYPTOCAP:BTC-BATS:USD, a synthetic series
+ * with a real price, and the walls would land on the wrong instrument under the
+ * right name. Unchartable tickers are SKIPPED with the reason (separately from
+ * FAILED — one was never attempted, the other broke), and every load is
+ * verified against what the chart says it loaded, the same guard
+ * scripts/sunday-review.js loadSymbol() uses, because the resolver cannot know
+ * every trap: BRK-B is a share class, not crypto, and still reads as a spread.
+ *
+ * `walls`, `vol`, `chart` and `applyOne` are injectable for tests, like
+ * buildWallsJson's fixtures; live callers pass none of them.
  */
-export async function applyWallsForSymbols({ symbols, dry_run = false } = {}) {
+export async function applyWallsForSymbols({ symbols, dry_run = false, walls, vol, chart: chartDep, applyOne } = {}) {
   const list = (symbols || []).map(bareTicker).filter(Boolean);
   if (!list.length) throw new Error('symbols is required, e.g. ["SMH","XLK"].');
 
-  const chart = await import('./chart.js');
-  const walls = await loadWalls();
-  const vol = await volatility();
+  // Data before chart: a failure to load walls must not leave the chart moved.
+  const wallsData = walls || await loadWalls();
+  const v = vol || await volatility();
+  const chart = chartDep || await import('./chart.js');
+  const apply = applyOne || applyWalls;
 
+  // Captured lazily, just before the first symbol actually drives the chart —
+  // an all-skipped list then never touches the shared chart at all, not even
+  // to "restore" it to where it already is.
   let originalSymbol = null;
   let originalTimeframe = null;
-  try {
-    const s = await chart.getState();
-    originalSymbol = s.symbol;
-    originalTimeframe = s.resolution;
-  } catch { /* restore becomes best-effort */ }
+  let driven = false;
 
   const results = [];
   try {
     for (const sym of list) {
+      const resolved = resolveTaSymbol(sym);
+      if (!resolved.chartable) {
+        results.push({ symbol: sym, ok: false, skipped: true, why: resolved.why });
+        continue;
+      }
       try {
-        await chart.setSymbol({ symbol: sym });
-        const r = await applyWalls({ symbol: sym, walls, vol, dry_run });
+        if (!driven) {
+          driven = true;
+          try {
+            const s = await chart.getState();
+            originalSymbol = s.symbol;
+            originalTimeframe = s.resolution;
+          } catch { /* restore becomes best-effort */ }
+        }
+        const load = await chart.setSymbol({ symbol: resolved.symbol });
+        // setSymbol reports what the chart ACTUALLY loaded. Compare bare forms:
+        // "SMH" legitimately loads as "BATS:SMH", but a spread's last segment
+        // ("USD", "B") never matches the ticker asked for. No answer is also a
+        // refusal — an unverifiable load must not have walls written onto it.
+        const got = String(load?.resolved_symbol || '').replace(/^.*:/, '').toUpperCase();
+        const want = resolved.expect.toUpperCase();
+        if (!got || got !== want) {
+          throw new Error(
+            `chart returned ${load?.resolved_symbol || 'no symbol'}, expected ${resolved.symbol} — `
+            + `refusing to write ${sym}'s walls onto a different instrument`,
+          );
+        }
+        const r = await apply({ symbol: sym, walls: wallsData, vol: v, dry_run });
         results.push({ symbol: sym, ok: true, as_of: r.as_of, flip: r.payload.flip, applied: r.applied, warnings: r.warnings });
       } catch (err) {
         results.push({ symbol: sym, ok: false, error: err.message });
@@ -422,12 +462,14 @@ export async function applyWallsForSymbols({ symbols, dry_run = false } = {}) {
   }
 
   const ok = results.filter((r) => r.ok).length;
+  const skipped = results.filter((r) => r.skipped).length;
   return {
     success: true,
-    as_of: walls.asOf,
+    as_of: wallsData.asOf,
     requested: list.length,
     applied: ok,
-    failed: results.length - ok,
+    skipped,
+    failed: results.length - ok - skipped,
     chart_restored_to: originalSymbol ? { symbol: originalSymbol, timeframe: originalTimeframe } : null,
     results,
     note: 'Walls are written into the indicator per symbol. The chart shows one symbol at a time, so re-apply when switching to a symbol you have not done yet.',

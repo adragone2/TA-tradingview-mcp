@@ -50,7 +50,7 @@ export function registerTaWallsTools(server) {
 
   server.tool(
     'walls_apply_many',
-    'Apply walls across several symbols, switching the chart to each in turn and restoring it afterwards. The indicator holds one symbol\'s walls at a time, so this is for pre-loading a sweep rather than showing them all at once.',
+    'Apply walls across several symbols, switching the chart to each in turn and restoring it afterwards. The indicator holds one symbol\'s walls at a time, so this is for pre-loading a sweep rather than showing them all at once. Unchartable tickers (crypto forms like BTC-USD, which TradingView silently loads as a SPREAD) are skipped with the reason, and every load is verified against what the chart actually loaded.',
     {
       symbols: z.array(z.string()).describe('Tickers to apply, e.g. ["SMH","XLK","XLE"]'),
       dry_run: z.coerce.boolean().optional().describe('Build without writing'),
