@@ -58,7 +58,7 @@ import * as drawing from '../src/core/drawing.js';
 import { scannerTrust } from '../src/core/session.js';
 import { allFactors } from '../src/core/factors.js';
 import { equalWeightBreadth, BREADTH_COLUMNS, BREADTH_PAIRS } from '../src/core/breadth_ew.js';
-import { finvizConstraints, applyTradability } from '../src/core/finviz.js';
+import { beginConstraints, applyTradability } from '../src/core/finviz.js';
 import { requiredColumns } from '../src/core/screen_check.js';
 import { fetchGroupRows } from '../src/core/groups.js';
 import * as ta from '../src/core/ta_api.js';
@@ -117,6 +117,38 @@ for (const s of eligible) {
     + (s.post ? ` -> ${String(r.rows.length).padStart(4)} after cross-row step` : ''));
 }
 
+/**
+ * ── the Finviz scrape STARTS HERE, and is awaited before the watchlist write ──
+ *
+ * It used to sit where its answer is consumed, so the run reached the gate, drove
+ * the chart for minutes, and THEN stopped dead and scraped — inside a window that
+ * has to finish before the open. Every one of those seconds was spent with the
+ * chart idle, because this touches NO chart and no TradingView socket: it is a
+ * Python process talking to finviz.com.
+ *
+ * MEASURED at 284s for 20 names, not the ~90s that motivated the change. It is
+ * pagination-bound (1854 + 1915 + 392 rows at 20 a page, ~210 requests), so it does
+ * not shrink with a shorter ticker list — which is exactly why it has to be hidden
+ * rather than trimmed.
+ *
+ * The three scrapes stay SERIAL inside the one Python process. That is the rate
+ * discipline `scripts/finviz/finviz_screen.py` states in its own header, and it is
+ * left alone — the whole batch is overlapped with the chart work instead, which
+ * hides all of it rather than two thirds of it.
+ *
+ * The PRE-GATE set, not the survivors, because the survivors do not exist yet.
+ * `enrich` answers by SET MEMBERSHIP against three fixed queries, so the ticker
+ * list only decides which names are REPORTED — asking about 150 costs exactly what
+ * asking about 20 costs. And it is a strict superset: `gateAndSelect` selects from
+ * the same `rows.slice(0, PRE)`, so nothing that survives can be missing from the
+ * answer. If one ever were, `applyTradability` reads it as null — unknown, which
+ * vetoes nothing — rather than inventing a negative.
+ */
+const preGate = [...new Set(screenResults.flatMap((r) => r.rows.slice(0, PRE).map((x) => x.symbol)))];
+const tradabilityJob = beginConstraints(preGate);
+log(`\n  Finviz tradability started in the background for ${preGate.length} pre-gate name(s)`
+  + ' — it scrapes, it never touches the chart');
+
 // ── stage 2: OUR detectors, before anything is selected ─────────────────────
 //
 // The chart is driven here, one symbol at a time, so the lock above is already
@@ -148,8 +180,7 @@ async function loadBars(symbol) {
 const before = await chart.getState();
 const original = before?.symbol || null;
 
-const uniqueIn = new Set(screenResults.flatMap((r) => r.rows.slice(0, PRE).map((x) => x.symbol)));
-log(`\n  gating ${uniqueIn.size} unique symbol(s) with assess() + ourAssessment()...`);
+log(`\n  gating ${preGate.length} unique symbol(s) with assess() + ourAssessment()...`);
 const { perScreen, gated } = await gateAndSelect(screenResults, loadBars, {
   pre_gate: PRE,
   per_scanner: PER,
@@ -174,38 +205,6 @@ for (const t of ['intraday', 'weekly', 'monthly']) {
 if (unclassified.length) {
   log(`  UNCLASSIFIED ${unclassified.length}: ${unclassified.map((u) => bare(u.symbol)).join(' ')}`);
   for (const u of unclassified) log(`      ${bare(u.symbol)}: ${u.why}`);
-}
-
-/**
- * ── the tradability constraint ─────────────────────────────────────────────
- *
- * Finviz answers what TradingView cannot: is this name optionable AND shortable,
- * and does it report this week. This is NOT a ninth screen — it finds nothing. It
- * removes a candidate our detectors already chose, for a reason those detectors
- * cannot see: a BEARISH read on a name with no borrow is not a trade.
- *
- * Direction-aware, because shortability only binds on something we would short.
- * And a failed scrape vetoes NOTHING — unknown is not a negative.
- */
-const allSelected = [...tiers.intraday, ...tiers.weekly, ...tiers.monthly]
-  .map((x) => ({ ...x, bias: x.stage2?.bias ?? null }));
-let tradability = { available: false, tickers: {}, why: 'not run' };
-let tradabilityResult = { kept: allSelected, vetoed: [], flagged: [], note: 'not run' };
-if (allSelected.length) {
-  log('\n  checking tradability (Finviz: optionable/shortable, earnings this week)...');
-  tradability = await finvizConstraints(allSelected.map((x) => x.symbol));
-  tradabilityResult = applyTradability(allSelected, tradability);
-  log(`    ${tradabilityResult.note}`);
-  for (const v of tradabilityResult.vetoed) log(`    VETOED ${bare(v.symbol)} — ${v.why}`);
-  for (const f of tradabilityResult.flagged) log(`    flag   ${bare(f.symbol)} — ${f.why}`);
-
-  // Drop the vetoed names from their tier before anything is written.
-  const dead = new Set(tradabilityResult.vetoed.map((v) => v.symbol));
-  if (dead.size) {
-    for (const t of ['intraday', 'weekly', 'monthly']) {
-      tiers[t] = tiers[t].filter((x) => !dead.has(x.symbol));
-    }
-  }
 }
 
 // ── tier A factors ──────────────────────────────────────────────────────────
@@ -288,6 +287,82 @@ try {
   tiers.monthly.sort((a, b) => (inTop(b.symbol) ? 1 : 0) - (inTop(a.symbol) ? 1 : 0));
 } catch (e) {
   log(`  factors FAILED: ${e.message}`);
+}
+
+/**
+ * ── the tradability constraint ─────────────────────────────────────────────
+ *
+ * Finviz answers what TradingView cannot: is this name optionable AND shortable,
+ * and does it report this week. This is NOT a ninth screen — it finds nothing. It
+ * removes a candidate our detectors already chose, for a reason those detectors
+ * cannot see: a BEARISH read on a name with no borrow is not a trade.
+ *
+ * Direction-aware, because shortability only binds on something we would short.
+ * And a failed scrape vetoes NOTHING — unknown is not a negative.
+ *
+ * ── This is only the AWAIT. The scrape started before the gate. ──
+ *
+ * It sits AS LATE AS THE SEMANTICS ALLOW, which is here: a veto has to remove a
+ * name before the watchlist is written, so this is the last legal point. Between
+ * the start and here the run does the whole detector gate, the watchlist read, the
+ * breadth scan and the 2000-row factor scan — all of which used to happen while
+ * this had not been started, and then the run stopped dead and scraped.
+ *
+ * The cost is worth stating, because the estimate that motivated this was wrong by
+ * three times: MEASURED at 284s for 20 names, not the ~90s assumed. It is
+ * pagination-bound — 1854 + 1915 + 392 rows at 20 rows a page is ~210 page
+ * requests — so it does not shrink with a smaller ticker list. `hidden_ms` reports
+ * what the overlap actually absorbed rather than asserting a saving.
+ *
+ * The SPY fetch cannot be brought into this window: it drives the chart, and it
+ * happens after the watchlist write, which is after the veto by definition.
+ */
+const allSelected = [...tiers.intraday, ...tiers.weekly, ...tiers.monthly]
+  .map((x) => ({ ...x, bias: x.stage2?.bias ?? null }));
+let tradability = { available: false, tickers: {}, why: 'not run' };
+let tradabilityResult = { kept: allSelected, vetoed: [], flagged: [], note: 'not run' };
+let tradabilityOverlap = null;
+if (!allSelected.length) {
+  // Nothing survived the gate, so there is nothing to constrain. Blocking minutes
+  // for an answer about an empty list is the same waste in a different place.
+  tradabilityJob.cancel('nothing survived the gate');
+  tradability = { available: false, tickers: {}, why: 'cancelled — nothing survived the gate' };
+} else {
+  log('\n  awaiting tradability (Finviz: optionable/shortable, earnings this week — started before the gate)...');
+  const waitFrom = Date.now();
+  tradability = await tradabilityJob.promise;
+  const waited = Date.now() - waitFrom;
+  tradabilityOverlap = {
+    started: 'immediately after the scanners, before the detector gate',
+    awaited: 'after the factor scan, before the watchlist is written — the last point a veto can act',
+    scrape_ms: tradability.duration_ms ?? null,
+    waited_ms: waited,
+    hidden_ms: Math.max(0, (tradability.duration_ms ?? 0) - waited),
+    requested: tradabilityJob.requested.length,
+    // Every selected name should already be in the answer — see the start site.
+    not_requested: allSelected.map((x) => bare(x.symbol).toUpperCase())
+      .filter((s) => !tradabilityJob.requested.includes(s)),
+    why: 'The scrape touches no chart, so it runs alongside the detector gate and the scanner fetches. '
+      + 'Serial inside Python by design (its own rate discipline); the WHOLE batch is overlapped instead.',
+  };
+  log(`    interpreter ${tradability.python || 'NONE'}, scrape ${(tradabilityOverlap.scrape_ms / 1000).toFixed(1)}s,`
+    + ` blocked ${(waited / 1000).toFixed(1)}s — ${(tradabilityOverlap.hidden_ms / 1000).toFixed(1)}s hidden behind the chart work`);
+  if (tradabilityOverlap.not_requested.length) {
+    log(`    NOTE ${tradabilityOverlap.not_requested.length} selected name(s) were not in the pre-gate ask`
+      + ` — they read as unknown and veto nothing: ${tradabilityOverlap.not_requested.join(' ')}`);
+  }
+  tradabilityResult = applyTradability(allSelected, tradability);
+  log(`    ${tradabilityResult.note}`);
+  for (const v of tradabilityResult.vetoed) log(`    VETOED ${bare(v.symbol)} — ${v.why}`);
+  for (const f of tradabilityResult.flagged) log(`    flag   ${bare(f.symbol)} — ${f.why}`);
+
+  // Drop the vetoed names from their tier before anything is written.
+  const dead = new Set(tradabilityResult.vetoed.map((v) => v.symbol));
+  if (dead.size) {
+    for (const t of ['intraday', 'weekly', 'monthly']) {
+      tiers[t] = tiers[t].filter((x) => !dead.has(x.symbol));
+    }
+  }
 }
 
 // ── stage 4: the watchlist ──────────────────────────────────────────────────
@@ -514,7 +589,8 @@ if (ANALYSE && analysisSet.length) {
        * name worth looking at" is a daily question. Only the per-ticker analysis
        * moves to the tier's own chart.
        */
-      const policy = timeframeFor(String(tierOf(sym) || '').toLowerCase());
+      const tierKey = String(tierOf(sym) || '').toLowerCase();
+      const policy = timeframeFor(tierKey);
       let bars = cached?.bars;
       let series = seriesCache.get(sym)?.series ?? null;
       const onDaily = policy.analysis === '1D';
@@ -539,6 +615,13 @@ if (ANALYSE && analysisSet.length) {
       const r = await analyzeTicker({
         draw: DRAW,
         shared: { ...shared, series, bars },
+        /**
+         * P3.5: the execution tier, for the entry hypothesis's window
+         * annotation. This run fires at 05:30 PT — every INTRADAY name is
+         * analysed ~105 minutes before its own 10:15-14:30 ET window opens,
+         * and the plan now says so instead of leaving it to be remembered.
+         */
+        tier: tierKey || null,
         /**
          * NARROWER than the interactive default, deliberately.
          *
@@ -661,10 +744,17 @@ const report = {
    * The tradability constraint. NOT a screen — it finds nothing, it only removes.
    * `vetoed` is direction-aware (a bearish read with no borrow); `flagged` is
    * carried rather than acted on. An unavailable Finviz vetoes nothing.
+   *
+   * `python` and `attempts` are here because "no interpreter" and "the site was
+   * down" both used to surface as the same shrug. The first is a machine that
+   * needs `FINVIZ_PYTHON` set; the second is nothing anyone can fix.
    */
   tradability: {
     available: tradability.available,
     why_unavailable: tradability.why,
+    python: tradability.python ?? null,
+    interpreter_attempts: tradability.attempts ?? [],
+    overlap: tradabilityOverlap,
     note: tradabilityResult.note,
     vetoed: tradabilityResult.vetoed,
     flagged: tradabilityResult.flagged,

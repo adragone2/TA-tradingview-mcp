@@ -20,7 +20,7 @@ node scripts/morning-screen.js
 | 2 | Top **15 per scanner** into **our detectors** — `assess()` + `ourAssessment()`, every rejection carrying its reason |
 | 3 | Top **5 survivors** per scanner. Not the five the scanner ranked highest — the five that passed |
 | 4 | One **execution tier** each, from the strategy's `execution` field: INTRADAY / WEEKLY / MONTHLY |
-| 5 | **Tradability constraint** (Finviz) — a BEARISH read on a name that is not optionable-and-shortable is VETOED. Direction-aware: the same name on a bullish read is kept and flagged, because a long needs no borrow. Finviz unreachable vetoes **nothing** |
+| 5 | **Tradability constraint** (Finviz) — a BEARISH read on a name that is not optionable-and-shortable is VETOED. Direction-aware: the same name on a bullish read is kept and flagged, because a long needs no borrow. Finviz unreachable vetoes **nothing**. Started before the detector gate and awaited just before the watchlist write — 284s measured, ~190s of it hidden behind chart work; `tradability.overlap.hidden_ms` in the report says what was actually absorbed |
 | 6 | Those three watchlist sections rewritten. Any `KEEP*` section is **untouched** — not rewritten, not analysed, not cleared |
 | 7 | The **full unified analysis** (`analyzeTicker`, all 44 contract sections) on every name written, drawn on its chart |
 | 8 | `reports/morning-screen-YYYY-MM-DD.json` + `morning-screen-latest.json` |

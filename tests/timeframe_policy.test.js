@@ -330,8 +330,16 @@ describe('the wiring', () => {
 
   test('the routine picks the timeframe from the tier, not a constant', () => {
     const m = src('scripts/morning-screen.js');
-    assert.match(m, /timeframeFor\(String\(tierOf\(sym\)/,
-      'the analysis timeframe must be derived from the section the symbol landed in');
+    // P3.5 integration (2026-07-30): the tier expression is hoisted to
+    // `tierKey` so the same value feeds BOTH the timeframe policy and
+    // analyzeTicker's execution-window annotation — one derivation, two
+    // consumers, no way for them to disagree.
+    assert.match(m, /const tierKey = String\(tierOf\(sym\) \|\| ''\)\.toLowerCase\(\)/,
+      'the tier must be derived from the section the symbol landed in');
+    assert.match(m, /timeframeFor\(tierKey\)/,
+      'the analysis timeframe must come from that tier');
+    assert.match(m, /tier: tierKey \|\| null/,
+      'and the SAME tier must reach analyzeTicker, so the execution-window annotation fires on the 05:30 run');
     assert.match(m, /chart\.setTimeframe\(\{ timeframe: policy\.analysis \}\)/);
   });
 
