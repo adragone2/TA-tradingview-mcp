@@ -54,7 +54,7 @@ export function registerEvidenceTools(server) {
 
   server.tool(
     'vcp_check',
-    'Minervini\'s volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior advance. Every clause is a number, and every check is reported with its value and requirement — so a near miss tells you WHICH clause failed instead of just "no". Measured selectivity: zero detections across 200 random walks, against 68% for our structural patterns and 43% for the Lo/Mamaysky/Wang definitions. A VCP is a SETUP, not a direction; nothing here forecasts the breakout.',
+    'Minervini\'s volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior advance. Every clause is a number, and every check is reported with its value and requirement — so a near miss tells you WHICH clause failed instead of just "no". Measured selectivity: zero detections across 200 random walks, against 64.5% for our structural patterns and 37.9% for the Lo/Mamaysky/Wang definitions. A VCP is a SETUP, not a direction; nothing here forecasts the breakout.',
     {
       count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
       min_contractions: z.coerce.number().optional().describe('Minimum contractions required (default 3)'),
@@ -117,7 +117,7 @@ export function registerEvidenceTools(server) {
     'Locate swing pivots by kernel regression, then read each one from the ACTUAL bar high or low — the step from Lo, Mamaysky & Wang that keeps every reported price one that traded. Also returns the converging/diverging verdict measured BETWEEN REAL PIVOTS, which is the check that catches a detector describing its own fitted boundary lines instead of the price. On CSCO this reported diverging where the geometric detector reported converging; the pivots were right.',
     {
       count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
-      bandwidth_multiplier: z.coerce.number().optional().describe('Multiple of the cross-validated bandwidth (default 1.0). LMW use 0.3; measured here, 0.3 finds 98.9 pivots per random walk against 73.9 at 1.0'),
+      bandwidth_multiplier: z.coerce.number().optional().describe('Multiple of the cross-validated bandwidth (default 1.0). LMW use 0.3; measured here (after the P2.7 ordering fix), 0.3 finds 56.7 pivots per 200-bar random walk against 51.7 at 1.0'),
       window_bars: z.coerce.number().optional().describe('Only use the last N bars'),
     },
     wrap(async ({ count = 300, bandwidth_multiplier = 1.0, window_bars = null }) => {
@@ -134,7 +134,7 @@ export function registerEvidenceTools(server) {
 
   server.tool(
     'patterns_lmw',
-    'The Lo/Mamaysky/Wang pattern definitions verbatim (head-and-shoulders, broadening, triangle, rectangle, double top/bottom) as a SECOND OPINION on patterns_detect — different pivot detector, different rules, so disagreement is informative. Ships with two facts that decide how to read it: the original 2000 result did NOT reproduce out of sample (Nekrasov 2010, "not anymore reproducible", only rectangle surviving), and these definitions match 43.4% of five-pivot windows drawn from PURE RANDOM WALKS. Never use as a screen; use where it disagrees with a selective detector.',
+    'The Lo/Mamaysky/Wang pattern definitions verbatim (head-and-shoulders, broadening, triangle, rectangle, double top/bottom) as a SECOND OPINION on patterns_detect — different pivot detector, different rules, so disagreement is informative. Ships with two facts that decide how to read it: the original 2000 result did NOT reproduce out of sample (Nekrasov 2010, "not anymore reproducible", only rectangle surviving), and these definitions match 37.9% of five-pivot windows drawn from PURE RANDOM WALKS (43.4% before the P2.7 kernel ordering fix removed the same-bar pivot pairs inflating the rectangles). Never use as a screen; use where it disagrees with a selective detector.',
     {
       count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
       window: z.coerce.number().optional().describe('Rolling window in bars (default 38, the paper\'s l=35 + d=3). Pass 0 to scan the whole series'),

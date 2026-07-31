@@ -394,11 +394,12 @@ export const CHANNEL_NOISE_BASELINE = {
     // swing detector; 75 after, on the same 40-walk harness. See
     // patterns.NOISE_BASELINE, which also carries the 200-walk arm showing the
     // move is really ~+3 points and that 40 walks was over-reading by ~10.
-    structural_patterns_pct: 75,
-    // Unchanged by the pivot swap, measured: lmw_patterns reads kernel extrema
-    // directly and never went through findSwings. Channels likewise — 33.5% on
-    // both arms of a paired 200-walk run.
-    lmw_definitions_pct: 43.4,
+    structural_patterns_pct: 83,
+    // Unchanged by the P2.3 pivot swap (lmw reads kernel extrema directly and
+    // never went through findSwings) — but P2.7's ordering fix in the kernel
+    // ITSELF moved it: same-bar pivot pairs had been inflating the rectangle
+    // definitions. 43.4 -> 37.9. Channels stayed 33.5% on both arms.
+    lmw_definitions_pct: 37.9,
     vcp_pct: 0,
     pennants_pct: 0,
   },

@@ -438,7 +438,7 @@ window that has to finish before the open.
 
 | Deliberately does NOT gate | Why |
 |---|---|
-| Pattern presence | 68% of random walks contain one, and the screens already select for shape. |
+| Pattern presence | 64.5% of random walks contain one, and the screens already select for shape. |
 | `stage_plan` alignment | Forward-tested NEGATIVE as a gate — long 33.5% vs a 36.4% baseline. |
 | Two-leader group agreement | Measured to cost 9.3 points of win rate. |
 

@@ -19,5 +19,5 @@ console.log(`walks: ${WALKS} of ${BARS} bars`);
 console.log(`  ANY channel found:    ${any} (${(any / WALKS * 100).toFixed(1)}%)`);
 console.log(`  STABLE (>=3 windows): ${stable} (${(stable / WALKS * 100).toFixed(1)}%)`);
 console.log(`  by direction:`, byDir);
-console.log('\nFor comparison: structural patterns fire on 68% of random walks;');
-console.log('the LMW definitions match 43.4% of five-pivot windows; VCP fires on 0%.');
+console.log('\nFor comparison: structural patterns fire on 64.5% of random walks;');
+console.log('the LMW definitions match 37.9% of five-pivot windows; VCP fires on 0%.');

@@ -15,7 +15,7 @@
  *
  * The top-third clause is the whole reason this was worth measuring. Without
  * it the shape is an ordinary inside bar after a big bar, and the structural
- * pattern family already fires on 68% of random walks. A geometric constraint
+ * pattern family already fires on 64.5% of random walks. A geometric constraint
  * that tight ought to cut the rate hard, the way NR7's does. Whether it
  * actually does is an empirical question and IGNITION_NOISE_BASELINE is the
  * answer, not this comment.

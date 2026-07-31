@@ -120,7 +120,7 @@ continuation is not documented.
 | | Noise floor |
 |---|---|
 | VCP, pennants | 0% — genuinely selective shapes |
-| flags, triangles, wedges, rectangles | structural family 68% of random walks |
+| flags, triangles, wedges, rectangles | structural family 64.5% of random walks |
 | channels | 33.5% found, 12% stable |
 | breakout of a prior high | 32.5%, 17.5% passing 3+ checks |
 | Crabel contraction/expansion | 100%, and **no lift over noise** (76.4% real vs 80.2% random) |

@@ -137,7 +137,10 @@ describe('VCP_NOISE_BASELINE', () => {
   });
 
   test('keeps the comparison to the looser detectors alongside', () => {
-    assert.match(VCP_NOISE_BASELINE.for_comparison.structural_patterns_any, /68%/);
-    assert.match(VCP_NOISE_BASELINE.for_comparison.lmw_definitions, /43\.4%/);
+    // P2.7/P2.8 review (2026-07-30): figures moved with the measurements —
+    // 68% was a 40-walk harness (64.5% unified), and 43.4% predated the
+    // kernel ordering fix (37.9% after).
+    assert.match(VCP_NOISE_BASELINE.for_comparison.structural_patterns_any, /64\.5%/);
+    assert.match(VCP_NOISE_BASELINE.for_comparison.lmw_definitions, /37\.9%/);
   });
 });

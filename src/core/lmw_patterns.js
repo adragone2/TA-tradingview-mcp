@@ -57,49 +57,97 @@ export const LMW_REPLICATION = {
 /**
  * How often each definition fires on RANDOM data.
  *
- * Measured by scripts/lmw-permissiveness.js over 4,209 five-pivot windows
+ * Measured by scripts/lmw-permissiveness.js over 2,888 five-pivot windows
  * taken from 60 random walks of 200 bars, pivots from kernel regression at the
- * cross-validated bandwidth. Reproduce with:
+ * cross-validated bandwidth. Reproduce with either of:
  *
- *     node scripts/lmw-permissiveness.js
+ *     node scripts/lmw-permissiveness.js      (this table, pattern by pattern)
+ *     node scripts/detector-noise.js          (the headline, cross-checked
+ *                                              against the constant below)
  *
- * This is the number that decides how to use this module. **43.4% of random
+ * This is the number that decides how to use this module. **37.9% of random
  * five-pivot windows match at least one definition.** These are not selective
  * detectors, and this module is therefore NOT registered as a scanner — it is
  * a second opinion whose DISAGREEMENT with src/core/patterns.js is the useful
  * signal.
  *
- * For comparison, our own structural detector reports 0.78 patterns per
- * 200-bar random walk. The academic definitions report roughly 50. Ours is far
+ * For comparison, our own structural detector reports 0.73 patterns per
+ * 200-bar random walk. The academic definitions report 46.8. Ours is far
  * more selective, which was not the expected result.
  *
  * The ordering is worth noting. The inequality-chain patterns (triangle,
  * broadening) are the MOST selective at ~2% each. The permissive ones are
- * rectangle at 13.6% and head-and-shoulders at ~9%, because their tolerance
- * terms (0.75% and 1.5% of an average) are easy to satisfy when pivots happen
+ * head-and-shoulders at ~9.5% and rectangle at ~8.6%, because their tolerance
+ * terms (1.5% and 0.75% of an average) are easy to satisfy when pivots happen
  * to cluster.
  *
- * That last point casts a shadow over the one result that did replicate:
- * rectangle was the only pattern to survive in Nekrasov's reproduction, and
- * rectangle is also the definition that fires most often on noise. A pattern
- * that fires often yields a larger conditional sample and therefore more power
- * in a KS test — significance without an edge would look exactly like this.
+ * ── The figures MOVED, and the correction changes an argument ──
+ *
+ * These were 43.4% overall and rectangle 13.6% until P2.7 fixed the index
+ * inversion in `findKernelPivots`. This module consumed the RAW kernel sequence,
+ * and that sequence contained adjacent pivots mapped onto the SAME BAR — a
+ * bar's high and its low, presented as two consecutive turns. A same-bar pair is
+ * about as flat as two extrema can be, so it satisfied `withinPct(tops, 0.75)`
+ * almost for free, and the rectangle definitions were the ones collecting the
+ * benefit. Fixing the sequence took rectangle_top from 13.6% to 8.8% and
+ * rectangle_bottom from 13.6% to 8.4% while every other definition rose by
+ * 0.1-0.5 points, and the window count from 4,209 to 2,888.
+ *
+ * The old table said rectangle was the most permissive definition here, and
+ * that was used to cast a shadow over the one result that DID replicate —
+ * rectangle was the only pattern to survive Nekrasov's reproduction, and a
+ * pattern that fires often yields a larger conditional sample and therefore
+ * more power in a KS test, so significance without an edge would look exactly
+ * like this. That argument is now WEAKER: rectangle is no longer the most
+ * permissive definition, head-and-shoulders is, and the gap between rectangle
+ * and the field has closed from 4.4 points to under 1. The mechanism is still
+ * worth stating, because 8.6% is still four times the triangle rate — but it no
+ * longer singles rectangle out, and the previous version of this comment
+ * over-argued it on the strength of an artefact.
  */
 export const LMW_NOISE_PROFILE = {
-  measured_on: '4209 five-pivot windows from 60 random walks of 200 bars',
+  measured_on: '2888 five-pivot windows from 60 random walks of 200 bars',
   bandwidth_multiplier: 1.0,
-  any_definition_pct: 43.4,
+  any_definition_pct: 37.9,
   by_pattern_pct: {
-    rectangle_bottom: 13.6,
-    rectangle_top: 13.6,
-    inverse_head_and_shoulders: 9.4,
-    head_and_shoulders: 9.2,
-    triangle_top: 2.0,
-    broadening_top: 1.9,
-    broadening_bottom: 1.8,
-    triangle_bottom: 1.8,
+    head_and_shoulders: 9.7,
+    inverse_head_and_shoulders: 9.3,
+    rectangle_top: 8.8,
+    rectangle_bottom: 8.4,
+    triangle_top: 2.4,
+    broadening_bottom: 2.3,
+    triangle_bottom: 2.3,
+    broadening_top: 2.0,
   },
-  our_detector_for_comparison: '0.78 structural patterns per 200-bar random walk (src/core/patterns.js NOISE_BASELINE)',
+  detections_per_walk: 46.8,
+  pivots_per_walk: 52.1,
+  our_detector_for_comparison: '0.73 structural patterns per 200-bar random walk, 64.5% of walks containing one '
+    + '(src/core/patterns.js NOISE_BASELINE.unified_harness)',
+  /**
+   * The pre-P2.7 table, kept so the size of the correction stays visible and a
+   * regression is obvious. Same script, same seeds, same bandwidth — the only
+   * thing that changed is that `findKernelPivots` no longer emits two pivots on
+   * one bar or in the wrong order.
+   */
+  previously: {
+    measured_on: '4209 five-pivot windows from 60 random walks of 200 bars',
+    any_definition_pct: 43.4,
+    by_pattern_pct: {
+      rectangle_bottom: 13.6,
+      rectangle_top: 13.6,
+      inverse_head_and_shoulders: 9.4,
+      head_and_shoulders: 9.2,
+      triangle_top: 2.0,
+      broadening_top: 1.9,
+      broadening_bottom: 1.8,
+      triangle_bottom: 1.8,
+    },
+    detections_per_walk: 71.4,
+    pivots_per_walk: 74.2,
+    why: 'Measured on a raw kernel sequence that emitted index-inverted and same-bar adjacent pivots. At the '
+      + 'cross-validated bandwidth (h ~= 0.5) that defect is large — it inflated the pivot count by ~42% and '
+      + 'the rectangle definitions by ~5 points each. Fixed at source in kernel.js (P2.7).',
+  },
   implication: 'Do not use these definitions as a screen. Use them as a second opinion: agreement adds little, '
     + 'disagreement with a selective detector is worth investigating.',
 };
@@ -282,6 +330,6 @@ export function detectLmwPatterns(bars, {
       + 'read from actual bar highs and lows.',
     health_warning: `${LMW_NOISE_PROFILE.any_definition_pct}% of five-pivot windows drawn from PURE RANDOM WALKS match at `
       + 'least one of these definitions. Treat a detection here as "the shape is consistent with the textbook definition", '
-      + 'never as a signal. Our own detector reports 0.78 patterns per random walk against roughly 50 for these.',
+      + 'never as a signal. Our own detector reports 0.73 patterns per random walk against roughly 47 for these.',
   };
 }

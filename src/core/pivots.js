@@ -149,13 +149,27 @@ function memoKey(o) {
  *   1. STRICTLY INCREASING INDEX.
  *   2. ALTERNATING kind.
  *
- * (2) `findKernelPivots` already does. (1) it does NOT, and the gap is real:
+ * (2) `findKernelPivots` already did. (1) it did NOT, and the gap was real:
  * measured over 200 random walks of 300 bars at lookback 5, **23 pivot pairs
- * came back out of index order**. The cause is the map-back step — two adjacent
- * smoothed extrema search overlapping bar windows (`map_window` either side),
- * so extremum at t=50 can map to bar 51 while the one at t=51 maps to bar 50.
- * The kernel's alternation pass runs on `kind` and never looks at the index, so
- * it lets the inversion through.
+ * came back out of index order** — 9 genuinely inverted and 14 on the same bar.
+ * The cause is the map-back step — two adjacent smoothed extrema search
+ * overlapping bar windows (`map_window` either side), so the extremum at t=50
+ * can map to bar 51 while the one at t=51 maps to bar 50. The kernel's
+ * alternation pass ran on `kind` and never looked at the index, so it let the
+ * inversion through.
+ *
+ * FIXED AT SOURCE (P2.7). `findKernelPivots` now enforces both post-conditions
+ * itself, with these same two rules, so the sequence arriving here already
+ * satisfies them — measured 23 -> 0 on that null, and this function's output is
+ * byte-identical afterwards apart from one pivot in 14,342 at lookback 2. This
+ * stays as DEFENCE IN DEPTH: it is what the ~27 consumers downstream actually
+ * rely on, and it is the only guard if the kernel is ever changed again or a
+ * caller assembles a pivot list by hand.
+ *
+ * Consequently the `!sameKind && notAfter` branch below is now UNREACHABLE from
+ * `findKernelPivots` — it is exercised only by hand-built input. Do not delete
+ * it on that evidence; an unreachable guard is the point of a second layer, and
+ * the branch was reachable for the whole life of the module before P2.7.
  *
  * That has to be caught here because the fractal detector this replaces sorted
  * its output by index, and everything downstream assumes it: `classifyLegs`

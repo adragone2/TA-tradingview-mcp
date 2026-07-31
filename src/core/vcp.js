@@ -54,8 +54,8 @@ export const VCP_NOISE_BASELINE = {
   detections: 0,
   rate_pct: 0,
   for_comparison: {
-    structural_patterns_any: '68% of random walks contain at least one (patterns.js NOISE_BASELINE)',
-    lmw_definitions: '43.4% of five-pivot windows match at least one (lmw_patterns.js LMW_NOISE_PROFILE)',
+    structural_patterns_any: '64.5% of random walks contain at least one (patterns.js NOISE_BASELINE, unified 200-walk harness)',
+    lmw_definitions: '37.9% of five-pivot windows match at least one (lmw_patterns.js LMW_NOISE_PROFILE)',
   },
   caveat: 'Selectivity is not accuracy. Firing rarely on noise says detections are rare, not that they resolve well.',
 };

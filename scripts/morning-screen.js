@@ -709,7 +709,7 @@ const report = {
     what_can_reject: ['market_regime.tradeable (efficiency vs the random-walk baseline)',
       'ourAssessment().tradeable', 'bars that will not load or are too short'],
     what_deliberately_does_not: [
-      'pattern presence — 68% of random walks contain one, and the screens already select for shape',
+      'pattern presence — 64.5% of random walks contain one, and the screens already select for shape',
       'stage_plan alignment — forward-tested NEGATIVE as a gate, long 33.5% vs a 36.4% baseline',
       'two-leader group agreement — measured to cost 9.3 points of win rate',
     ],

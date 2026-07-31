@@ -21,7 +21,7 @@
  *
  * What does NOT gate, on purpose:
  *
- *   - Pattern presence. 68% of random walks contain a structural pattern, and the
+ *   - Pattern presence. 64.5% of random walks contain a structural pattern, and the
  *     screens already select for shape. Requiring one would filter on noise.
  *   - `stage_plan` alignment. Forward-tested NEGATIVE as a gate — long 33.5% vs a
  *     36.4% baseline. It describes; it must not select.

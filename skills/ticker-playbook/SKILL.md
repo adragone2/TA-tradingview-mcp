@@ -183,7 +183,7 @@ Read `patterns_detect` carefully, because three of its fields decide the answer:
 - **`status`** — `forming` is NOT a signal. A pattern completes when price CLOSES through
   its completion level, and Bulkowski's statistics are measured *from the breakout onward*,
   so they do not apply to a forming shape. The tool says so; repeat it.
-- **`noise_check`** — compares each detection against its random-walk rate. 68% of random
+- **`noise_check`** — compares each detection against its random-walk rate. 64.5% of random
   walks contain at least one structural pattern, so a detection *at* the floor is nothing.
 - **`breakout_levels`** on NR4/NR7/inside bars — these are the concrete numbers an entry
   hypothesis is built from.

@@ -584,7 +584,7 @@ export const PIP_NOISE_BASELINE = Object.freeze({
     reproduce: 'node scripts/gaps-real-arm.js',
   }),
 
-  for_comparison: 'structural patterns 68% of random walks; LMW definitions 43.4% of five-pivot windows; '
+  for_comparison: 'structural patterns 64.5% of random walks (unified 200-walk harness); LMW definitions 37.9% of five-pivot windows; '
     + 'VCP 0%; pennants 0%.',
 
   reproduce: 'node scripts/detector-noise.js --walks 200',

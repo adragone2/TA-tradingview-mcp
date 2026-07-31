@@ -20,6 +20,9 @@ import * as B from '../src/core/breakout.js';
 import * as G from '../src/core/gaps.js';
 import * as P from '../src/core/pip.js';
 import * as CUP from '../src/core/cup.js';
+import { detectPatterns, STRUCTURAL_PATTERNS, NOISE_BASELINE } from '../src/core/patterns.js';
+import { classifyFive, LMW_NOISE_PROFILE } from '../src/core/lmw_patterns.js';
+import { findKernelPivots } from '../src/core/kernel.js';
 
 const args = process.argv.slice(2);
 const i = args.indexOf('--walks');
@@ -88,10 +91,109 @@ console.log(`${'detector'.padEnd(pad)}   walks%   per-walk`);
 for (const [k, v] of Object.entries(out)) {
   console.log(`${k.padEnd(pad)}   ${String(v.walks_with_any_pct).padStart(5)}   ${String(v.per_walk).padStart(7)}${v.errors ? `   (${v.errors} errors)` : ''}`);
 }
-console.log('\nFor comparison: structural patterns 75% of walks, LMW definitions 43.4%,');
-console.log('channels 33.5% (12% stable), VCP 0%, pennants 0%.');
-console.log('(Structural patterns was 68% before the pivot backbone; measured at 200 walks the');
-console.log(' move is 58% -> 61%, so the 40-walk harness both figures come from over-reads by ~10.)');
+console.log('\nFor comparison: channels 33.5% (12% stable), VCP 0%, pennants 0%.');
+console.log('Structural patterns and the LMW definitions are MEASURED below rather than quoted.');
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * patterns.js — the denominator vsNoise divides by.
+ *
+ * `NOISE_BASELINE.per_walk` used to be three harnesses filed as one: seven rows
+ * from `measure(detect, { walk_trials: 40 })` with the TEST wrapper's options
+ * (lookback 4, window_bars 90, max_age_bars 400) on measure()'s null, three
+ * rectangle rows from `detectPatterns` at its DEFAULTS over 200 walks of the
+ * null below, and the cup from this script. Each row was measured; nothing lined
+ * up, and `per_walk_provenance` sat at UNRESOLVED for it.
+ *
+ * It is measured HERE now because this is where the numerator's procedure can be
+ * matched: `vsNoise` divides a count taken from `detectPatterns` at its
+ * defaults, so the floor has to be taken the same way. Running it beside the
+ * other detectors on the same null is the point — patterns.js was the one module
+ * whose floor could not be compared with anything else in this file.
+ *
+ * The DIFF column is the part that earns its keep. A threshold change inside
+ * patterns.js moves these numbers and nothing else in the repo notices; here it
+ * shows up as drift against the recorded constant on the next run.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+{
+  const occ = {}, walksWith = {};
+  let anyWalks = 0, total = 0;
+  for (let s = 0; s < WALKS; s++) {
+    const names = (detectPatterns(walk(s), { lookback: 5 }).structural || []).map((p) => p.pattern);
+    if (names.length) anyWalks++;
+    total += names.length;
+    for (const n of names) occ[n] = (occ[n] || 0) + 1;
+    for (const n of new Set(names)) walksWith[n] = (walksWith[n] || 0) + 1;
+  }
+  const rec = NOISE_BASELINE.per_walk;
+  const recWalks = NOISE_BASELINE.per_walk_provenance.walks;
+
+  console.log(`\n\n=== patterns.js structural — ${WALKS} walks of ${BARS} bars, detectPatterns at DEFAULTS ===`);
+  console.log(`  detections/walk ${(total / WALKS).toFixed(3)}   walks with any pattern ${((anyWalks / WALKS) * 100).toFixed(1)}%`);
+  console.log(`  (recorded: ${NOISE_BASELINE.unified_harness.detections_per_walk} and ${NOISE_BASELINE.unified_harness.walks_with_any_pattern_pct}%)\n`);
+  console.log('  pattern                          occ   per_walk   walks%   recorded   diff');
+  let drift = 0;
+  for (const p of STRUCTURAL_PATTERNS) {
+    const o = occ[p] || 0, pw = o / WALKS, r = rec[p];
+    const d = r == null ? null : pw - r;
+    if (d != null && Math.abs(d) > 1e-9) drift++;
+    console.log(`  ${p.padEnd(28)} ${String(o).padStart(5)}   ${pw.toFixed(3).padStart(8)}   ${(((walksWith[p] || 0) / WALKS) * 100).toFixed(1).padStart(6)}   `
+      + `${(r == null ? 'MISSING' : r.toFixed(3)).padStart(8)}   ${d == null ? '' : `${d >= 0 ? '+' : ''}${d.toFixed(3)}`}`);
+  }
+  console.log(WALKS === recWalks
+    ? (drift
+      ? `\n  DRIFT: ${drift} row(s) differ from NOISE_BASELINE.per_walk. Re-record it or find what changed.`
+      : '\n  All rows match NOISE_BASELINE.per_walk exactly.')
+    : `\n  (recorded at ${recWalks} walks; this run used ${WALKS}, so the diff column is sampling error as much as drift)`);
+  console.log('  Read walks% rather than per_walk before quoting selectivity. Every row is under 0.35 even at');
+  console.log('  400 bars, so vsNoise calls a SINGLE detection "clearly above the noise floor" for every pattern');
+  console.log('  here — the discriminating number is how often a walk contains one at all.');
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * lmw_patterns.js — the academic definitions, measured per five-pivot WINDOW.
+ *
+ * Deliberately NOT on this script's null. `LMW_NOISE_PROFILE` was measured by
+ * scripts/lmw-permissiveness.js on measure()'s generator, and the point of
+ * re-running it here is to diff against that constant — changing the null would
+ * change the number and destroy the comparison. The generator is therefore
+ * spelled out rather than reusing `walk` above.
+ *
+ * This is the arm that moved when the kernel's index inversion was fixed: the
+ * raw sequence used to contain adjacent pivots mapped onto the SAME BAR, and a
+ * bar's high and low read as a very flat top and bottom, which is exactly what
+ * the rectangle definition's 0.75% tolerance rewards.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+{
+  const LMW_WALKS = 60;
+  const lmwWalk = (w) => barsFromPath(randomWalk({ n: 200, seed: 5000 + w }), { noise: 0.005, seed: 9000 + w });
+  const counts = {};
+  let windows = 0, withAny = 0, pivotTotal = 0;
+  for (let w = 0; w < LMW_WALKS; w++) {
+    const { pivots } = findKernelPivots(lmwWalk(w), { bandwidth_multiplier: LMW_NOISE_PROFILE.bandwidth_multiplier });
+    pivotTotal += pivots.length;
+    for (let i = 0; i + 4 < pivots.length; i++) {
+      windows++;
+      const hits = classifyFive(pivots.slice(i, i + 5));
+      if (hits.length) withAny++;
+      for (const h of hits) counts[h] = (counts[h] || 0) + 1;
+    }
+  }
+  const anyPct = Number(((withAny / windows) * 100).toFixed(1));
+  console.log(`\n\n=== lmw_patterns.js — ${LMW_WALKS} walks of 200 bars, seeds 5000/9000 (the constant's own null) ===`);
+  console.log(`  five-pivot windows ${windows}   pivots/walk ${(pivotTotal / LMW_WALKS).toFixed(1)}`);
+  console.log(`  ANY definition ${anyPct}%   (recorded ${LMW_NOISE_PROFILE.any_definition_pct}%${anyPct === LMW_NOISE_PROFILE.any_definition_pct ? ' — match' : ' — DRIFT'})`);
+  console.log('\n  definition                     fires   % of windows   recorded');
+  for (const [name, n] of Object.entries(counts).sort((x, y) => y[1] - x[1])) {
+    const pct = ((n / windows) * 100).toFixed(1);
+    const r = LMW_NOISE_PROFILE.by_pattern_pct[name];
+    console.log(`  ${name.padEnd(28)} ${String(n).padStart(5)}   ${pct.padStart(12)}   ${(r == null ? 'MISSING' : `${r}%`).padStart(8)}`);
+  }
+  console.log('\n  These are not selective detectors and this module is not a scanner. Its value is DISAGREEMENT');
+  console.log(`  with a selective one: ${anyPct}% of random five-pivot windows match at least one definition,`);
+  console.log(`  against ${NOISE_BASELINE.unified_harness.walks_with_any_pattern_pct}% of whole walks containing any structural pattern at all.`);
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * gaps.js — and the reason it could not use the walk above.
@@ -330,4 +432,6 @@ for (const [rim, base] of [[3, 25], [4, 30], [5, 35], [6, 40], [8, 45]]) {
 console.log('\nRead the 300-bar arm as the operational floor — it is the length the workflow loads.');
 console.log('The failing-clause table says WHICH clause earns the selectivity; a bare rate with no');
 console.log('attribution is a claim, not a measurement.');
-console.log('For comparison: VCP 0%, pennants 0%, springs/upthrusts 0%, any structural pattern 61%.');
+console.log(`For comparison: VCP 0%, pennants 0%, springs/upthrusts 0%, any structural pattern ${NOISE_BASELINE.unified_harness.walks_with_any_pattern_pct}%`);
+console.log('(200-bar walks — see the patterns.js arm above, and note the cup is measured INSIDE that');
+console.log(' figure as well as on its own here, at a lower rate because detectPatterns ages it out).');

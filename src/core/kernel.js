@@ -118,6 +118,10 @@ export function optimalBandwidth(values, { min = 0.5, max = null, steps = 24 } =
  * Consecutive extrema are forced to alternate max/min. For a smooth function
  * that is automatic; after mapping back to real prices it occasionally is not,
  * and a run of two maxima would silently corrupt any E1..E5 pattern test.
+ *
+ * The sequence is also STRICTLY INCREASING IN INDEX, which used to be assumed
+ * rather than delivered — see the collapse below for the mechanism that broke
+ * it, what it cost, and which pivot survives a pair that arrives out of order.
  */
 export function findKernelPivots(bars, {
   bandwidth = null,
@@ -146,6 +150,10 @@ export function findKernelPivots(bars, {
 
   // Map each smoothed extremum onto the real extreme nearby. THIS is the step
   // that keeps every reported price a price that actually traded.
+  //
+  // Adjacent extrema search OVERLAPPING windows here — each takes ±map_window
+  // around its own smoothed turn, and two turns can be one bar apart. The
+  // collapse below is where that overlap gets paid for.
   const mapped = raw.map((e) => {
     const lo = Math.max(0, e.index - map_window);
     const hi = Math.min(bars.length - 1, e.index + map_window);
@@ -165,14 +173,90 @@ export function findKernelPivots(bars, {
     };
   });
 
-  // Enforce alternation. Where two of a kind land in a row, keep the more
-  // extreme — that is the one the pattern definitions care about.
+  /**
+   * Collapse to the two post-conditions this function promises: consecutive
+   * pivots ALTERNATE high/low, and their indices STRICTLY INCREASE.
+   *
+   * ── The index one used to be assumed, and it was false ──
+   *
+   * Adjacent smoothed extrema search OVERLAPPING bar windows. A derivative sign
+   * change one bar after another is legal and common on a noisy series — a high
+   * at t needs `smooth[t+1] <= smooth[t]`, a low at t+1 needs
+   * `smooth[t+1] < smooth[t]` and `smooth[t+2] >= smooth[t+1]`, and the smallest
+   * downward wiggle satisfies both. At `map_window` 1 the high then searches
+   * [t-1, t+1] and the low searches [t, t+2]: two bars in common. If the highest
+   * high sits at t+1 and the lowest low at t, the pair maps back OUT OF ORDER —
+   * or onto the SAME bar, one bar reported as both a swing high and a swing low.
+   *
+   * Measured on the standard null — 200 walks of 300 bars,
+   * `barsFromPath(randomWalk({n:300, seed:7000+s}), {noise:0.006, seed:8000+s})`,
+   * bandwidth 2.0 — the old alternation-only pass emitted **23 adjacent pairs
+   * that were not strictly increasing: 9 genuinely inverted and 14 landing on
+   * the same bar.** It tested `kind` and never looked at the index, so every one
+   * went straight through. The defect scales with how fine the smoothing is,
+   * because finer smoothing puts extrema closer together: 0.15% of pivots at
+   * bandwidth 3.2, 0.34% at 2.0, 1.64% at 1.2, **8.02% at 0.8**.
+   *
+   * Nothing downstream throws on an inversion, which is why it survived this
+   * long: `classifyLegs` slices `bars.slice(a.index + 1, b.index + 1)` and gets
+   * an EMPTY leg, `structuralPatterns` gets a NEGATIVE bar separation. They
+   * measure nothing and say so nowhere. `pivots.js` repairs its own copy in
+   * `enforceInvariants`, but `pivots_kernel` and `lmw_patterns.js` read this
+   * sequence RAW.
+   *
+   * ── Which pivot survives ──
+   *
+   * The same two rules `pivots.enforceInvariants` uses, and for the same
+   * reasons, because the reasoning transfers unchanged:
+   *
+   *   - Two of a KIND in a row: keep the more EXTREME. That is the one the
+   *     pattern definitions care about.
+   *   - Different kinds, wrong order: keep the EARLIER. Neither is "more
+   *     extreme" than the other in any comparable sense, and dropping the later
+   *     one cannot reorder anything already emitted. An inversion means two
+   *     smoothed turns claimed the same stretch of bars, and only one of them
+   *     is the turn.
+   *
+   * The replacement in the same-kind branch is guarded against the element
+   * BEFORE it. Successive mapped indices can step backward by up to
+   * `map_window`, so swapping a lower-indexed pivot into the tail could break
+   * the ordering against its predecessor — the one case `enforceInvariants` does
+   * not cover, and the reason this is not a straight copy of it. Say what it is
+   * worth honestly: over 200 walks of 300 bars the guard fired ZERO times, at
+   * bandwidth 0.8 and 2.0 and at `map_window` 1, 2 and 3. It closes a hole the
+   * algebra permits, not one that has been seen.
+   *
+   * The two rules cost 46 pivots per 200 walks at bandwidth 2.0 — 23 dropped for
+   * being out of order, and 23 more collapsed because removing a low between two
+   * highs leaves two highs adjacent.
+   *
+   * ── The alternative, measured and NOT taken ──
+   *
+   * The overlap can be PREVENTED rather than repaired: clip each extremum's
+   * window at the midpoint between it and each neighbouring smoothed turn. The
+   * windows are then provably disjoint, provably non-empty (each still contains
+   * its own smoothed index), and still a subset of `[t±map_window]`, so both
+   * pivots of an inverted pair survive at distinct real-bar extremes. It was
+   * implemented and measured: inversions 23 -> 0 the same way, but it also
+   * REVIVES every pivot `enforceInvariants` had been deleting, which moves the
+   * whole backbone — `findPivots` gains 0.7% of its pivots at lookback 5 and
+   * **17.7% at lookback 2** (31.2% of that set changes), and
+   * `PIVOT_DENSITY.matched_counts_400_bars` goes stale (lookback 2:
+   * kernel_at_mapping 97.08 measured, 113.65 after). That is a re-calibration of
+   * the pivot backbone and every detector floor sitting on it, not a noise-floor
+   * repair, so it is recorded here rather than smuggled in under this one.
+   */
   const pivots = [];
   for (const p of mapped) {
     const last = pivots[pivots.length - 1];
-    if (!last || last.kind !== p.kind) { pivots.push(p); continue; }
+    if (!last) { pivots.push(p); continue; }
+    if (last.kind !== p.kind) {
+      if (p.index > last.index) pivots.push(p);
+      continue;
+    }
     const keepNew = p.kind === 'high' ? p.price > last.price : p.price < last.price;
-    if (keepNew) pivots[pivots.length - 1] = p;
+    const prior = pivots[pivots.length - 2];
+    if (keepNew && (!prior || p.index > prior.index)) pivots[pivots.length - 1] = p;
   }
 
   return {

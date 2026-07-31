@@ -2,7 +2,7 @@
  * Does the 1-2-3's top-third clause earn its place?
  *
  * The shape is a structural continuation pattern, and that family already fires
- * on 68% of random walks. The only thing that could make this one worth having
+ * on 64.5% of random walks. The only thing that could make this one worth having
  * is its geometry: the resting bar confined to the top third of the igniting
  * bar. So the measurement is a COMPARISON, not a single number —
  *
@@ -64,7 +64,7 @@ for (const [label, opts] of Object.entries(ARMS)) {
 
 const full = results['full rule (top third + must ignite)'].pct_of_walks;
 const noZone = results['without the top-third clause'].pct_of_walks;
-console.log(`\nstructural family baseline for comparison: 68% of random walks`);
+console.log(`\nstructural family baseline for comparison: 64.5% of random walks`);
 console.log(`top-third clause changes the rate ${noZone.toFixed(1)}% -> ${full.toFixed(1)}%`);
 console.log(full < 20
   ? `\nVERDICT: worth building. ${full}% is well under the 68% structural floor.`

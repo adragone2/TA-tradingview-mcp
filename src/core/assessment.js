@@ -193,7 +193,7 @@ export function assess(bars, spy) {
     passes_stability_check: stable.length > 0,
     pivot_width: { verdict: width.verdict, start: width.width_start ?? null, end: width.width_end ?? null, change_pct: width.change_pct ?? null },
     lmw_second_opinion_count: (lmwOut.patterns || []).length,
-    lmw_noise_floor_pct: 43.4,
+    lmw_noise_floor_pct: 37.9,
     noise_check: (pats.noise_check || []).map((n) => n.verdict),
   };
 

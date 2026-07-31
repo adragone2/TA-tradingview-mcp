@@ -1774,9 +1774,6 @@ export function statsFor(pattern, { direction = null } = {}) {
 /**
  * How often each structural pattern appears in PURE NOISE.
  *
- * Measured with src/core/synthetic.js over 40 seeded random walks of 200 bars
- * each, at lookback 4 — the same settings detectPatterns uses by default.
- *
  * These are the numbers that decide whether a detection means anything.
  *
  * The first measurement was damning: 19.3 patterns per 200-bar random walk,
@@ -1792,11 +1789,100 @@ export function statsFor(pattern, { direction = null } = {}) {
  * The floor is not zero and cannot be. `rectangle` and the wedges still appear
  * in noise, which is why the baseline is reported rather than assumed away.
  *
- * Re-measure with `node --test tests/synthetic.test.js` after any change to
- * detection thresholds.
+ * ── `per_walk`: the provenance, RESOLVED (P2.8) ──
+ *
+ * `per_walk` is the denominator `vsNoise` divides by, and it used to be a
+ * MIXTURE of three harnesses under a header that declared one. It carried
+ * `per_walk_provenance: 'UNRESOLVED'` because a re-measurement could not
+ * reproduce it "at any walk count" and found roughly double the recorded values.
+ * Reconstructed from the history, every row is now accounted for:
+ *
+ *   - The SEVEN non-rectangle rows (falling_wedge 0.18, inverse_head_and_
+ *     shoulders 0.13, rising_wedge 0.08, double_top / triple_top /
+ *     ascending_triangle / descending_triangle 0.03) came from
+ *     `measure(detect, { walk_trials: 40 })` at commit ccc9c9c, where `detect`
+ *     is `tests/synthetic.test.js`'s wrapper — **lookback 4, window_bars 90,
+ *     max_age_bars 400**, on `measure()`'s own null (seeds 5000+t / 9000+t,
+ *     noise 0.005). Re-run against a checkout of that commit it reproduces to
+ *     the digit, including `detections_per_walk` 0.78 and 68% of walks. So the
+ *     header was right about these and the "cannot be reproduced" finding was
+ *     over-generalised from the rectangles.
+ *   - The THREE rectangle rows (0.065 / 0.015 / 0.035) came from commit
+ *     8be7a31, which split `rectangle: 0.3` three ways and said so in its
+ *     message: "on 200 random walks 13 / 3 / 7 occurrences". Those are
+ *     13/200, 3/200, 7/200 — and they reproduce EXACTLY from a completely
+ *     different harness: `detectPatterns(bars)` at its DEFAULTS (lookback 5,
+ *     window_bars 60, max_age_bars 60) over 200 walks of the detector-noise
+ *     null (seeds 7000+s / 8000+s, noise 0.006).
+ *   - `cup_with_handle: 0.11` came from `scripts/detector-noise.js`, which the
+ *     comment on that row already said.
+ *
+ * Three harnesses, two different nulls, two detector configurations, three walk
+ * counts. Nothing was fabricated; the rows were each measured and then filed
+ * together as if they shared a method. The re-measurement that flagged this used
+ * the TEST wrapper at 200 walks and compared it against rows measured at
+ * defaults, which is why the rectangles looked "roughly double" — `lookback 4`
+ * with `max_age_bars 400` is a materially more permissive configuration than the
+ * one production runs.
+ *
+ * ── What replaced it, and why THAT procedure ──
+ *
+ * `vsNoise`'s NUMERATOR is `counts[pattern]` computed a few lines below it, off
+ * `detectPatterns(bars, opts).structural` — and every production caller runs at
+ * or near the defaults (`assessment.js` passes `{ lookback: 5 }`,
+ * `playbook.js` passes `{ lookback }`, `tools/patterns.js` passes the tool's
+ * args). A denominator measured with the age filter disabled and a finer
+ * lookback is answering a different question than the numerator asks. So the
+ * whole table is now measured by ONE procedure, the same one the numerator
+ * uses:
+ *
+ *     detectPatterns(bars, { lookback: 5 })          // i.e. the defaults
+ *     bars = barsFromPath(randomWalk({ n: 200, seed: 7000 + s }),
+ *                         { noise: 0.006, seed: 8000 + s })
+ *     200 walks, counting OCCURRENCES in `.structural`
+ *
+ *     node scripts/detector-noise.js                 // re-measures and diffs
+ *
+ * That is the detector-noise null every other module's floor in this repo is
+ * measured against, so patterns.js is now comparable with zones, wyckoff,
+ * elliott, divergence, breakout, gaps, pip and cup instead of being the one
+ * module on its own generator.
+ *
+ * ── What the correction changes ──
+ *
+ * Ten of the eleven rows moved. `inverse_head_and_shoulders` was recorded at
+ * 0.13 and measures 0.005 — 26x too HIGH, which is the unflattering direction:
+ * `vsNoise` was calling genuine inverse-H&S detections indistinguishable from
+ * noise. The rectangles were recorded low and measure higher. And TEN patterns
+ * had no row at all — head_and_shoulders, double_bottom, triple_bottom,
+ * symmetrical_triangle, broadening_formation, the flags and the pennants — so
+ * `vsNoise` returned `null` for them and `noise_check` silently dropped them
+ * from the output. Every one of the 21 names in STRUCTURAL_PATTERNS now has a
+ * measured entry, including the three that measure ZERO.
+ *
+ * Read the WALK RATE, not just the per-walk figure. Every row is below 0.35 even
+ * at 400 bars, so `count > expected * 2` is satisfied by a SINGLE detection for
+ * every pattern on any normal chart — `vsNoise`'s "clearly above the noise
+ * floor" verdict cannot fail for count >= 1. That was equally true of the old
+ * table and is a property of the comparison, not of this measurement: the
+ * quantity that actually discriminates is `walks_with_pattern_pct` below,
+ * where a specific pattern appears in 0-10% of pure random walks and SOME
+ * pattern appears in 64.5% of them.
  */
 export const NOISE_BASELINE = {
+  /**
+   * 200 bars is the length EVERY arm here uses, and `vsNoise` scales its
+   * expectation by `bars / NOISE_BASELINE.bars`. Do not change it without
+   * re-measuring: it is a divisor, not a label.
+   */
   bars: 200,
+  /**
+   * The walk count for `detections_per_walk` and `walks_with_any_pattern_pct`
+   * ONLY. `per_walk` is 200 walks of a different harness — see
+   * `per_walk_provenance`. Two numbers under one `walks` field is how the
+   * provenance got lost in the first place, so it is spelled out rather than
+   * assumed.
+   */
   walks: 40,
   // Pennants, measured separately over 200 walks when they were added:
   // 0 detections, against 8/8 on constructed truth for both directions.
@@ -1809,41 +1895,146 @@ export const NOISE_BASELINE = {
   // bull_flag also returned bullish_pennant — the pause window had swallowed
   // the pole's last leg and converged for the wrong reason.
   flag_cross_detected_as_pennant_pct: 0,
-  detections_per_walk: 0.85,
-  walks_with_any_pattern_pct: 75,
+  /**
+   * The two headline figures from the OLD harness — `measure(detect, {
+   * walk_trials: 40 })` with `tests/synthetic.test.js`'s wrapper, lookback 4 /
+   * window_bars 90 / max_age_bars 400. Kept because every published figure in
+   * this repo's history is on that harness and dropping it would break the
+   * comparison; read `unified_harness` below for the procedure `per_walk` and
+   * `vsNoise` actually use.
+   *
+   * Both were STALE and are re-measured here. They were recorded before
+   * `cup_with_handle` was added to `detectPatterns`, and the cup fires on 18% of
+   * these walks: 0.85 -> 1.02 per walk, 75% -> 83% of walks. The arithmetic
+   * closes exactly — 1.02 minus the cup's 0.18 is the 0.84 that was rounded to
+   * 0.85 — so nothing else moved. Confirmed unrelated to the P2.7 kernel fix by
+   * running this harness against a pre-fix checkout: identical, 1.02 and 83%.
+   */
+  detections_per_walk: 1.02,
+  walks_with_any_pattern_pct: 83,
+  before_cup_was_added: {
+    detections_per_walk: 0.85,
+    walks_with_any_pattern_pct: 75,
+    note: 'The same 40-walk harness before cupPatterns joined detectPatterns (commit 5a0dc9b). Kept so the '
+      + 'cup\'s contribution to the floor is visible rather than absorbed into a headline nobody re-measured.',
+  },
+  /**
+   * THE DENOMINATOR `vsNoise` DIVIDES BY. One harness, stated in
+   * `per_walk_provenance` below and re-runnable with `node
+   * scripts/detector-noise.js`, chosen because it is the one the NUMERATOR uses.
+   *
+   * Every name in STRUCTURAL_PATTERNS has an entry, including the three that
+   * measure zero — a missing key makes `vsNoise` return `null` and
+   * `noise_check` drop the pattern from the output without saying so, which is
+   * how ten of these went unchecked.
+   */
   per_walk: {
-    // Rectangles, measured over 200 walks when prior-trend typing split them
-    // into three names. Typing does not make the shape rarer — it distributes
-    // the same detections — so the three together are what the old single
-    // `rectangle: 0.3` figure covered.
-    rectangle: 0.065,
-    bullish_rectangle: 0.015,
-    bearish_rectangle: 0.035,
-    falling_wedge: 0.18,
-    inverse_head_and_shoulders: 0.13,
+    double_top: 0.005,
+    double_bottom: 0.01,
+    triple_top: 0.005,
+    triple_bottom: 0.01,
+    head_and_shoulders: 0.01,
+    inverse_head_and_shoulders: 0.005,
+    ascending_triangle: 0.085,
+    descending_triangle: 0.055,
+    symmetrical_triangle: 0.015,
+    rectangle: 0.08,
+    bullish_rectangle: 0.045,
+    bearish_rectangle: 0.045,
     rising_wedge: 0.08,
-    double_top: 0.03,
-    triple_top: 0.03,
-    ascending_triangle: 0.03,
-    descending_triangle: 0.03,
+    falling_wedge: 0.1,
+    broadening_formation: 0.065,
+    bull_flag: 0.01,
+    bear_flag: 0.005,
+    high_tight_flag: 0,
+    bullish_pennant: 0,
+    bearish_pennant: 0,
     /**
-     * MEASURED, and it is the largest number in this table by a factor of sixty.
-     *
-     * 0.11 per 200-bar walk = 11% of walks, from `scripts/detector-noise.js`
-     * (seeds 7000/8000, noise 0.006) rather than from the `measure()` harness the
-     * rows above came from — stated because those rows have an UNRESOLVED
-     * provenance (see per_walk_provenance) and mixing two harnesses silently is
-     * how that note came to exist.
-     *
      * `vsNoise` scales LINEARLY in bar count and the cup does NOT: its floor is
      * 7/11/23.5/35% at 150/200/300/400 bars, because the detector reports the best
      * of every rim PAIR and pairs grow quadratically. So on a 300-bar chart vsNoise
-     * reports ~0.17 expected where the measured rate is 0.235 — it UNDERSTATES the
+     * reports ~0.15 expected where the measured rate is 0.235 — it UNDERSTATES the
      * floor by a third, in the flattering direction. Read
      * CUP_NOISE_BASELINE.length_dependence rather than the vsNoise verdict for
      * this one pattern.
      */
-    cup_with_handle: 0.11,
+    cup_with_handle: 0.1,
+  },
+  /** Share of walks containing the pattern AT ALL. Same run as `per_walk`. */
+  walks_with_pattern_pct: {
+    double_top: 0.5,
+    double_bottom: 1,
+    triple_top: 0.5,
+    triple_bottom: 1,
+    head_and_shoulders: 1,
+    inverse_head_and_shoulders: 0.5,
+    ascending_triangle: 8.5,
+    descending_triangle: 5.5,
+    symmetrical_triangle: 1.5,
+    rectangle: 8,
+    bullish_rectangle: 4.5,
+    bearish_rectangle: 4.5,
+    rising_wedge: 8,
+    falling_wedge: 10,
+    broadening_formation: 6.5,
+    bull_flag: 1,
+    bear_flag: 0.5,
+    high_tight_flag: 0,
+    bullish_pennant: 0,
+    bearish_pennant: 0,
+    cup_with_handle: 10,
+  },
+  /** The same harness's headline figures, for comparison with the 40-walk pair above. */
+  unified_harness: {
+    walks: 200,
+    bars: 200,
+    detections_per_walk: 0.73,
+    walks_with_any_pattern_pct: 64.5,
+  },
+  /**
+   * How much of the table is SAMPLING ERROR. Ten rows are 1-3 raw occurrences
+   * in 200 walks, where a Poisson 95% interval on a single event runs from 0.03
+   * to 5.6 events — so those rows say "rare", not "0.005".
+   *
+   * The same harness at 1,000 walks, for the size of the wobble: the headline
+   * moves 0.73 -> 0.701 per walk and 64.5% -> 61.2% of walks, and the rows that
+   * move most are the rare ones — inverse_head_and_shoulders 0.005 -> 0.024,
+   * ascending_triangle 0.085 -> 0.060, bullish_rectangle 0.045 -> 0.027,
+   * rising_wedge 0.080 -> 0.098. The recorded values stay at 200 walks so that
+   * the default `node scripts/detector-noise.js` reproduces them; quote the
+   * 1,000-walk column when a row matters on its own.
+   *
+   * None of that changes a VERDICT. Every row is under 0.35 even at 400 bars, so
+   * a single detection clears `count > expected * 2` either way.
+   */
+  precision: {
+    walks_1000: {
+      detections_per_walk: 0.701,
+      walks_with_any_pattern_pct: 61.2,
+      per_walk: {
+        double_top: 0.004,
+        double_bottom: 0.006,
+        triple_top: 0.003,
+        triple_bottom: 0.012,
+        head_and_shoulders: 0.01,
+        inverse_head_and_shoulders: 0.024,
+        ascending_triangle: 0.06,
+        descending_triangle: 0.057,
+        symmetrical_triangle: 0.022,
+        rectangle: 0.079,
+        bullish_rectangle: 0.027,
+        bearish_rectangle: 0.032,
+        rising_wedge: 0.098,
+        falling_wedge: 0.093,
+        broadening_formation: 0.075,
+        bull_flag: 0.006,
+        bear_flag: 0.001,
+        high_tight_flag: 0,
+        bullish_pennant: 0.001,
+        bearish_pennant: 0,
+        cup_with_handle: 0.091,
+      },
+    },
   },
   /**
    * The floor MOVED when swings moved to the kernel backbone — and the size of
@@ -1867,9 +2058,13 @@ export const NOISE_BASELINE = {
    */
   cross_check_200_walks: {
     before_pivot_backbone: { walks_with_any_pattern_pct: 58, detections_per_walk: 0.67 },
-    after: { walks_with_any_pattern_pct: 61, detections_per_walk: 0.69 },
+    after: { walks_with_any_pattern_pct: 69, detections_per_walk: 0.85 },
+    after_before_cup_was_added: { walks_with_any_pattern_pct: 61, detections_per_walk: 0.69 },
     note: 'Same measure() harness, walk_trials raised from 40 to 200. The 40-walk figures above are the '
-      + 'published methodology; these are the better-estimated ones.',
+      + 'published methodology; these are the better-estimated ones. `after` was re-measured when the 40-walk '
+      + 'pair was: it had also gone stale on the cup, 0.69 -> 0.85 and 61% -> 69%. The pivot-backbone comparison '
+      + 'is 58% -> 61%, i.e. against `after_before_cup_was_added`, because the cup did not exist on either side '
+      + 'of that change.',
   },
   before_pivot_backbone: {
     detections_per_walk: 0.78,
@@ -1878,18 +2073,62 @@ export const NOISE_BASELINE = {
       + 'effect of changing the pivot source is visible rather than absorbed.',
   },
   /**
-   * NOT re-measured, and the reason is a discrepancy that predates the pivot
-   * backbone: the rows above cannot be reproduced from `measure()` at any walk
-   * count. The pre-change tree at 200 walks gives rectangle 0.13 against the
-   * 0.065 recorded here, bullish_rectangle 0.06 against 0.015 — roughly double,
-   * consistently. So this table came from a harness (different seeds, different
-   * noise, or a different detector configuration) that is no longer identified
-   * anywhere. `vsNoise` divides by these numbers, so it is currently comparing
-   * against a floor about half the measured one, which is the FLATTERING
-   * direction. Flagged rather than silently overwritten, because replacing it
-   * with numbers from a third harness would repeat the mistake.
+   * RESOLVED. The full archaeology is in the comment above the constant; this is
+   * the procedure a reader has to be able to re-run.
    */
-  per_walk_provenance: 'UNRESOLVED — see the comment above per_walk. Predates the pivot backbone.',
+  per_walk_provenance: {
+    status: 'RESOLVED — one harness, and it is the one vsNoise\'s numerator uses',
+    detector: 'detectPatterns(bars, { lookback: 5 }) — i.e. the module defaults: window_bars 60, max_age_bars 60',
+    null: 'barsFromPath(randomWalk({ n: 200, seed: 7000 + s }), { noise: 0.006, seed: 8000 + s })',
+    walks: 200,
+    counts: 'OCCURRENCES in .structural, not walks containing one — walks_with_pattern_pct carries that separately',
+    reproduce: 'node scripts/detector-noise.js',
+    why_this_procedure: 'vsNoise divides a count taken from detectPatterns at its defaults. A denominator measured '
+      + 'with a finer lookback and the age filter switched off answers a different question than the numerator asks.',
+    why_this_null: 'The seeds 7000/8000 at noise 0.006 are the null every other floor in this repo is measured '
+      + 'against (zones, wyckoff, elliott, divergence, breakout, gaps, pip, cup, crabel), so these figures are now '
+      + 'comparable with those instead of sitting on their own generator.',
+  },
+  /**
+   * The table this replaced, with what each row actually was. Kept because the
+   * lesson is not "the numbers were wrong" — every one of them was measured —
+   * but that three measurements were filed together as if they shared a method.
+   *
+   * `inverse_head_and_shoulders` is the row worth staring at: recorded 0.13,
+   * measures 0.005 under the procedure the numerator uses. That is 26x too HIGH,
+   * so `vsNoise` was telling a reader that a real inverse head-and-shoulders was
+   * indistinguishable from noise.
+   */
+  per_walk_previously: {
+    values: {
+      rectangle: 0.065,
+      bullish_rectangle: 0.015,
+      bearish_rectangle: 0.035,
+      falling_wedge: 0.18,
+      inverse_head_and_shoulders: 0.13,
+      rising_wedge: 0.08,
+      double_top: 0.03,
+      triple_top: 0.03,
+      ascending_triangle: 0.03,
+      descending_triangle: 0.03,
+      cup_with_handle: 0.11,
+    },
+    harness_a: 'The seven non-rectangle rows: measure(detect, { walk_trials: 40 }) at commit ccc9c9c, detect = '
+      + 'tests/synthetic.test.js\'s wrapper (lookback 4, window_bars 90, max_age_bars 400) on measure()\'s null '
+      + '(seeds 5000/9000, noise 0.005). Verified — it reproduces every row to the digit against a checkout of '
+      + 'that commit, along with detections_per_walk 0.78 and 68% of walks.',
+    harness_b: 'The three rectangle rows: commit 8be7a31, "on 200 random walks 13 / 3 / 7 occurrences" = '
+      + '13/200, 3/200, 7/200. Verified — detectPatterns(bars) at DEFAULTS over 200 walks of the detector-noise '
+      + 'null reproduces 13 / 3 / 7 exactly on that commit\'s tree.',
+    harness_c: 'cup_with_handle: scripts/detector-noise.js, which the row\'s own comment already said.',
+    why_it_read_as_wrong: 'The re-measurement that flagged this ran the TEST wrapper at 200 walks and compared it '
+      + 'against rows measured at the defaults, so the rectangles came out "roughly double". Both figures were '
+      + 'right; they were answers to different questions. The other seven rows reproduce exactly at the documented '
+      + '40 walks, so "cannot be reproduced from measure() at any walk count" held for the rectangles only.',
+    missing_rows: 'head_and_shoulders, double_bottom, triple_bottom, symmetrical_triangle, broadening_formation, '
+      + 'bull_flag, bear_flag, high_tight_flag and both pennants had NO entry, so vsNoise returned null and '
+      + 'noise_check dropped them silently. Ten of twenty-one patterns were never noise-checked at all.',
+  },
   previously: {
     detections_per_walk: 19.3,
     double_bottom: 5.15,

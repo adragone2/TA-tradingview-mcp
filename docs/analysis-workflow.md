@@ -57,7 +57,7 @@ complete when it is not.
 `wyckoff_spring`, `divergence_survey` and `elliott_survey` all belong in the chart read. Three
 fields decide what a detection is worth: `status` (`forming` is not a signal — Bulkowski
 measures from the breakout onward, so his statistics do not apply to a forming shape),
-`noise_check` (68% of random walks contain at least one structural pattern), and
+`noise_check` (64.5% of random walks contain at least one structural pattern), and
 `breakout_levels` on NR4/NR7/inside bars, which is where a concrete trigger price comes from.
 Two forming patterns can point opposite ways on the same bars — report both and say the chart
 does not favour either, rather than picking one.
