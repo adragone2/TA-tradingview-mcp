@@ -87,7 +87,9 @@ export function registerPlaybookTools(server) {
       holding_days: z.coerce.number().optional().describe('Intended hold in trading days (default 10) — drives the horizon prior and the catalyst conflict check'),
       days_to_catalyst: z.coerce.number().optional().describe('Trading days to earnings or another known event'),
       setup: z.string().optional().describe('Setup name for the horizon prior, e.g. "breakout", "vcp", "double_bottom" (default "breakout")'),
+      tier: z.enum(['intraday', 'weekly', 'monthly']).optional().describe('Execution tier, for the entry hypothesis\'s execution-window annotation (INTRADAY trades 10:15-14:30 ET). Omitted means unknown: no annotation, never a guessed one.'),
       draw: z.coerce.boolean().optional().describe('Clear the chart and draw the findings (default true). Clearing happens FIRST, always.'),
+      auto_alerts: z.coerce.boolean().optional().describe('Create REAL price alerts at the confirmed patterns\' completion levels (default false). These fire on the live account and NOTHING here deletes them — find them with alert_list (messages start with "[MCP]") and remove them with alert_delete. Confirmed, fresh, verdict-side patterns on the correct side of spot only, deduped against existing alerts, max 3 per run.'),
     },
     wrap(async (args) => ({
       success: true,

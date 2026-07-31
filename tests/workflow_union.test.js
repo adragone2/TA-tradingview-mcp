@@ -257,8 +257,20 @@ describe('every fix survives the union', () => {
       assert.ok(!/max_pattern_age_bars/.test(src(f)),
         `${f} must inherit the default rather than restating it — a second copy of the number drifts`);
     }
-    assert.match(src(ORCH), /\{ clear_scope, bias: verdict\?\.bias \?\? null, earnings: earningsForDraw \}/,
-      'the analysis path passes an options OBJECT, so an added option is additive and cannot break it');
+    /**
+     * Asserted key by key rather than as a whole literal.
+     *
+     * P3.2/P3.4 (2026-07-30) added `auto_alerts` to that object and this assertion
+     * failed — while its own message said an added option "is additive and cannot
+     * break it". A regex over the entire literal makes the additive case a
+     * breaking one, which is the opposite of what it was written to protect.
+     */
+    const opts = src(ORCH).slice(src(ORCH).indexOf('{ clear_scope, bias:'));
+    for (const key of ['clear_scope', 'bias: verdict\\?\\.bias \\?\\? null', 'earnings: earningsForDraw']) {
+      assert.match(opts.slice(0, 200), new RegExp(key),
+        `the analysis path must keep passing ${key} — the options object is additive, and a term that `
+        + 'drops out of it fails silently');
+    }
   });
 
   test('patterns_draw is ungated by CONSTRUCTION, not by an opt-out', () => {

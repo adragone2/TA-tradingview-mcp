@@ -16,6 +16,7 @@ import { selectPrimary, atrFromBars } from './level_display.js';
 import { planPatternDrawings } from './patterns_draw.js';
 import { accountSettings } from './rules.js';
 import { findPivots } from './pivots.js';
+import { autoAlerts } from './alert_plan.js';
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 
@@ -114,6 +115,147 @@ export function labelPlacements(levels, atr, { max_label_chars, min_atr_gap } = 
     slot += 1;
   }
   return out;
+}
+
+/**
+ * WHEN ARE TWO PRICES THE SAME LEVEL? The `hline` merge tolerance.
+ *
+ * ── The failure this fixes ──
+ *
+ * It was a fixed 0.4% of price, and a percentage is not a distance a chart can
+ * read. Expressed in the unit that actually governs how far apart two lines LOOK
+ * — ATR, which sets the price scale the chart auto-fits to — the fixed rule
+ * measured wildly different things:
+ *
+ *   DAILY, median of 79 real analyses (reports/sunday-review-2026-07-30.json +
+ *   morning-screen-latest.json, atr_pct median 3.64%): 0.4% is **0.11 ATR**.
+ *   FIVE-MINUTE, the resolution `timeframe_policy` sends every INTRADAY name to
+ *   (atr_pct median 0.33%): 0.4% is **1.21 ATR**.
+ *
+ * So on an intraday chart the merge swallowed everything within a full ATR — more
+ * than 3x `LABEL_COLLISION.min_atr_gap`, which means the callout displacement arm
+ * could never fire there, because every price close enough to collide had already
+ * been merged away. On a quiet large cap the same rule merged two levels an eighth
+ * of an ATR apart; on a 17%-ATR small cap it separated levels that are one candle's
+ * noise apart.
+ *
+ * ── Where the multiple comes from, and why it is not a third number ──
+ *
+ * `k = 0.1` is DERIVED, not chosen: 0.4% (the rule being replaced) divided by
+ * 3.64% (the measured median daily ATR% of this repo's own universe) is 0.110,
+ * rounded DOWN. Down because the two errors are not symmetric — too wide deletes a
+ * level from the chart and says so only in a list nobody reads, too narrow draws
+ * one extra line that the reader can see. The same asymmetry that makes `prune`
+ * refuse an unknown symbol.
+ *
+ * That lands the tolerance at 0.36% on the median name, so this is a RE-SCALING of
+ * the old rule rather than a re-tuning of it: 55.7% of those 79 names merge less
+ * than before, 44.3% merge more.
+ *
+ * Two independent bounds hold it in place, and both come from numbers already in
+ * this repo rather than from invention:
+ *
+ *   CEILING 0.75%, from `structure.findKeyLevels`' own `tolerance_pct` — the price
+ *   tolerance at which two swings are declared the SAME level. Merging beyond it
+ *   would fuse on the chart two levels the detector deliberately kept apart, so the
+ *   display would contradict the measurement. It binds on 11.4% of the sample (the
+ *   top decile of volatility), which is what a guard should do.
+ *
+ *   BELOW 0.35 ATR, `LABEL_COLLISION.min_atr_gap`. The two mechanisms hand off:
+ *   under 0.1 ATR is ONE level (merge), 0.1-0.35 ATR is two lines with one label
+ *   displaced into a callout, beyond 0.35 ATR is two lines and two labels. Set k at
+ *   or above the label gap and the middle band vanishes — the callout machinery
+ *   becomes unreachable code, which is precisely what the fixed rule did intraday.
+ *
+ * ── How it degrades, stated ──
+ *
+ * NO ATR (fewer than 15 bars, or a price of zero): falls back to the OLD fixed
+ * 0.4%, and says `basis: 'fallback'`. Not "no dedupe" — that reinstates the seven
+ * overlapping lines this whole mechanism exists to stop; and not "merge
+ * everything" — that silently deletes levels. The fallback is the behaviour that
+ * shipped for months, which is the one degradation nobody has to re-learn.
+ *
+ * ATR OF ZERO (a flat series) computes a tolerance of zero, and that is left
+ * alone rather than floored to some invented minimum: on a series with no range
+ * there is no visual distance to protect. What still holds is IDENTITY — two
+ * prices that round to the same drawn price are one line and always merge, which
+ * is the only floor there is and the only one that needs no number.
+ *
+ * PURE, so the whole rule is testable without a chart.
+ */
+export const MERGE_TOLERANCE = Object.freeze({
+  atr_multiple: 0.1,
+  /** The rule this replaces. Kept as the ATR-unavailable path, not as a floor. */
+  fallback_pct: 0.4,
+  /** structure.findKeyLevels' clustering tolerance — the display must not merge past it. */
+  max_pct: 0.75,
+});
+
+export function mergeTolerance(atr, price, { atr_multiple, fallback_pct, max_pct } = MERGE_TOLERANCE) {
+  /**
+   * `num`, not `Number`: `Number(null)` is 0 and `Number.isFinite(0)` is true, so a
+   * missing ATR would compute a tolerance of ZERO and read as a deliberate
+   * no-merge. That is the same conversion that turned a missing `retraced_pct` into
+   * "retraced 0%" and a missing performance field into "even breadth".
+   */
+  const a = num(atr);
+  const p = num(price);
+  if (!(Number.isFinite(a) && a > 0 && Number.isFinite(p) && p > 0)) {
+    return {
+      tolerance_pct: fallback_pct,
+      basis: 'fallback',
+      atr: null,
+      atr_multiple: null,
+      atr_pct: null,
+      uncapped_pct: null,
+      capped: false,
+      max_pct,
+      why: `no usable ATR (atr=${atr ?? 'null'}, price=${price ?? 'null'}) — fell back to the fixed `
+        + `${fallback_pct}%, the rule that shipped before this one. A fixed percentage does not adjust `
+        + 'for how volatile this symbol is, or for what a bar spans on this timeframe.',
+    };
+  }
+  const atrPct = (a / p) * 100;
+  const raw = atrPct * atr_multiple;
+  const capped = raw > max_pct;
+  return {
+    tolerance_pct: r2(capped ? max_pct : raw, 4),
+    basis: 'atr',
+    atr: r2(a, 4),
+    atr_multiple,
+    atr_pct: r2(atrPct, 3),
+    uncapped_pct: r2(raw, 4),
+    capped,
+    max_pct,
+    why: capped
+      ? `${atr_multiple}x ATR is ${r2(raw, 3)}% here, past the ${max_pct}% ceiling — capped. That ceiling `
+        + 'is findKeyLevels\' own clustering tolerance: merging beyond it fuses levels the detector '
+        + 'deliberately kept apart.'
+      : `${atr_multiple}x ATR (${r2(a, 4)}) = ${r2(raw, 3)}% at ${r2(p, 4)}. ATR rather than a fixed `
+        + 'percentage because ATR is what sets the price scale two lines are read against.',
+  };
+}
+
+/**
+ * Are these two prices the same level, at this tolerance?
+ *
+ * Extracted rather than inlined for the P2.4 review's reason: a source contract
+ * pins that a rule EXISTS, only a call pins what it does, and "quiet merges less
+ * than before at these exact prices" is a claim about behaviour. `hline` calls
+ * this, so the tested function is the shipped one.
+ *
+ * Compared at the price that will be DRAWN (4dp), and identity is checked before
+ * the tolerance: two prices that round to the same drawn price are one line
+ * whatever the tolerance says. That is the only floor under an ATR-scaled rule —
+ * on a flat series the tolerance is legitimately zero — and it also keeps a price
+ * of 0 from dividing its way to NaN and drawing twice.
+ */
+export function sameLevel(price, drawnPrice, tol) {
+  const x = r2(num(price), 4);
+  const y = r2(num(drawnPrice), 4);
+  if (x == null || y == null) return false;
+  if (x === y) return true;
+  return Math.abs((y - x) / x) * 100 <= num(tol);
 }
 
 /**
@@ -820,6 +962,30 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    * from `ticker_analyze` yet; the acceptance is "rendered natively on request".
    */
   volume_profile = false,
+  /**
+   * CREATE REAL PRICE ALERTS at the completion levels of the confirmed patterns
+   * that were actually drawn. OFF by default, at every layer, and it must stay
+   * that way.
+   *
+   * **Created alerts are PERMANENT until manually deleted.** They are made on the
+   * owner's live TradingView account through the `pricealerts` API, they fire and
+   * notify, and nothing in this toolchain removes them: `draw_clear`,
+   * `removeOrphans` and the drawing registry are drawing machinery and do not know
+   * alerts exist. The only cleanup path is `alert_list`, read the ids, then
+   * `alert_delete`. Every message this creates starts with `[MCP]` so they can be
+   * told apart from the owner's own; that prefix IS the cleanup story.
+   *
+   * The rules live in `alert_plan.js` as a PURE planner — confirmed only, fresh
+   * only (the same `patternAgePlan` output the geometry used), the verdict side
+   * only, the correct side of spot only, deduped against what is already on the
+   * account, and capped at three per run. Everything refused comes back in
+   * `alerts.skipped` with its reason.
+   *
+   * The unattended scripts do not pass it and must not: a 05:30 batch over twenty
+   * machine-selected charts would put sixty permanent alerts on the account with
+   * nobody present to be asked. A test asserts neither script mentions it.
+   */
+  auto_alerts = false,
 } = {}) {
   const group = groupName || `sunday-${String(ticker).replace(/^.*:/, '')}`;
   const drawn = { group, shapes: 0, items: [], errors: [], cleared: { tracked: 0, stale: 0 } };
@@ -926,9 +1092,26 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
     : 86400;
   /** ATR sets the collision distance. `assess()` already measured it; the bars are the fallback. */
   const atr = Number.isFinite(a?.risk?.atr_14) ? a.risk.atr_14 : atrFromBars(bars, 14);
+  /**
+   * And it sets the MERGE distance too, on the same argument. Computed once for the
+   * whole chart — every `hline` below shares it, so "what counted as the same level
+   * here" is one number with one basis rather than a rule re-derived per call.
+   */
+  const merge = mergeTolerance(atr, a?.price ?? bars?.at(-1)?.close ?? null);
 
   const drawnPrices = [];
   drawn.merged_levels = [];
+  /**
+   * Reported even when NOTHING merged, the same reason `pattern_age` is: "the rule
+   * ran and merged nothing" and "the rule did not run" are different answers, and an
+   * empty `merged_levels` cannot tell them apart.
+   */
+  drawn.merge_tolerance = {
+    ...merge,
+    note: 'One horizontal line per PRICE. Two prices closer than this are one level; the first writer '
+      + 'keeps the line because the blocks are ordered by how much the label says. ATR-scaled — the '
+      + 'fixed 0.4% it replaces was 0.11 ATR on the median daily chart and 1.21 ATR on a 5-minute one.',
+  };
   /** Every level actually drawn, in order — the input to `labelPlacements`. */
   const labelQueue = [];
   drawn.labels_offset = [];
@@ -941,14 +1124,34 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
     return { ...opts, overrides: JSON.stringify({ ...o, ...extra }) };
   };
 
-  const hline = async (price, opts, label, { tol = 0.4 } = {}) => {
+  const hline = async (price, opts, label, { tol = merge.tolerance_pct } = {}) => {
     if (!Number.isFinite(price)) return;
-    const clash = drawnPrices.find((d) => Math.abs((d.price - price) / price) * 100 <= tol);
+    /**
+     * Compared at the price that will actually be DRAWN, not at the raw one, and
+     * identity is checked separately from the tolerance.
+     *
+     * Two levels that round to the same 4dp price are one line on the chart whatever
+     * the tolerance says — and that is the only floor under an ATR-scaled rule, which
+     * on a flat series computes a tolerance of zero. Without it, `(d.price - price) /
+     * price` on a zero price is +/-Infinity and every duplicate at 0 would be drawn
+     * again.
+     */
+    const p4 = r2(price, 4);
+    const clash = drawnPrices.find((d) => sameLevel(p4, d.price, tol));
     if (clash) {
-      drawn.merged_levels.push({ price: r2(price, 4), merged_into: clash.price, kept_label: clash.label, skipped: label });
+      drawn.merged_levels.push({
+        price: p4,
+        merged_into: clash.price,
+        kept_label: clash.label,
+        skipped: label,
+        /** WHICH rule merged it, and how wide it was. A merge with no tolerance beside it is unauditable. */
+        tolerance_pct: tol,
+        basis: merge.basis,
+        gap_pct: p4 === clash.price ? 0 : r2(Math.abs((clash.price - p4) / p4) * 100, 4),
+      });
       return;
     }
-    drawnPrices.push({ price: r2(price, 4), label });
+    drawnPrices.push({ price: p4, label });
 
     /**
      * THE LINE IS ALWAYS THE LINE. Only the TEXT moves.
@@ -1435,5 +1638,40 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
   } else if (earnings) {
     drawn.earnings = { drawn: false, why: earnPlan.why };
   }
+
+  /**
+   * ALERTS — the only thing here that leaves the chart, and the last thing done.
+   *
+   * Last because everything above is reversible and this is not: an alert survives
+   * `draw_clear`, survives the session, and can only be removed by hand. If a draw
+   * above throws, `put` records it and the run continues; if this throws, the
+   * account is untouched and the drawing work still stands.
+   *
+   * It is fed the patterns that were actually DRAWN — `plan.patterns`, which is
+   * `agePlan.fresh` filtered to the verdict side and ranked — so an alert can only
+   * exist for a shape the chart is showing. `alertPlan` re-checks confirmed, fresh
+   * and side-of-spot rather than trusting that, because the cost of the caller
+   * being wrong here is a real notification rather than a stray line.
+   *
+   * The dedupe distance is the SAME ATR-scaled tolerance the lines were merged at.
+   * One volatility rule for "these two prices are the same level", not two.
+   */
+  try {
+    drawn.alerts = await autoAlerts({
+      enabled: !!auto_alerts,
+      patterns: plan.patterns,
+      spot: a?.price ?? bars?.at(-1)?.close ?? null,
+      symbol: ticker,
+      bias,
+      tolerance_pct: merge.tolerance_pct,
+      max_age_bars: agePlan.cutoff_applied ? agePlan.max_age_bars : null,
+    });
+  } catch (e) {
+    // Never take the drawing run down for the optional step. Same rule as the
+    // account read at the top: a failure here is reported, not fatal.
+    drawn.alerts = { enabled: !!auto_alerts, created: [], failed: [], skipped: [], error: e.message };
+    drawn.errors.push(`auto alerts: ${e.message}`);
+  }
+
   return drawn;
 }

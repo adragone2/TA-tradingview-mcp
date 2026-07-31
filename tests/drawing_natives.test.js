@@ -25,6 +25,9 @@ import {
   // P2.4 review (2026-07-30) — the plan-level gate, extracted pure after a
   // neutered-condition mutation slipped past the source-text contract.
   planGate,
+  // P3.2 (2026-07-30) — the hline merge tolerance, ATR-scaled, and the predicate
+  // that decides it. Pure for the same reason planGate is.
+  MERGE_TOLERANCE, mergeTolerance, sameLevel,
 } from '../src/core/assessment_draw.js';
 import { NATIVE_PATTERN_SHAPES, MULTIPOINT_SETTLE, drawShape } from '../src/core/drawing.js';
 import { accountSettings } from '../src/core/rules.js';
@@ -968,5 +971,139 @@ describe('planGate — the plan-level gate, behaviourally', () => {
     const inBody = d.slice(d.indexOf('const stalePatterns = new Map'));
     assert.match(inBody, /const gate = planGate\(tp, stalePatterns, drawnPatterns\)/);
     assert.match(inBody, /if \(!gate\.keep\) \{ suppressedPlans\.push\(gate\.entry\); continue; \}/);
+  });
+});
+
+// ── P3.2 (2026-07-30) — the merge tolerance, ATR-scaled ─────────────────────
+
+describe('mergeTolerance — a percentage is not a distance a chart can read', () => {
+  /**
+   * Measured on this repo's own output, 79 daily analyses across
+   * reports/sunday-review-2026-07-30.json and reports/morning-screen-latest.json:
+   * atr_pct p10 1.65, median 3.64, p90 7.51. Five-minute median 0.33.
+   *
+   * Those are the numbers the multiple is derived from, so they are the numbers
+   * the tests are written at.
+   */
+  const QUIET = { price: 100, atr: 1.65 };      // p10 daily — a quiet large cap
+  const TYPICAL = { price: 100, atr: 3.64 };    // the median
+  const VOLATILE = { price: 100, atr: 6.0 };    // upper decile, still under the cap
+  const WILD = { price: 100, atr: 17.57 };      // the sample max — the cap must bite
+  const FIVE_MIN = { price: 100, atr: 0.33 };   // 5-minute median, the intraday tier
+
+  test('the multiple is DERIVED from the fixed rule it replaces, not chosen', () => {
+    // 0.4% / 3.64% = 0.110, rounded DOWN. Down because too wide DELETES a level and
+    // says so only in a list, too narrow draws one extra line the reader can see.
+    const implied = MERGE_TOLERANCE.fallback_pct / 3.64;
+    assert.ok(MERGE_TOLERANCE.atr_multiple <= implied,
+      `k=${MERGE_TOLERANCE.atr_multiple} is wider than the ${implied.toFixed(3)} the old rule implies at the `
+      + 'median — the rounding must go DOWN, because the two errors are not symmetric');
+    assert.ok(MERGE_TOLERANCE.atr_multiple > implied * 0.8,
+      'and it must stay close to it, or this is a re-tuning rather than a re-scaling');
+  });
+
+  test('at the median it reproduces the old fixed rule — a re-scaling, not a re-tuning', () => {
+    const t = mergeTolerance(TYPICAL.atr, TYPICAL.price);
+    assert.equal(t.basis, 'atr');
+    assert.ok(Math.abs(t.tolerance_pct - MERGE_TOLERANCE.fallback_pct) < 0.05,
+      `median tolerance ${t.tolerance_pct}% should sit beside the old ${MERGE_TOLERANCE.fallback_pct}%`);
+  });
+
+  test('a QUIET symbol merges LESS than the old rule, at the same two prices', () => {
+    /**
+     * The behavioural half. Two levels 0.3% apart: the fixed 0.4% called them one
+     * level and deleted the second line. On a 1.65% ATR name that is a fifth of an
+     * ATR — a real distance on that chart.
+     */
+    const t = mergeTolerance(QUIET.atr, QUIET.price);
+    assert.ok(t.tolerance_pct < MERGE_TOLERANCE.fallback_pct,
+      `quiet tolerance ${t.tolerance_pct}% must be tighter than the fixed ${MERGE_TOLERANCE.fallback_pct}%`);
+    assert.equal(sameLevel(100.3, 100, MERGE_TOLERANCE.fallback_pct), true, 'the OLD rule merged these');
+    assert.equal(sameLevel(100.3, 100, t.tolerance_pct), false,
+      'the new rule must keep them as two lines on a quiet chart');
+  });
+
+  test('a VOLATILE symbol merges MORE, at those same two prices', () => {
+    const t = mergeTolerance(VOLATILE.atr, VOLATILE.price);
+    assert.ok(t.tolerance_pct > MERGE_TOLERANCE.fallback_pct);
+    assert.equal(sameLevel(100.5, 100, MERGE_TOLERANCE.fallback_pct), false, 'the OLD rule drew two lines');
+    assert.equal(sameLevel(100.5, 100, t.tolerance_pct), true,
+      'half a percent is a tenth of an ATR here — one level, one line');
+  });
+
+  test('NO ATR falls back to the old fixed 0.4%, and says which rule ran', () => {
+    for (const bad of [null, undefined, 0, NaN, '', -1]) {
+      const t = mergeTolerance(bad, 100);
+      assert.equal(t.tolerance_pct, MERGE_TOLERANCE.fallback_pct, `atr=${bad} must fall back`);
+      assert.equal(t.basis, 'fallback');
+      assert.equal(t.atr, null);
+      assert.match(t.why, /fixed/, 'the fallback must name itself — a silent fallback is a different rule');
+    }
+    // Unknown degrades to the shipped behaviour: NOT "no dedupe" (seven overlapping
+    // lines) and NOT "merge everything" (levels silently deleted).
+    assert.ok(mergeTolerance(null, 100).tolerance_pct > 0);
+    assert.ok(mergeTolerance(null, 100).tolerance_pct < MERGE_TOLERANCE.max_pct);
+  });
+
+  test('a missing ATR is not a ZERO one — the Number(null) trap', () => {
+    // Number(null) is 0 and 0 is finite, so the obvious guard computes a tolerance
+    // of zero and it reads as a deliberate no-merge.
+    assert.notEqual(mergeTolerance(null, 100).tolerance_pct, 0);
+    assert.equal(mergeTolerance(null, 100).basis, 'fallback');
+  });
+
+  test('the ceiling is findKeyLevels OWN clustering tolerance, not a third number', () => {
+    const structure = readFileSync(`${process.cwd()}/src/core/structure.js`, 'utf8');
+    assert.match(structure, new RegExp(`tolerance_pct = ${MERGE_TOLERANCE.max_pct}`),
+      'the cap must equal the price tolerance at which findKeyLevels declares two swings the SAME '
+      + 'level — merging past it makes the display contradict the detector');
+    const t = mergeTolerance(WILD.atr, WILD.price);
+    assert.equal(t.capped, true);
+    assert.equal(t.tolerance_pct, MERGE_TOLERANCE.max_pct);
+    assert.ok(t.uncapped_pct > MERGE_TOLERANCE.max_pct, 'what it WOULD have been is kept, not discarded');
+    assert.match(t.why, /ceiling/);
+  });
+
+  test('k stays BELOW the label-collision gap, or the callout arm is dead code', () => {
+    /**
+     * The two mechanisms hand off: under k ATR is one level (merge), k..0.35 ATR is
+     * two lines with one label displaced, beyond 0.35 ATR is two labels. Set k at or
+     * above min_atr_gap and the middle band vanishes — which is exactly what the
+     * fixed rule did on a 5-minute chart.
+     */
+    assert.ok(MERGE_TOLERANCE.atr_multiple < LABEL_COLLISION.min_atr_gap,
+      `k=${MERGE_TOLERANCE.atr_multiple} must be under min_atr_gap=${LABEL_COLLISION.min_atr_gap}`);
+
+    const oldInAtr = MERGE_TOLERANCE.fallback_pct / FIVE_MIN.atr;
+    assert.ok(oldInAtr > LABEL_COLLISION.min_atr_gap,
+      `the defect, in one number: the fixed rule was ${oldInAtr.toFixed(2)}x ATR on a 5-minute chart, past `
+      + 'the label gap — every colliding price had already been merged away');
+    const now = mergeTolerance(FIVE_MIN.atr, FIVE_MIN.price);
+    assert.ok(now.tolerance_pct / FIVE_MIN.atr < LABEL_COLLISION.min_atr_gap,
+      'the ATR rule must leave the callout arm reachable at every timeframe');
+  });
+
+  test('identity is the only floor, and it holds at a tolerance of zero', () => {
+    // A flat series computes a legitimate zero. Two prices that round to the same
+    // drawn price are one line whatever the tolerance says.
+    assert.equal(sameLevel(100.12341, 100.12344, 0), true, '4dp identity must merge at tol 0');
+    assert.equal(sameLevel(100.13, 100.12, 0), false, 'and nothing else may');
+    assert.equal(sameLevel(0, 0, 0), true, 'a zero price must not divide its way to NaN and draw twice');
+    assert.equal(sameLevel(null, 100, 5), false);
+    assert.equal(sameLevel(100, undefined, 5), false);
+  });
+
+  test('the drawer USES it — one tolerance for the chart, reported with its basis', () => {
+    const d = readFileSync(new URL('../src/core/assessment_draw.js', import.meta.url), 'utf8');
+    assert.match(d, /const merge = mergeTolerance\(atr, a\?\.price/,
+      'computed once per chart, from the same ATR the label placement uses');
+    assert.match(d, /const hline = async \(price, opts, label, \{ tol = merge\.tolerance_pct \}/,
+      'the hline default must BE the computed tolerance, or the tested function is not the shipped one');
+    assert.match(d, /sameLevel\(p4, d\.price, tol\)/, 'and the comparison must be the exported predicate');
+    assert.match(d, /tolerance_pct: tol,\r?\n\s*basis: merge\.basis/,
+      'every merged level must carry the tolerance that merged it and which rule produced it');
+    assert.match(d, /drawn\.merge_tolerance = \{/,
+      'reported even when nothing merged — "ran and merged nothing" and "did not run" are different '
+      + 'answers, and an empty merged_levels cannot tell them apart');
   });
 });

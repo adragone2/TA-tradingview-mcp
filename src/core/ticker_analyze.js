@@ -91,6 +91,10 @@ async function section(results, key, fn) {
  */
 export async function analyzeTicker({
   count = 300, lookback = 5, holding_days = 10, days_to_catalyst = null,
+  // Execution tier ('intraday' | 'weekly' | 'monthly'), for the entry
+  // hypothesis's execution-window annotation (P3.5). Null means unknown, and
+  // unknown carries no annotation — never a guessed one.
+  tier = null,
   draw = true, shared = null, clear_scope = 'all',
   /**
    * TA's own row for this symbol, and the drawing group. BOTH exist for the Sunday
@@ -108,6 +112,25 @@ export async function analyzeTicker({
    * them.
    */
   ta_row = null, draw_group = null,
+  /**
+   * CREATE REAL PRICE ALERTS at the confirmed patterns' completion levels. OFF by
+   * default and it stays off unless a human passes `true` in this call.
+   *
+   * **Created alerts are permanent until manually deleted.** They are made on the
+   * live TradingView account, they fire and notify, and nothing in this toolchain
+   * sweeps them — `draw_clear` and the orphan sweep are drawing machinery. Find
+   * them again with `alert_list` (every message this creates starts with `[MCP]`)
+   * and remove them with `alert_delete`.
+   *
+   * Only confirmed, fresh (not age-excluded), verdict-side patterns whose
+   * completion level is on the correct side of spot are eligible, deduped against
+   * the alerts already on the account and capped at three per run. `alert_plan.js`
+   * owns the rules; everything refused is reported in `drawings.alerts.skipped`.
+   *
+   * The scheduled scripts do not pass it, and a test asserts they never mention
+   * it: an opt-in that an unattended job can set is not opt-in.
+   */
+  auto_alerts = false,
 } = {}) {
   const results = {};
 
@@ -241,6 +264,8 @@ export async function analyzeTicker({
     swing_low: lastLow?.price ?? null,
     holding_days,
     days_to_catalyst: days_to_catalyst ?? null,
+    tier,
+    now: Date.now(), // the core is pure and will not read the clock itself
   }));
 
   const primary = await section(results, 'primary_levels', async () => selectPrimary(allLevels, {
@@ -505,7 +530,12 @@ export async function analyzeTicker({
       // `earnings` is the catalyst on the TIME axis. The fixed-range volume
       // profile is deliberately NOT enabled here: it is a pane-wide overlay, and
       // its acceptance is "rendered natively on request".
-      { clear_scope, bias: verdict?.bias ?? null, earnings: earningsForDraw },
+      //
+      // `auto_alerts` is passed THROUGH, never defaulted on. It creates real
+      // alerts on the live account that nothing here can delete, so the caller's
+      // false — which is every caller that does not say otherwise — must reach
+      // the drawer unchanged.
+      { clear_scope, bias: verdict?.bias ?? null, earnings: earningsForDraw, auto_alerts },
     ));
   } else {
     results.drawings = { ok: false, skipped: true, reason: 'draw was false' };
