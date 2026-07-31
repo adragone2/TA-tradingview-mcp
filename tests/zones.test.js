@@ -167,6 +167,21 @@ describe('findZones — grading and evidence', () => {
     assert.ok(z.momentum_x > 2);
   });
 
+  it('reports an unmeasurable momentum multiple in words, never as String(null)', () => {
+    // A base of zero-body candles makes mBody/avgBody undefined — momentum_x is
+    // null — yet the zone still qualifies through the range condition. The
+    // evidence must say that, not interpolate null ("price left it at nullx…").
+    // zones_draw's rectangle label has the same rule, pinned in orphans.test.js.
+    reset();
+    const zeroBody = (n, p = 100) => Array.from({ length: n }, () => bar(p, p + 1, p - 1, p));
+    const bars = [...zeroBody(5), bar(100, 106, 100, 106), ...quiet(5, 112)];
+    const z = findZones(bars, { momentum_multiple: 2 }).zones.find((x) => x.kind === 'demand');
+    assert.ok(z, 'expected the zero-body base to yield a demand zone via the range condition');
+    assert.equal(z.momentum_x, null);
+    assert.doesNotMatch(z.evidence, /null/);
+    assert.match(z.evidence, /unmeasurable/);
+  });
+
   it('tags a zone sitting on a proven swing', () => {
     reset();
     const bars = [...quiet(5), bar(100, 101, 99, 100.4), bar(100, 112, 100, 111), ...quiet(5, 112)];

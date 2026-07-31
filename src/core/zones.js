@@ -169,7 +169,12 @@ export function findZones(bars, {
       if (hit) z.at_strong_swing = hit.kind === 'low' ? 'strong_low' : 'strong_high';
     }
 
-    const why = [`price left it at ${z.momentum_x}x the prior average body`];
+    // momentum_x is null over a zero-body base (mBody/avgBody is undefined —
+    // the zone qualified through the range condition instead), and String(null)
+    // must not reach the evidence or the drawn label.
+    const why = [z.momentum_x == null
+      ? 'price left a zero-body base — the departure multiple is unmeasurable, and the candle qualified on range instead'
+      : `price left it at ${z.momentum_x}x the prior average body`];
     if (z.engulfing) why.push('the departure candle engulfed the one before it');
     if (z.follow_through_x >= 0.5) why.push(`follow-through carried ${z.follow_through_x}x further`);
     if (z.departure_pct > 0) why.push(`price reached ${z.departure_pct}% away before returning`);
