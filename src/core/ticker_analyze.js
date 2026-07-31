@@ -428,11 +428,28 @@ export async function analyzeTicker({
     const full = mergedStrategies(rules);
     const ctx = buildContext(bars, {});
     return named.map((thin) => {
-      const st = { name: thin.name, ...(full[thin.name] || {}), ...thin };
+      const entry = full[thin.name];
+      const base = { name: thin.name, tier: thin.evidence_tier, execution: thin.execution };
+      /**
+       * An INTRADAY strategy on a one-bar-per-session chart is not "unknown" —
+       * vwap, the opening range and minutes_since_open are undefined BY
+       * CONSTRUCTION there, so evaluating it produces a permanent wall of
+       * unknowns that reads like a data problem. The horizon_prior precedent:
+       * NOT APPLICABLE is a different statement from unavailable, and the
+       * completeness reader treats it as neither pass nor failure.
+       */
+      if (thin.execution === 'intraday' && !ctx.intraday) {
+        return {
+          ...base,
+          verdict: 'not_applicable_on_this_timeframe',
+          note: 'Intraday strategy on a daily chart: session operands are undefined by construction, '
+            + 'not missing. It evaluates properly on the 5-minute chart the INTRADAY tier analyses.',
+        };
+      }
       return {
-        name: st.name, tier: st.evidence_tier, execution: st.execution,
-        ...(full[thin.name]?.criteria
-          ? evaluateCriteria({ name: thin.name, ...full[thin.name] }, ctx)
+        ...base,
+        ...(entry?.criteria
+          ? evaluateCriteria({ name: thin.name, ...entry }, ctx)
           : { verdict: 'no criteria in the catalogue entry' }),
       };
     });

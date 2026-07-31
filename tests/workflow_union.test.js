@@ -637,6 +637,12 @@ describe('the three sections TA found dead — producer call shapes (2026-07-31)
       'destructuring an array yields undefined long_bars — "got 0" on 299-bar rows');
   });
 
+  test('an intraday strategy on a daily chart is NOT APPLICABLE, never a wall of unknowns', () => {
+    assert.match(t, /thin\.execution === 'intraday' && !ctx\.intraday/);
+    assert.match(t, /not_applicable_on_this_timeframe/,
+      'undefined-by-construction and unavailable are different statements');
+  });
+
   test('short_interest fetches ROWS before building the series, never passes the ticker string', () => {
     assert.match(t, /finra\.fetchSeries\(bare, \{ periods: 6, asOf, dataset: 'consolidated' \}\)/);
     assert.match(t, /finra\.buildSeries\(rows, \{ asOf, bars, lastPrice: px, periods: 6 \}\)/);
