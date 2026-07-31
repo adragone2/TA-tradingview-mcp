@@ -10,11 +10,70 @@
  * run and the morning run must not clear each other's work.
  */
 import * as drawing from './drawing.js';
+import { drawPosition } from './position_tool.js';
 import { removeOrphans } from './orphans.js';
 import { selectPrimary } from './level_display.js';
 import { planPatternDrawings } from './patterns_draw.js';
+import { accountSettings } from './rules.js';
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
+
+/**
+ * Should this plan leg be drawn as a native position tool, or as three lines?
+ *
+ * Pure, and separate from the drawing so the DECISION is testable without a
+ * chart. The position tool is the drawing traders actually use — a shaded risk
+ * box and reward box, draggable, with the size TradingView recomputes itself —
+ * and `position_tool.js` has existed, worked and been registered the whole time
+ * while the unified drawer drew three horizontal lines instead.
+ *
+ * Three things must hold, and each failure falls back rather than guessing:
+ *
+ *   1. All three prices. The tool encodes stop and target as tick OFFSETS from
+ *      entry, so a leg with no target has no box to draw. Lines can show two
+ *      levels; the position tool cannot.
+ *   2. An account size and a risk percent, from rules.json. Passing them lets
+ *      TradingView compute and re-compute the quantity when the tool is dragged.
+ *      Inventing them is the failure `position_size_constrained` was fixed for:
+ *      a live analysis once made up $100,000 because there was nowhere to read
+ *      it, and a share count from an invented account is indistinguishable from
+ *      a correct one.
+ *   3. Geometry that agrees with the direction. `drawPosition` throws on a long
+ *      whose stop sits above entry — correct, but a throw here would lose the
+ *      levels entirely, and three honest lines are better than nothing.
+ */
+export function planLegDrawing(leg, side, account) {
+  const dir = String(side || '').toLowerCase();
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const entry = n(leg?.entry), stop = n(leg?.stop), target = n(leg?.target);
+
+  if (dir !== 'long' && dir !== 'short') {
+    return { mode: 'lines', why: `leg side "${side}" is neither long nor short` };
+  }
+  const missing = [['entry', entry], ['stop', stop], ['target', target]].filter(([, v]) => v == null).map(([k]) => k);
+  if (missing.length) {
+    return { mode: 'lines', why: `the position tool needs entry, stop and target; missing ${missing.join(', ')}` };
+  }
+
+  const size = n(account?.account_size), risk = n(account?.risk_percent);
+  if (!size || size <= 0 || !risk || risk <= 0) {
+    return {
+      mode: 'lines',
+      why: 'no account size or risk percent configured, so TradingView cannot size the position — '
+        + `set account.account_size and account.risk_percent in ${account?.rules_path || 'rules.json'}`,
+    };
+  }
+
+  const ok = dir === 'long' ? (stop < entry && target > entry) : (stop > entry && target < entry);
+  if (!ok) {
+    return {
+      mode: 'lines',
+      why: `the ${dir} leg's levels contradict its direction (entry ${entry}, stop ${stop}, target ${target})`,
+    };
+  }
+
+  return { mode: 'position', direction: dir, entry, stop, target, account_size: size, risk_percent: risk };
+}
 
 /**
  * Alternating swing pivots inside a pattern's own window.
@@ -227,19 +286,55 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
   // Head and shoulders — TradingView's own 7-point tool, which draws the
   // shoulders, the head and the neckline in the standard visual language.
   if (m.left_shoulder != null && m.head != null && m.right_shoulder != null) {
-    /**
-     * Shoulders and head connected by hand, for the same reason as the triangle
-     * above: the native multipoint tools place only their first two points and
-     * stay armed. One polyline through the seven pivots shows the same structure
-     * and leaves no tool selected.
-     */
     const pv = windowPivots(bars, p.from_time, p.to_time, 7);
     if (pv.length >= 7) {
-      const seven = pv.slice(-7);
-      for (let i = 0; i < seven.length - 1; i += 1) {
+      /**
+       * ONE NATIVE ENTITY, not six trend lines.
+       *
+       * This was six hand-drawn legs on the belief that "the native multipoint
+       * tools place only their first two points and stay armed". That was measured
+       * again on 2026-07-30 and it is **triangle_pattern-specific**:
+       * `head_and_shoulders` asked for 7 points landed **7 of 7** in the same
+       * session in which `triangle_pattern` landed 2 of 5. So the triangles keep
+       * their reconstruction above and this one does not.
+       *
+       * The Escape disarm in `createOne` stays regardless — it costs nothing and
+       * the failure it guards against (a live drawing cursor the owner has to
+       * clear by hand after every analysis) is invisible until someone clicks.
+       *
+       * The tool carries NO text: a non-empty `text` makes a multipoint create
+       * silently produce nothing, and setting it afterwards reads back null. So
+       * this shape is recoverable through the registry and its GROUP only, never
+       * through the orphan sweep. The neckline below is a normal hline and does
+       * carry its registered label.
+       */
+      const seven = pv.slice(-7).map(({ time, price }) => ({ time, price }));
+      const res = await put(() => drawing.drawShape({ shape: 'head_and_shoulders',
+        points: seven,
+        overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
+        group }), `pattern ${p.pattern} head and shoulders`);
+      /**
+       * `drawShape` returns success even when the create silently produced
+       * nothing — `entity_id` is the only honest evidence, and an unidentified
+       * shape is an untrackable one. Say so rather than counting it as drawn.
+       */
+      if (res && !res.entity_id) {
+        await put(() => { throw new Error('the native 7-point create returned no entity id — either it silently drew nothing, or it is on the chart untracked'); },
+          `pattern ${p.pattern} head and shoulders`);
+      }
+    } else if (pv.length >= 2) {
+      /**
+       * FALLBACK: the leg lines, through the real pivots that exist.
+       *
+       * Never a 7-point tool with fewer than 7 real pivots. Given short, the tool
+       * places the points it has and stays ARMED — measured on triangle_pattern,
+       * which is exactly the garbage this file spent a release removing. Legs
+       * through real pivots show the structure with no tool state left behind.
+       */
+      for (let i = 0; i < pv.length - 1; i += 1) {
         await put(() => drawing.drawShape({ shape: 'trend_line',
-          point: { price: seven[i].price, time: seven[i].time },
-          point2: { price: seven[i + 1].price, time: seven[i + 1].time },
+          point: { price: pv[i].price, time: pv[i].time },
+          point2: { price: pv[i + 1].price, time: pv[i + 1].time },
           overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
           text: i === 0 ? label : '', group }), `pattern ${p.pattern} leg ${i + 1}`);
       }
@@ -267,9 +362,29 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    * on it would silently delete every bearish finding on an undecided chart.
    */
   bias = null,
+  /**
+   * Sizing inputs for the native position tool, `{ account_size, risk_percent }`.
+   *
+   * Read from rules.json when omitted, which is what every real caller wants.
+   * The parameter exists so the two paths — position tool and the three-line
+   * fallback — can both be exercised deliberately, including on a live chart:
+   * passing `null` forces the fallback without editing the owner's rules file.
+   */
+  account = undefined,
 } = {}) {
   const group = groupName || `sunday-${String(ticker).replace(/^.*:/, '')}`;
   const drawn = { group, shapes: 0, items: [], errors: [], cleared: { tracked: 0, stale: 0 } };
+  /**
+   * `accountSettings` does not throw for a MISSING rules.json — it returns the
+   * built-in defaults, whose `account_size` is null on purpose. It does throw for
+   * an unparseable one, and a broken rules file must not take the whole drawing
+   * step down; the plan simply falls back to lines and says why.
+   */
+  let acct = account;
+  if (acct === undefined) {
+    try { acct = accountSettings(); }
+    catch (e) { acct = null; drawn.errors.push(`account settings: ${e.message}`); }
+  }
 
   // CLEAR LAST WEEK BEFORE DRAWING THIS WEEK — in two passes, because one is
   // not enough and the gap is exactly a week wide.
@@ -313,9 +428,17 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
     drawn.cleared.stale = r?.removed || 0;
   } catch (e) { drawn.errors.push(`clear stale: ${e.message}`); }
 
+  /**
+   * Returns the drawer's own result, so a caller can check `entity_id` rather
+   * than trusting `success`. `drawShape` reports success even when the create
+   * silently produced nothing — the exact failure mode this repo has been bitten
+   * by eight times — and the entity id is the only evidence that distinguishes
+   * them. Callers that ignore the return value are unaffected.
+   */
   const put = async (fn, label) => {
-    try { const r = await fn(); if (r?.success) { drawn.shapes++; drawn.items.push(label); } }
+    try { const r = await fn(); if (r?.success) { drawn.shapes++; drawn.items.push(label); return r; } }
     catch (e) { drawn.errors.push(`${label}: ${e.message}`); }
+    return null;
   };
 
   /**
@@ -438,19 +561,53 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
   for (const p of plan.patterns) await drawPatternGeometry(p, bars, group, put, hline);
   if (plan.skipped.length) drawn.patterns_skipped = plan.skipped;
 
-  // The CHANNEL, as two parallel boundaries anchored to real pivots.
+  /**
+   * The CHANNEL, as ONE native parallel_channel anchored to the same geometry.
+   *
+   * This was two independent `trend_line`s. They described a channel but were not
+   * one: dragging either edge broke the parallelism the measurement asserts, and
+   * clearing one left the other. TradingView's own tool takes three points — the
+   * upper boundary's two ends, then any point on the lower boundary — and keeps
+   * the pair parallel itself. Probed 2026-07-30: 3 asked, 3 landed.
+   *
+   * The three points are computed from the SAME fields the two lines used, so the
+   * geometry is unchanged: `upper_start` and `lower_start` are the fitted
+   * intercepts at the window's first bar and `slope_used` is the shared slope, so
+   * the upper end is `slope_used × n + upper_start` over the window's n bars.
+   *
+   * ── What is lost, deliberately ──
+   *
+   * The on-chart label. A multipoint create silently produces NOTHING when given
+   * a non-empty `text`, and `setProperties({ text })` afterwards returns without
+   * throwing and reads back null — both probed the same day. So this shape, like
+   * the position tool below, is recoverable ONLY through the registry and its
+   * group, never through the text-signature orphan sweep. The retired
+   * "<pattern> upper" / "<pattern> lower" signatures stay registered in
+   * orphans.js: signatures are append-only, and every chart drawn before today
+   * still carries those labels.
+   */
   if (channel) {
     const seg = bars.slice(-channel.window);
     const t0 = seg[0].time, t1 = seg[seg.length - 1].time, n = seg.length - 1;
     const col = channel.direction === 'descending' ? '#ef5350' : channel.direction === 'ascending' ? '#26a69a' : '#78909c';
-    await put(() => drawing.drawShape({ shape: 'trend_line',
-      point: { price: channel.upper_start, time: t0 }, point2: { price: r2(channel.slope_used * n + channel.upper_start, 4), time: t1 },
-      overrides: JSON.stringify({ linecolor: col, linewidth: 2 }),
-      text: `${channel.pattern} upper`, group }), `channel ${channel.direction} upper`);
-    await put(() => drawing.drawShape({ shape: 'trend_line',
-      point: { price: channel.lower_start, time: t0 }, point2: { price: r2(channel.slope_used * n + channel.lower_start, 4), time: t1 },
-      overrides: JSON.stringify({ linecolor: col, linewidth: 2 }),
-      text: `${channel.pattern} lower`, group }), `channel ${channel.direction} lower`);
+    const upperEnd = r2(channel.slope_used * n + channel.upper_start, 4);
+    await put(() => drawing.drawShape({ shape: 'parallel_channel',
+      points: [
+        { price: channel.upper_start, time: t0 },
+        { price: upperEnd, time: t1 },
+        { price: channel.lower_start, time: t0 },
+      ],
+      overrides: JSON.stringify({ linecolor: col, linewidth: 2, showMidline: false, fillBackground: false, transparency: 100 }),
+      group }), `channel ${channel.direction}`);
+    drawn.channel = {
+      pattern: channel.pattern,
+      shape: 'parallel_channel',
+      upper: [channel.upper_start, upperEnd],
+      lower_start: channel.lower_start,
+      note: 'One native entity, so the two boundaries stay parallel and clear together. It carries no '
+        + 'text — a multipoint create rejects a label silently — so it is cleared by GROUP, not by the '
+        + 'orphan sweep.',
+    };
   }
 
   // ENTRY / STOP / TARGET for whichever plan is actually live.
@@ -488,6 +645,69 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       }
       if (!l || l.entry == null) continue;
       const tag = tp.bilateral ? `${tp.pattern} ${side}` : tp.pattern;
+
+      /**
+       * ONE POSITION TOOL, when the plan is complete enough to size.
+       *
+       * `drawPosition` has existed, worked and been registered the whole time
+       * while this drawer put three horizontal lines on the chart instead. The
+       * native tool shades the risk and the reward, is draggable, and recomputes
+       * the quantity itself — which keeps the displayed size honest if the owner
+       * moves the stop, something three static lines cannot do.
+       *
+       * The gate stays exactly where it was: `tradeable_now`, past the
+       * pattern-was-drawn check, and past the `wantLeg` verdict filter, so a plan
+       * that would not have been drawn as lines is not drawn as a box either.
+       *
+       * ── The recoverability cost, stated ──
+       *
+       * A position tool carries no text. `findOrphans` classifies a shape with no
+       * text as FOREIGN and never touches it — correct, since most hand-drawn
+       * shapes are unlabelled and the cost of a false match is deleting the
+       * owner's analysis. But it means a position tool whose registry entry has
+       * died with the TradingView session is NOT recoverable by signature: it can
+       * only be removed by hand or by `scope: 'all'`.
+       *
+       * The mitigation is that the GROUP clear is already the primary path here —
+       * `drawFindings` clears its own group before drawing, and `drawPosition` is
+       * passed that same group, so within a live session it is cleared with
+       * everything else. The three-line fallback below is the text-bearing path,
+       * and it is what runs whenever the account is not configured.
+       */
+      const legPlan = planLegDrawing(l, side, acct);
+      if (legPlan.mode === 'position') {
+        const res = await put(() => drawPosition({
+          direction: legPlan.direction,
+          entry: legPlan.entry, stop: legPlan.stop, target: legPlan.target,
+          account_size: legPlan.account_size, risk_percent: legPlan.risk_percent,
+          time: bars?.[bars.length - 1]?.time,
+          group,
+        }), `position ${side} ${tag}`);
+        if (res) {
+          /**
+           * The three prices are claimed in `drawnPrices` even though no line was
+           * drawn for them. The box already depicts them, and without this the VCP
+           * pivot or TA's stop would put a second mark on a price the position tool
+           * is already showing — the collision the dedupe exists to prevent.
+           */
+          for (const [role, price] of [['entry', legPlan.entry], ['stop', legPlan.stop], ['target', legPlan.target]]) {
+            drawnPrices.push({ price: r2(price, 4), label: `${role} ${tag} (position tool)` });
+          }
+          (drawn.positions ||= []).push({
+            side, pattern: tp.pattern, entry: legPlan.entry, stop: legPlan.stop, target: legPlan.target,
+            rr: res.rr ?? null, qty: res.as_drawn?.qty ?? null, entity_id: res.entity_id ?? null,
+            note: 'Drawn as TradingView\'s native position tool. It carries no text, so it is cleared by '
+              + 'GROUP — the orphan sweep cannot see it.',
+          });
+          continue;
+        }
+        // The create failed and `put` has already recorded why. Fall through to
+        // the lines rather than leaving the plan undrawn.
+        (drawn.position_fallbacks ||= []).push({ side, pattern: tp.pattern, why: 'the position tool could not be drawn — see errors' });
+      } else {
+        (drawn.position_fallbacks ||= []).push({ side, pattern: tp.pattern, why: legPlan.why });
+      }
+
       await hline(l.entry, {
         overrides: JSON.stringify({ linecolor: '#ffb300', linewidth: 3 }),
         text: `ENTRY ${side} ${l.entry} — ${tag}`,

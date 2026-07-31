@@ -104,7 +104,7 @@ export async function resolveTime(input) {
 }
 
 /**
- * TradingView's native pattern tools, and how many points each one takes.
+ * TradingView's native multipoint tools, and how many points each one takes.
  *
  * Verified against the live chart by creating each and reading back its
  * internal toolname. The important discovery: an UNKNOWN shape name does NOT
@@ -112,10 +112,51 @@ export async function resolveTime(input) {
  * proves nothing about which tool you got, and drawShape validates the point
  * count up front rather than letting a flag marker appear where a wedge was
  * expected.
+ *
+ * ── Live probe, 2026-07-30 (AMEX:SPY and NASDAQ:AAPL, CDP, all cleaned up) ──
+ *
+ * The probe asked each tool for its declared point count and read back how many
+ * points actually landed. Three results are load-bearing:
+ *
+ *   head_and_shoulders   7 asked, **7 landed** — ADOPTED (assessment_draw.js)
+ *   elliott_impulse_wave 6 asked, **6 landed** — available
+ *   parallel_channel     3 asked, **3 landed** — ADOPTED (assessment_draw.js)
+ *   triangle_pattern     5 asked, **2 landed**, and the tool was left ARMED —
+ *                        reproducibly, on the same chart, in the same session as
+ *                        the two successes above.
+ *
+ * So the old conclusion — "TradingView's native multipoint tools place their
+ * first two points and stay armed" — was **triangle_pattern-specific, not
+ * multipoint-general**. Wedges and triangles keep the two-trend-line
+ * reconstruction in `drawPatternGeometry`; head-and-shoulders does not.
+ * Do not re-try triangle_pattern (improvements.md P1.4).
+ *
+ * ── DO NOT USE, same probe date (P1.10) ──
+ *
+ *   price_label   1 point asked, **NOTHING created**. Silent, exactly like an
+ *                 unknown shape name — except an unknown name at least leaves a
+ *                 flag mark behind to notice.
+ *   curve         3 points asked, **2 landed**. The third point's encoding is
+ *                 not the {time, price} the other tools take, and guessing at it
+ *                 is how a drawn boundary ends up describing nothing.
+ *
+ * ── `text` does not survive a multipoint create, on ANY of them ──
+ *
+ * Probed 2026-07-30 on parallel_channel: 3 points and no text creates the
+ * channel (3/3); the identical call with a non-empty `text` creates **nothing at
+ * all** and returns normally. Setting it afterwards does not work either —
+ * `shape.setProperties({ text })` returns without throwing and the text reads
+ * back null. That is a third silent success in the same code path.
+ *
+ * The consequence is not cosmetic: `orphans.js` recognises our drawings by their
+ * TEXT, because entity ids die with the TradingView session. A shape with no
+ * text is classified `foreign` by `findOrphans` and is NEVER swept. So every
+ * multipoint shape here is recoverable ONLY through the registry and its group —
+ * see the comment on the position tool in assessment_draw.js.
  */
 export const NATIVE_PATTERN_SHAPES = {
   head_and_shoulders: 7,        // LineToolHeadAndShoulders
-  triangle_pattern: 5,          // LineToolTrianglePattern
+  triangle_pattern: 5,          // LineToolTrianglePattern — BROKEN, see above
   xabcd_pattern: 5,             // LineTool5PointsPattern
   cypher_pattern: 5,            // LineToolCypherPattern
   abcd_pattern: 4,              // LineToolABCD
@@ -125,14 +166,56 @@ export const NATIVE_PATTERN_SHAPES = {
   elliott_double_combo: 4,      // LineToolElliottDoubleCombo
   elliott_triple_combo: 6,      // LineToolElliottTripleCombo
   flat_bottom: 3,               // LineToolFlatBottom
+  // Not a pattern tool, but multipoint and worth the same up-front point-count
+  // check: asked with the wrong count it does not throw, it draws a flag mark.
+  parallel_channel: 3,          // LineToolParallelChannel
 };
 
 /** The symbol currently loaded, used to tag drawings so pruning stays scoped. */
-async function currentSymbol() {
+export async function currentSymbol() {
   try {
     const s = await evaluate(`(function(){try{return window.TradingViewApi._activeChartWidgetWV.value().symbol();}catch(e){return null;}})()`);
     return typeof s === 'string' ? s : null;
   } catch { return null; }
+}
+
+/**
+ * How long to wait for a multipoint create to resolve, and how often to look.
+ *
+ * Exported so the settle policy is testable and so a change to it is a visible
+ * change rather than a magic number moving.
+ */
+export const MULTIPOINT_SETTLE = { interval_ms: 150, budget_ms: 1500 };
+
+/**
+ * Wait until a NEW shape id appears, or the budget runs out.
+ *
+ * This replaced a fixed 500ms sleep. The sleep was empirically tight: a probe
+ * watched shapes resolve after the capture window had already closed, and a
+ * create whose id escapes capture is never recorded in the registry — which
+ * means `draw_clear scope:'mcp'` can never remove it, and (for the multipoint
+ * tools, which cannot carry text at all) neither can the orphan sweep. That is
+ * the 545-stale-shapes failure, one drawing at a time.
+ *
+ * Polling instead of sleeping also makes the common case FASTER: a shape that
+ * lands in 150ms no longer costs 500.
+ *
+ * Returns the new id, or null if nothing appeared within the budget. Null is a
+ * real answer — the create may have silently produced nothing, which is what
+ * `text` on a multipoint shape and `price_label` both do.
+ */
+async function settleForNewId(apiPath, beforeIds, { interval_ms, budget_ms } = MULTIPOINT_SETTLE) {
+  const before = new Set(beforeIds || []);
+  const deadline = Date.now() + budget_ms;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, interval_ms));
+    let after = null;
+    try { after = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`); }
+    catch { /* a read that failed is not evidence the shape is absent — keep polling */ }
+    const fresh = (after || []).find((id) => !before.has(id));
+    if (fresh) return fresh;
+    if (Date.now() >= deadline) return null;
+  }
 }
 
 /** Create one shape and return its new entity id (null if it could not be identified). */
@@ -141,6 +224,9 @@ async function createOne({ apiPath, shape, point, point2, points, overrides, tex
   const textStr = text ? JSON.stringify(text) : '""';
 
   const before = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`);
+  // Captured during the settle poll below, so a shape that resolves late is
+  // still identified even if something later removes or replaces it.
+  let settledId = null;
 
   if (points && points.length > 2) {
     // TradingView's native pattern tools are N-point multipoint shapes:
@@ -164,8 +250,15 @@ async function createOne({ apiPath, shape, point, point2, points, overrides, tex
         { shape: ${JSON.stringify(shape)}, overrides: ${overridesStr} }
       )
     `);
-    // These resolve more slowly than the two-point shapes; 200ms is not enough.
-    await new Promise((r) => setTimeout(r, 500));
+    /**
+     * SETTLE-VERIFY, not a fixed sleep.
+     *
+     * These resolve more slowly than the two-point shapes, and the old fixed
+     * 500ms was a guess that a probe caught being wrong — see settleForNewId.
+     * The id is captured HERE, before the Escape, so a late-resolving create can
+     * no longer escape the registry.
+     */
+    settledId = await settleForNewId(apiPath, before);
     /**
      * Disarm the drawing tool with a REAL key event.
      *
@@ -201,7 +294,10 @@ async function createOne({ apiPath, shape, point, point2, points, overrides, tex
 
   await new Promise(r => setTimeout(r, 200));
   const after = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`);
-  return (after || []).find(id => !(before || []).includes(id)) || null;
+  // The post-Escape read is the authority when it sees the shape. When it does
+  // not, an id the settle poll DID see still beats returning null: an
+  // unidentified shape is an untrackable one.
+  return (after || []).find(id => !(before || []).includes(id)) || settledId || null;
 }
 
 /**

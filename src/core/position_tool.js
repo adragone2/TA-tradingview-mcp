@@ -117,7 +117,21 @@ export async function drawPosition({
   }
 
   const groupName = group || `position-${dir}-${entryPrice}`;
-  registry.record([{ entity_id, shape, role: 'position' }], { group: groupName });
+  /**
+   * Tagged with the SYMBOL, like every other drawing.
+   *
+   * `registry.prune` only judges entries belonging to the symbol its live id list
+   * came from and leaves untagged entries alone forever — correct, but it meant a
+   * position tool recorded here was never reconciled and the store kept it after
+   * the TradingView session that owned the id had died. Every `drawShape` call
+   * already tags the symbol; this one did not, and it is the shape that most needs
+   * the registry, because a position tool carries no text and so can never be
+   * recovered by the orphan sweep.
+   */
+  registry.record([{ entity_id, shape, role: 'position' }], {
+    group: groupName,
+    symbol: await drawing.currentSymbol(),
+  });
 
   // Read back what TradingView actually stored, including the quantity it
   // computed. Reporting the requested values instead would hide a rounding

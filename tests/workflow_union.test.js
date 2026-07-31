@@ -116,6 +116,28 @@ describe('every fix survives the union', () => {
     assert.match(d, /plans_suppressed/, 'what was withheld must be reported, never silently dropped');
     // A plan whose pattern was not drawn must not draw its levels either.
     assert.match(d, /drawnPatterns\.size && tp\.pattern && !drawnPatterns\.has\(tp\.pattern\)/);
+
+    /**
+     * ADAPTED for the native position tool.
+     *
+     * The intent is unchanged — a plan whose pattern was not drawn must not put a
+     * stop and a target on the chart — but the plan is now drawn as ONE
+     * `long_position` / `short_position` box rather than three horizontal lines,
+     * and a box placed above both guards would reintroduce exactly the ALM
+     * failure in a shape the line-based assertions cannot see.
+     *
+     * So the ordering is asserted directly: both `continue` guards must precede
+     * the position-tool decision inside the same loop.
+     */
+    const patternGuard = d.indexOf('!drawnPatterns.has(tp.pattern)');
+    const verdictGuard = d.indexOf('leg contradicts the ${bias} verdict');
+    const positionCall = d.indexOf('planLegDrawing(l, side, acct)');
+    assert.ok(positionCall > 0, 'the verdict-side plan must go through planLegDrawing');
+    assert.ok(patternGuard > 0 && patternGuard < positionCall,
+      'the position tool must sit BELOW the pattern-was-not-drawn guard, or a suppressed '
+      + 'head-and-shoulders gets a shaded risk box instead of three suppressed lines');
+    assert.ok(verdictGuard > 0 && verdictGuard < positionCall,
+      'and BELOW the verdict filter, or a bilateral plan draws two opposing position boxes');
   });
 
   test('no bias at all still draws everything', () => {
@@ -210,10 +232,126 @@ describe('every fix survives the union', () => {
       + 'collide with a level another block already drew');
     assert.ok(d.split('await hline(').length - 1 >= 8,
       'primaries, both zones, entry, stop, target, VCP pivot and the TA stop must all dedupe');
+
+    /**
+     * ADAPTED for the native position tool.
+     *
+     * The intent — one mark per PRICE — now has a writer that draws no line at
+     * all. A position box already depicts entry, stop and target, so those three
+     * prices must be CLAIMED in `drawnPrices` even though nothing went through
+     * `hline`; otherwise the VCP pivot or TA's stop lands a second mark on a price
+     * the box is already showing, which is the TIGO collision in a new costume.
+     */
+    assert.match(d, /drawnPrices\.push\(\{ price: r2\(price, 4\), label: `\$\{role\} \$\{tag\} \(position tool\)` \}\)/,
+      'the position tool must claim its three prices in the dedupe set');
   });
 
   test('chart reads still stamp the symbol they read', () => {
     assert.match(src('src/core/structure.js'), /return \{ bars, symbol:/);
     assert.match(src('src/tools/divergence.js'), /return \{ bars, symbol:/);
+  });
+});
+
+/**
+ * The native TradingView tools the drawer adopted on 2026-07-30.
+ *
+ * All three replace hand-built geometry with ONE entity, and all three are
+ * source contracts for the same reason the rest of this file is: the wiring is
+ * what drifts, and every failure mode here is silent.
+ */
+describe('native shapes — one entity where there were several', () => {
+  test('the verdict-side plan is a position tool, with the three lines as fallback', () => {
+    /**
+     * `position_tool.js` existed, worked and was registered the whole time the
+     * unified drawer was putting three horizontal lines on the chart instead. The
+     * native tool shades risk and reward, is draggable, and recomputes the size
+     * itself — which three static lines cannot do.
+     *
+     * The FALLBACK is the part that must not rot: on a machine with no configured
+     * account there is nothing to size the box with, and inventing a number is the
+     * failure position_size_constrained was fixed for.
+     */
+    const d = src(DRAW);
+    assert.match(d, /import \{ drawPosition \} from '\.\/position_tool\.js'/,
+      'the shared drawer must call the position tool, not re-implement it');
+    assert.match(d, /await put\(\(\) => drawPosition\(\{/);
+    assert.match(d, /import \{ accountSettings \} from '\.\/rules\.js'/,
+      'account size and risk come from rules.json — never from a literal');
+    assert.ok(!/account_size: \d/.test(d), 'an account size hard-coded here is an invented one');
+    assert.match(d, /export function planLegDrawing/,
+      'the position-or-lines decision must be PURE, so both paths are testable without a chart');
+    // The fallback still writes ENTRY / STOP / TARGET, the only text-bearing form
+    // of a trade plan and therefore the only one the orphan sweep can recover.
+    for (const re of [/text: `ENTRY \$\{side\}/, /text: `STOP \$\{l\.stop\}/, /text: `TARGET \$\{l\.target\}/]) {
+      assert.match(d, re, 'the three-line fallback must survive — it runs whenever the account is unset');
+    }
+  });
+
+  test('the channel is ONE parallel_channel, not two trend lines', () => {
+    /**
+     * Two independent trend lines described a channel without being one: dragging
+     * either edge broke the parallelism the measurement asserts, and clearing one
+     * left the other. Probed 3 points asked, 3 landed.
+     */
+    const d = src(DRAW);
+    assert.match(d, /shape: 'parallel_channel'/);
+    assert.ok(!/text: `\$\{channel\.pattern\} (?:upper|lower)`/.test(d),
+      'the two separate boundary lines must be gone');
+    assert.match(src('src/core/orphans.js'), /\^\(\?:\$\{PAT\}\) \(\?:upper\|lower\)\$/,
+      'and their signature must STAY — signatures are append-only, and every chart drawn before '
+      + 'today still carries those labels');
+  });
+
+  test('head and shoulders is one native entity, with a hard 7-pivot floor', () => {
+    /**
+     * The old "native multipoint tools place two points and stay armed" conclusion
+     * was triangle_pattern-specific: head_and_shoulders landed 7 of 7 in the same
+     * session triangle_pattern landed 2 of 5. Given fewer points than it declares,
+     * a pattern tool places what it has and leaves the drawing cursor LIVE — so
+     * the floor is not a nicety.
+     */
+    const d = src(DRAW);
+    assert.match(d, /shape: 'head_and_shoulders',\s*\n\s*points: seven/);
+    assert.match(d, /if \(pv\.length >= 7\)/, 'the 7-pivot floor must gate the native tool');
+    assert.match(d, /\} else if \(pv\.length >= 2\) \{/, 'and fewer pivots must fall back to leg lines');
+    assert.match(src('src/core/drawing.js'), /keyboard\(\{ key: 'Escape' \}\)/,
+      'the Escape disarm stays — a synthetic KeyboardEvent is ignored (isTrusted false)');
+    assert.match(src('src/core/drawing.js'), /triangle_pattern: 5,\s*\/\/ LineToolTrianglePattern — BROKEN/,
+      'triangle_pattern must stay marked broken, or head_and_shoulders working invites a re-try');
+  });
+
+  test('a multipoint create is settle-verified, not slept through', () => {
+    /**
+     * The fixed 500ms wait was a guess a probe caught being wrong: a shape that
+     * resolves after the capture window is never recorded, and a multipoint shape
+     * carries no text — so it is invisible to BOTH the registry clear and the
+     * orphan sweep. That is the 545-stale-shapes failure, one drawing at a time.
+     */
+    const dr = src('src/core/drawing.js');
+    assert.ok(!/setTimeout\(r, 500\)/.test(dr), 'the fixed 500ms multipoint sleep must be gone');
+    assert.match(dr, /export const MULTIPOINT_SETTLE = \{ interval_ms: \d+, budget_ms: \d+ \}/);
+    assert.match(dr, /settledId = await settleForNewId\(apiPath, before\)/,
+      'the id must be captured BEFORE the Escape, or a late create escapes capture');
+    assert.match(dr, /\|\| settledId \|\| null/,
+      'and a polled id must beat returning null — an unidentified shape is an untrackable one');
+  });
+
+  test('the textless natives say so, and lean on the GROUP clear', () => {
+    /**
+     * `findOrphans` classifies a shape with no text as FOREIGN and never touches
+     * it — correct, since most hand-drawn shapes are unlabelled. But the position
+     * tool and the parallel_channel cannot carry text at all (a non-empty `text`
+     * makes a multipoint create silently draw nothing, and setProperties reads back
+     * null), so neither is recoverable by signature. The mitigation is the group,
+     * and the mitigation has to be written down where the next person will look.
+     */
+    const d = src(DRAW);
+    assert.match(d, /group,\s*\n\s*\}\), `position \$\{side\} \$\{tag\}`\)/,
+      'the position tool must be drawn INTO drawFindings\' group, or clear_scope mcp misses it');
+    assert.match(d, /carries no text/i, 'the cost must be stated beside the code that pays it');
+    assert.match(src('src/core/orphans.js'), /else if \(isMcpText\(s\.text, \{ sources \}\)\) orphans\.push/,
+      'no text means no match means never swept — the behaviour this depends on');
+    assert.match(src('src/core/position_tool.js'), /symbol: await drawing\.currentSymbol\(\)/,
+      'and the registry entry must be symbol-scoped, or prune leaves it forever');
   });
 });
