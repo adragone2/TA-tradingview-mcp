@@ -31,7 +31,8 @@
  */
 import * as data from './data.js';
 import * as chart from './chart.js';
-import { normalizeBars, findSwings, alternateSwings, completeSeries } from './structure.js';
+import { normalizeBars, findSwings, alternateSwings, classifyStructure, completeSeries } from './structure.js';
+import { resampleBars } from './mtf.js';
 import { assess, ourAssessment } from './assessment.js';
 import { drawFindings } from './assessment_draw.js';
 import { entryHypothesis } from './entry_hypothesis.js';
@@ -421,9 +422,35 @@ export async function analyzeTicker({
 
   // Bars-only measurements — nothing here needs an input we do not have.
   await section(results, 'stopping_premium', async () => stops.stoppingPremium(bars, { lags: [1, 5, 10, 20] }));
-  await section(results, 'pivot_trail', async () => stops.pivotTrail(bars, { direction: verdict?.bias === 'BEARISH' ? 'short' : 'long' }));
+  /**
+   * TA's report review (2026-07-31) found this section dead on all 59 rows:
+   * `pivotTrail` takes SWINGS, and this call site passed BARS — bars carry no
+   * `.price`, so the filter counted 0 and the section reported "got 0" beside
+   * siblings reading 299 bars. The graceful unavailable path swallowed a
+   * producer bug for weeks. Mirrors the pivot_trail TOOL's own chain
+   * (src/tools/evidence.js): backbone swings, alternated, classified.
+   */
+  await section(results, 'pivot_trail', async () => {
+    const labelled = classifyStructure(alternateSwings(findSwings(bars, { lookback })));
+    return {
+      structure_trend: labelled.trend,
+      swings_used: labelled.swings.length,
+      ...stops.pivotTrail(labelled.swings, { direction: verdict?.bias === 'BEARISH' ? 'short' : 'long' }),
+    };
+  });
   await section(results, 'scaling_exponent', async () => tf.scalingExponent(bars));
-  await section(results, 'stage_plan', async () => stages.stagePlan(bars));
+  /**
+   * Same review, same disease: `stagePlan` takes `{long_bars, short_bars}`,
+   * and this call site passed the bars array positionally — destructuring an
+   * array yields undefined everywhere, hence "got 0 bars" on 299-bar rows.
+   * Mirrors the stage_plan TOOL (src/tools/mtf.js): weekly gate, partial
+   * aggregated bar dropped, daily trigger.
+   */
+  await section(results, 'stage_plan', async () => {
+    const agg = resampleBars(bars, 'week');
+    const gateBars = agg.partial_last_bar ? agg.bars.slice(0, -1) : agg.bars;
+    return stages.stagePlan({ long_bars: gateBars, short_bars: bars });
+  });
   await section(results, 'level_test_history', async () => levelTestStudy(bars, { lookback: 5 }));
   await section(results, 'edge_breadth', async () => breadth.singleNameExpectation('time_series_momentum', { your_positions: 1 }));
   await section(results, 'timeframe_plan', async () => tf.scaleTimeframe({
@@ -442,7 +469,18 @@ export async function analyzeTicker({
   });
 
   // Short interest — FINRA, twice a month. Network, so it may legitimately fail.
-  await section(results, 'short_interest', async () => finra.buildSeries(bare, { periods: 6 }));
+  /**
+   * Third of the three sections TA's review found dead: `buildSeries` takes
+   * FINRA ROWS, and this passed the ticker STRING — Array.isArray('CORT') is
+   * false, so every row read "No short-interest rows to summarise". The rows
+   * come from fetchSeries, exactly as the short_interest TOOL does it.
+   */
+  await section(results, 'short_interest', async () => {
+    const asOf = new Date().toISOString().slice(0, 10);
+    const { rows, dataset, empty_reason, window } = await finra.fetchSeries(bare, { periods: 6, asOf, dataset: 'consolidated' });
+    if (!rows.length) return { available: false, note: empty_reason, window, dataset };
+    return { dataset, ...finra.buildSeries(rows, { asOf, bars, lastPrice: px, periods: 6 }) };
+  });
 
   // Options walls — needs the TA-Trading layout to DRAW, but the data reads anywhere.
   await section(results, 'walls', async () => loadWalls({ symbol: bare }));

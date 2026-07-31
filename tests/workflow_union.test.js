@@ -610,3 +610,37 @@ describe('native shapes — one entity where there were several', () => {
       'and the registry entry must be symbol-scoped, or prune leaves it forever');
   });
 });
+
+describe('the three sections TA found dead — producer call shapes (2026-07-31)', () => {
+  /**
+   * All three failed the same way: the orchestrator handed a core the wrong
+   * first argument, and each core's GRACEFUL unavailable path turned the
+   * producer bug into a plausible data condition — "got 0 swings", "got 0
+   * bars", "no rows" — on rows whose siblings read 299 bars. The completeness
+   * score counted them as ran, because a definite negative is a real answer.
+   * These pin the call shapes to the ones the registered TOOLS use.
+   */
+  const t = src(ORCH);
+
+  test('pivot_trail receives SWINGS through the backbone chain, never bars', () => {
+    assert.match(t, /classifyStructure\(alternateSwings\(findSwings\(bars, \{ lookback \}\)\)\)/);
+    assert.match(t, /stops\.pivotTrail\(labelled\.swings,/);
+    assert.ok(!t.includes('stops.pivotTrail(bars'),
+      'bars have no .price — the filter counts 0 and the section dies gracefully');
+  });
+
+  test('stage_plan receives {long_bars, short_bars} with the weekly gate, never a positional array', () => {
+    assert.match(t, /resampleBars\(bars, 'week'\)/);
+    assert.match(t, /agg\.partial_last_bar \? agg\.bars\.slice\(0, -1\) : agg\.bars/);
+    assert.match(t, /stages\.stagePlan\(\{ long_bars: gateBars, short_bars: bars \}\)/);
+    assert.ok(!t.includes('stages.stagePlan(bars)'),
+      'destructuring an array yields undefined long_bars — "got 0" on 299-bar rows');
+  });
+
+  test('short_interest fetches ROWS before building the series, never passes the ticker string', () => {
+    assert.match(t, /finra\.fetchSeries\(bare, \{ periods: 6, asOf, dataset: 'consolidated' \}\)/);
+    assert.match(t, /finra\.buildSeries\(rows, \{ asOf, bars, lastPrice: px, periods: 6 \}\)/);
+    assert.ok(!t.includes('finra.buildSeries(bare'),
+      "Array.isArray('CORT') is false — every row read as having no short-interest data");
+  });
+});
