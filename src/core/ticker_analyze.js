@@ -498,10 +498,22 @@ export async function analyzeTicker({
     }
     const leg = hypothesis?.long?.available ? hypothesis.long : hypothesis?.short;
     if (!leg?.available) throw new Error('no tradeable entry hypothesis to size');
-    return sizeWithConstraints({
-      account_size: cfg.account_size, entry: leg.trigger, stop: leg.stop,
-      risk_percent: cfg.risk_percent ?? 1,
-    });
+    return {
+      ...sizeWithConstraints({
+        account_size: cfg.account_size, entry: leg.trigger, stop: leg.stop,
+        risk_percent: cfg.risk_percent ?? 1,
+      }),
+      /**
+       * The mirror of portfolio_heat's note, added after TA read this section
+       * against its own book and called the constraint meaningless. Both layers
+       * now state the split where each is computed.
+       */
+      account_source: `account.account_size in ${cfg.rules_path}`,
+      layer_note: `The TRADING-account layer, deliberately: a chart-layer trade sized against the `
+        + `${cfg.account_size} trading account in rules.json, NOT against TA's investing book. `
+        + `portfolio_heat carries the book, sized against TA's own equity — the two layers must `
+        + 'not be divided into each other.',
+    };
   });
 
   // ── drawing: the complete drawer, geometry and all ──────────────────────────
