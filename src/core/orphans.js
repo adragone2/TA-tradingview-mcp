@@ -72,7 +72,8 @@ SIGNATURES_BY_SOURCE.review.push(
   // draw-smoke's label audit (P3.3, 2026-07-30): this was never registered, so
   // every rectangle zones_draw had ever drawn was invisible to the sweep and
   // leaked as a permanent orphan at session end. `momentum_x` can round to
-  // null and String(null) is "null", hence the alternation.
+  // null and String(null) is "null", hence the `null` alternation — the
+  // wording the emitter used until later that same day, still on live charts.
   //
   // Registered as-is rather than re-pointing the emitter at the range form
   // above, for two reasons. The status/grade/momentum suffix is the zone's
@@ -81,6 +82,12 @@ SIGNATURES_BY_SOURCE.review.push(
   // signature would be required even if the emitter changed: an orphan is by
   // definition written by old code, and signatures are append-only.
   new RegExp(`^(?:demand|supply) (?:fresh|tested|broken)(?: · aggressive)? · (?:${NUM}|null)x$`),
+  // What replaced "nullx" (2026-07-30): an unmeasurable multiple — a zero-body
+  // base, where mBody/avgBody is undefined — prints "n/a" in the momentum
+  // slot: "demand fresh · n/a". The slot stays FILLED on purpose. Omitting the
+  // suffix would emit a bare "demand fresh", which the negative tests pin as a
+  // plausible hand-typed label — a form the sweep must never claim.
+  new RegExp(`^(?:demand|supply) (?:fresh|tested|broken)(?: · aggressive)? · n/a$`),
   // trade plan legs: "ENTRY long 30.77 — double_bottom", "STOP 26.11 — …", "TARGET 34.76 (R:R 0.86) — …"
   new RegExp(`^ENTRY (?:long|short) ${NUM} — .+$`),
   new RegExp(`^STOP ${NUM} — .+$`),

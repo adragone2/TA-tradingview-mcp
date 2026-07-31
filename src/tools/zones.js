@@ -93,7 +93,11 @@ export function registerZoneTools(server) {
 
       for (const z of pick) {
         const colour = z.kind === 'demand' ? COLORS.target : COLORS.stop;
-        const label = `${z.kind} ${z.status}${z.grade === 'aggressive' ? ' · aggressive' : ''} · ${z.momentum_x}x`;
+        // The momentum slot is always filled — "n/a" when the multiple is
+        // unmeasurable (zero-body base). A suffixless "demand fresh" is pinned
+        // as hand-typed in the orphan-sweep negatives, so it must never be
+        // emitted; this template is itself pinned verbatim in orphans.test.js.
+        const label = `${z.kind} ${z.status}${z.grade === 'aggressive' ? ' · aggressive' : ''} · ${z.momentum_x == null ? 'n/a' : z.momentum_x + 'x'}`;
         try {
           const res = await drawShape({
             shape: 'rectangle',

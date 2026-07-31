@@ -494,7 +494,9 @@ describe('zones_draw labels are sweepable', () => {
     'demand fresh · 2.1x',
     'supply tested · aggressive · 1.4x',
     'demand broken · 0.85x',
-    'supply fresh · nullx', // momentum_x rounds to null; String(null) is "null"
+    'supply fresh · nullx', // momentum_x rounds to null; String(null) is "null" — retired wording, still on charts
+    'demand fresh · n/a',   // what replaced it (2026-07-30): an unmeasurable multiple says so
+    'supply tested · aggressive · n/a',
   ];
   for (const text of cases) {
     test(`"${text}" matches a registered signature`, () => {

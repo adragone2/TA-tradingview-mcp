@@ -51,7 +51,10 @@ describe('isMcpText — recognises what this toolchain writes', () => {
     'demand fresh · aggressive · 3.04x',
     'supply broken · aggressive · 2x',   // integer multiple; broken reachable via include_broken
     'demand tested · 12.75x',
-    'supply fresh · nullx',              // avgBody 0 → momentum_x null → String(null)
+    'supply fresh · nullx',              // avgBody 0 → momentum_x null → String(null); RETIRED
+                                         // wording, still on live charts — append-only
+    'demand fresh · n/a',                // what the emitter writes for that case since 2026-07-30
+    'supply tested · aggressive · n/a',
   ];
 
   for (const t of OURS) {
@@ -97,6 +100,7 @@ describe('isMcpText — leaves everything else alone', () => {
     'demand fresh',                   // hand-typed shorthand — ours always carries the momentum suffix
     'demand fresh · 2.1',             // missing the x
     'demand fresh - 2.1x',            // ASCII hyphen, not the middle dot the builder writes
+    'demand fresh - n/a',             // the hyphen rule again, for the n/a form
     'demand fresh · plain · 2.1x',    // 'plain' is a real grade but is never printed
     'supply aggressive · 2.1x',       // the builder always prints the status
     'note: demand fresh · 2.1x',      // our format embedded in a person's note
@@ -209,7 +213,12 @@ describe('zones_draw labels — the builder and the signature stay in step', () 
    * the signature and this test together. The render below is the same
    * expression with local variables, so it cannot drift from what is pinned.
    */
-  const TEMPLATE = "${z.kind} ${z.status}${z.grade === 'aggressive' ? ' · aggressive' : ''} · ${z.momentum_x}x";
+  // The momentum slot is ALWAYS filled — "n/a" when the multiple is
+  // unmeasurable (zero-body base), never String(null)'s "nullx". Dropping the
+  // suffix instead was considered and rejected: the bare "demand fresh" is
+  // pinned as hand-typed in the negatives above, so a suffixless emission
+  // could never be claimed by the sweep without risking a person's own label.
+  const TEMPLATE = "${z.kind} ${z.status}${z.grade === 'aggressive' ? ' · aggressive' : ''} · ${z.momentum_x == null ? 'n/a' : z.momentum_x + 'x'}";
 
   test('every form the builder can emit is recognised', () => {
     const src = readFileSync('src/tools/zones.js', 'utf8');
@@ -226,7 +235,7 @@ describe('zones_draw labels — the builder and the signature stay in step', () 
       for (const status of ['fresh', 'tested', 'broken']) {
         for (const grade of ['aggressive', 'plain']) {
           for (const momentum_x of [2, 2.1, 3.04, null]) {
-            const label = `${kind} ${status}${grade === 'aggressive' ? ' · aggressive' : ''} · ${momentum_x}x`;
+            const label = `${kind} ${status}${grade === 'aggressive' ? ' · aggressive' : ''} · ${momentum_x == null ? 'n/a' : momentum_x + 'x'}`;
             assert.equal(isMcpText(label), true,
               `would leak as a permanently unrecoverable orphan: "${label}"`);
           }
