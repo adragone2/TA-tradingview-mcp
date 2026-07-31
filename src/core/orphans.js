@@ -101,6 +101,46 @@ SIGNATURES_BY_SOURCE.review.push(
   new RegExp(`^(?:${PAT}) (?:forming|confirmed) target ${NUM}$`),
   // VCP: "VCP pivot 34.2"
   new RegExp(`^VCP pivot ${NUM}$`),
+  /**
+   * The primary level WITH its evidence: "S 14.84 (0.07%) - 9 tests, 1.4x vol".
+   *
+   * A gap, found by probing rather than by reading: the level label above is
+   * anchored end-to-end, and the drawer has been appending ` - <reason>` to it
+   * since the evidence was put back in the label. So every primary level drawn
+   * with a reason has been INVISIBLE to the sweep — `isMcpText` returned false on
+   * a live example, measured 2026-07-30.
+   *
+   * The suffix is deliberately loose because `shortReason` composes it from
+   * whichever clauses matched, and can produce an empty one (leaving a trailing
+   * " - "). The PREFIX carries the discrimination: a price and a signed
+   * percentage in parentheses after a bare S or R is not something typed by hand.
+   */
+  // `-(?: .*)?` rather than `- .*`: isMcpText TRIMS before matching, so the
+  // empty-suffix form arrives as "S 14.84 (0.07%) -" with no trailing space.
+  new RegExp(`^[SR] ${NUM} \\(${NUM}%\\) -(?: .*)?$`),
+);
+
+/**
+ * ── The CALLOUT labels, and the earnings line (assessment_draw.js) ──────────
+ *
+ * Two of the shapes adopted on 2026-07-30 carry TEXT, which makes them the
+ * opposite case from the textless natives: `parallel_channel`, the position
+ * tool, `fib_retracement`, `fixed_range_volume_profile` and
+ * `elliott_impulse_wave` can only ever be cleared by GROUP, while these two are
+ * sweepable — and therefore MUST be registered here or they leak forever.
+ *
+ * A callout carries the level's text UNCHANGED — the same string the horizontal
+ * line would have printed — so every signature above already covers it, and the
+ * test asserts exactly that round trip. Nothing new is needed for the callout
+ * itself; what IS new is the earnings line's own format.
+ *
+ * Probed live the same day: a callout's `text` reads back verbatim through
+ * `getProperties()`, which is the property `findOrphans` matches on.
+ */
+SIGNATURES_BY_SOURCE.review.push(
+  // the earnings vertical_line: "earnings 2026-08-26 (27d)".
+  // Days are never negative — earningsLinePlan refuses a past date outright.
+  new RegExp(`^earnings \\d{4}-\\d{2}-\\d{2} \\(\\d+d\\)$`),
 );
 
 // ── ta_draw_decision (src/core/ta_decisions.js) ────────────────────────────

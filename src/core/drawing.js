@@ -153,6 +153,30 @@ export async function resolveTime(input) {
  * text is classified `foreign` by `findOrphans` and is NEVER swept. So every
  * multipoint shape here is recoverable ONLY through the registry and its group —
  * see the comment on the position tool in assessment_draw.js.
+ *
+ * ── TWO-POINT shapes are the opposite case, re-probed 2026-07-30 ──
+ *
+ * The no-text rule above is about creates with MORE than two points, which take
+ * the `createMultipointShape` branch below. A two-point create goes through the
+ * `point2` branch, which passes `text` — and it lands:
+ *
+ *   callout                     2/2 points, text READ BACK VERBATIM — adopted
+ *                               for the off-line level labels (P1.6). Because it
+ *                               carries text it IS sweepable by orphans.js, and
+ *                               its format is registered there.
+ *   fib_retracement             2/2 points — adopted (P1.5). Passed NO text
+ *                               deliberately: it draws its own level labels.
+ *   fixed_range_volume_profile  2/2 points — adopted, opt-in (P1.8). Textless.
+ *
+ * ── vertical_line BEYOND the last bar: it works (P1.7) ──
+ *
+ * The open question for the earnings line was whether a one-point shape can be
+ * placed at a time past the end of the series. Asked at 2026-09-06 on
+ * NASDAQ:AAPL — ~38 days past the last bar — it CREATED, landed 1/1 points, and
+ * kept its text. TradingView SNAPPED the requested time to the next session:
+ * 2026-09-06 was a Sunday and the shape read back at 2026-09-08. So nothing
+ * needs clamping to the last bar, and the line lands on a trading day rather
+ * than in a weekend gap.
  */
 export const NATIVE_PATTERN_SHAPES = {
   head_and_shoulders: 7,        // LineToolHeadAndShoulders

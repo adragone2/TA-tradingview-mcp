@@ -271,6 +271,19 @@ export async function analyzeTicker({
   const held = taCtx?.held?.find((h) => String(h.ticker).toUpperCase() === bare) || null;
   const earnings = taCtx?.earnings?.find((e) => String(e.ticker).toUpperCase() === bare) || null;
   const daysToEarnings = Number.isFinite(earnings?.days_until) ? earnings.days_until : days_to_catalyst;
+  /**
+   * The earnings DATE, not just the distance to it.
+   *
+   * `days_to_earnings` answers "does it report inside my hold"; a line on the
+   * chart needs a point on the TIME AXIS, and only the date gives one. TA writes
+   * `earnings_date` as an ISO day, or "N/A (ETF)" for a fund — which is an ANSWER
+   * rather than a missing value, and `earningsLinePlan` treats it as one. Every
+   * other guard (past dates, dates past the 45-day window) lives there too, so
+   * this end only has to pass through what TA said.
+   */
+  const earningsForDraw = earnings?.earnings_date
+    ? { date: earnings.earnings_date, days_until: daysToEarnings ?? null }
+    : null;
 
   // Screens — the scanner round trip, done here rather than left to the caller.
   const screens = await section(results, 'screens', async () => {
@@ -488,7 +501,11 @@ export async function analyzeTicker({
       // Only the verdict side is drawn. `side` above collapses NEUTRAL to 'long',
       // so the bias is passed separately — filtering on `side` would delete every
       // bearish finding on an undecided chart and call it a clean-up.
-      { clear_scope, bias: verdict?.bias ?? null },
+      //
+      // `earnings` is the catalyst on the TIME axis. The fixed-range volume
+      // profile is deliberately NOT enabled here: it is a pane-wide overlay, and
+      // its acceptance is "rendered natively on request".
+      { clear_scope, bias: verdict?.bias ?? null, earnings: earningsForDraw },
     ));
   } else {
     results.drawings = { ok: false, skipped: true, reason: 'draw was false' };

@@ -12,11 +12,274 @@
 import * as drawing from './drawing.js';
 import { drawPosition } from './position_tool.js';
 import { removeOrphans } from './orphans.js';
-import { selectPrimary } from './level_display.js';
+import { selectPrimary, atrFromBars } from './level_display.js';
 import { planPatternDrawings } from './patterns_draw.js';
 import { accountSettings } from './rules.js';
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
+
+/**
+ * A number, or NaN — and `null` is NaN.
+ *
+ * `Number(null)` is **0**, and 0 is finite. So the obvious
+ * `Number.isFinite(Number(v))` reads a MISSING value as a real zero: a fibonacci
+ * block with `retraced_pct: null` was described as "retraced 0% — price has
+ * extended beyond the impulse", which is a confident statement about a
+ * measurement that did not happen. Same trap as `Number('')`, also 0.
+ *
+ * Caught by a test asserting the refusal REASON rather than just the refusal —
+ * both paths refuse, and only the message distinguishes "no measurement" from
+ * "measured, and it says continuation".
+ */
+const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+
+/**
+ * When a level's label must come OFF the line, and where it goes instead.
+ *
+ * ── The failure this fixes ──
+ *
+ * Every horizontal line prints its label at the RIGHT price scale, at the price.
+ * Two levels a fraction of an ATR apart print two labels in the same few pixels,
+ * and on ALM and MTSI they overprinted into unreadable mush. `hline`'s dedupe
+ * cannot fix it: the dedupe merges levels at the SAME price, and these are
+ * different prices that deserve different lines — it is the TEXT that collides,
+ * not the level.
+ *
+ * So the line stays and the text moves. A `callout` (probed 2026-07-30: 2 points
+ * asked, 2 landed, and its text READ BACK verbatim) anchors at the level and puts
+ * its box in clear space.
+ *
+ * ── The two triggers ──
+ *
+ *   LENGTH.    A label over `max_label_chars` runs left across the bars from the
+ *              price scale regardless of what else is on the chart. "S 14.84
+ *              (0.07%) - 9 tests, 1.4x vol" is 34 characters.
+ *   PROXIMITY. A price within `min_atr_gap` ATR of one that ALREADY carries a
+ *              label on its line. ATR-relative because 0.35 ATR is the same
+ *              visual distance on a quiet large cap and a volatile small cap,
+ *              which a percentage is not (see improvements.md P3.2 for the same
+ *              argument applied to the merge tolerance).
+ *
+ * Proximity is measured only against labels that print ON their line, because
+ * those are the ones occupying the price scale. A callout's text has already
+ * been moved away and cannot be collided with there.
+ *
+ * PURE, and a left fold, so `labelPlacements(list.concat(next)).at(-1)` decides
+ * one level without the drawer having to collect every level first — the
+ * production path and the tested path are then the same function.
+ */
+export const LABEL_COLLISION = { max_label_chars: 28, min_atr_gap: 0.35 };
+
+export function labelPlacements(levels, atr, { max_label_chars, min_atr_gap } = LABEL_COLLISION) {
+  const gap = Number.isFinite(atr) && atr > 0 ? atr * min_atr_gap : null;
+  const onLine = [];
+  const out = [];
+  let slot = 0;
+  for (let i = 0; i < (levels || []).length; i += 1) {
+    const lvl = levels[i] || {};
+    const price = Number(lvl.price);
+    const text = String(lvl.text ?? '');
+    const why = [];
+
+    if (text.length > max_label_chars) why.push(`label is ${text.length} chars, over ${max_label_chars}`);
+    if (gap != null && Number.isFinite(price)) {
+      const near = onLine.find((p) => Math.abs(p.price - price) <= gap);
+      if (near) why.push(`within ${min_atr_gap} ATR (${r2(gap, 4)}) of ${near.price}, which is already labelled on its line`);
+    }
+
+    if (!why.length) {
+      onLine.push({ price, text });
+      out.push({ index: i, price, text, mode: 'line', why: null });
+      continue;
+    }
+
+    /**
+     * Alternate ABOVE and BELOW, then step further out every second callout, and
+     * step further LEFT every time. Both axes move, because two callouts that
+     * differ on one axis alone still overlap when their boxes are wider than the
+     * step — which is the collision this whole function exists to end.
+     *
+     * Leftwards, not rightwards: the space to the right of the last bar is where
+     * TradingView draws its own price/countdown labels, and a box there sits on
+     * top of them.
+     */
+    const unit = gap != null ? gap : Math.abs(price) * 0.0035 || 0.01;
+    const tier = Math.floor(slot / 2);
+    out.push({
+      index: i, price, text, mode: 'callout', why: why.join('; '), slot,
+      price_offset: (slot % 2 === 0 ? 1 : -1) * unit * (3 + 2 * tier),
+      time_offset_bars: -(8 + 5 * slot),
+    });
+    slot += 1;
+  }
+  return out;
+}
+
+/**
+ * Should the fibonacci block be drawn, and between which two points?
+ *
+ * `assess()` has computed this block since the module existed and NOTHING drew
+ * it. The native `fib_retracement` (probed 2026-07-30: 2 asked, 2 landed) draws
+ * its own level labels, so it is passed no text and is therefore cleared by
+ * GROUP rather than by the orphan sweep — same trade as the channel and the
+ * position tool.
+ *
+ * ── The gate, and why it is this one ──
+ *
+ * A retracement is worth drawing while one is IN PROGRESS. `fibLevels` states
+ * the two ways that is false in its own `interpretation`, and both are read
+ * straight off `retraced_pct`:
+ *
+ *   ≤ 0%   price has extended BEYOND the impulse. That is continuation, not a
+ *          pullback, and a retracement grid over it measures nothing.
+ *   > 100% the entire impulse has been given back. The prior swing is broken,
+ *          so the anchor is describing a structure that no longer holds.
+ *
+ * `in_golden_zone` is a SUBSET of the drawn range, not the gate — gating on it
+ * would hide the grid for exactly the shallow and deep pullbacks a reader most
+ * wants the levels for.
+ */
+export function fibDrawPlan(fib) {
+  const anchor = fib?.anchor;
+  const pct = num(fib?.retraced_pct);
+  if (!anchor) {
+    return { draw: false, why: 'the fibonacci block carries no anchor — assess() could not tie the retracement to two confirmed swings' };
+  }
+  const pts = [
+    { time: num(anchor.from_time), price: num(anchor.from_price) },
+    { time: num(anchor.to_time), price: num(anchor.to_price) },
+  ];
+  if (pts.some((p) => !Number.isFinite(p.time) || !Number.isFinite(p.price))) {
+    return { draw: false, why: 'the fibonacci anchor is missing a time or a price' };
+  }
+  if (!Number.isFinite(pct)) return { draw: false, why: 'no retracement was measured' };
+  if (pct <= 0) {
+    return { draw: false, why: `retraced ${pct}% — price has extended beyond the impulse, so this is continuation rather than a pullback` };
+  }
+  if (pct > 100) {
+    return { draw: false, why: `retraced ${pct}% — the whole impulse has been given back, so the prior swing is broken rather than retracing` };
+  }
+  return {
+    draw: true,
+    why: fib.in_golden_zone
+      ? `retraced ${pct}%, inside the 38.2-61.8% zone`
+      : `retracement in progress at ${pct}%`,
+    in_golden_zone: !!fib.in_golden_zone,
+    direction: fib.direction ?? null,
+    points: pts,
+  };
+}
+
+/**
+ * The agreeing Elliott count, or nothing.
+ *
+ * `elliott_impulse_wave` probed 6 of 6 points on 2026-07-30, so the shape works.
+ * The restraint is the point: a rule-valid count exists on **70.5% of random
+ * walks**, and `surveyCounts` returns every count the rules allow precisely so
+ * that no single one is presented as THE count. Drawing one on a chart is the
+ * strongest possible presentation of it.
+ *
+ * So the only count that gets drawn is the one every sensitivity that found a
+ * count agreed on — `distinct_recent_counts === 1`, the module's own strongest
+ * statement. Two or more distinct counts is DISAGREEMENT, and the disagreement
+ * is the finding rather than something to render; zero means no count exists.
+ * Neither draws.
+ */
+export function elliottDrawPlan(ell) {
+  const distinct = ell?.distinct_recent_counts;
+  if (distinct == null) return { draw: false, why: 'no Elliott survey ran' };
+  if (distinct === 0) return { draw: false, why: 'no sensitivity produced a rule-valid count' };
+  if (distinct > 1) {
+    return {
+      draw: false,
+      why: `${distinct} different most-recent counts across sensitivities — the disagreement IS the finding, `
+        + 'and drawing one of them would present a choice of swing lookback as a reading of the market',
+    };
+  }
+  const c = ell.agreeing_count;
+  const pivots = (c?.pivots || []).map((p) => ({ time: num(p?.time), price: num(p?.price) }));
+  if (pivots.length !== 6 || pivots.some((p) => !Number.isFinite(p.time) || !Number.isFinite(p.price))) {
+    return { draw: false, why: 'the sensitivities agree but the count carries no six usable pivots' };
+  }
+  return {
+    draw: true,
+    why: 'every sensitivity that found a count found the SAME one',
+    direction: c.direction ?? null,
+    points: pivots,
+  };
+}
+
+/** Days apart by CALENDAR day, so an event later today is 0 rather than -1. */
+const dayIndex = (unixSeconds) => Math.floor(unixSeconds / 86400);
+
+/**
+ * The earnings `vertical_line` — where the catalyst is, drawn where the stop is.
+ *
+ * ── The live probe that decided the implementation (2026-07-30, NASDAQ:AAPL) ──
+ *
+ * The open question was whether a vertical line can be placed at a time BEYOND
+ * the last bar, since earnings are by definition in the future. It can: asked at
+ * 2026-09-06, ~38 days past the last bar (2026-07-30), it **created**, landed
+ * 1/1 points, and its text read back verbatim. TradingView SNAPPED the requested
+ * time to the next session — 2026-09-06 was a Sunday and the shape read back at
+ * 2026-09-08 — so the line lands on a trading day rather than in the weekend
+ * gap. Nothing is clamped to the last bar; the earlier worry was unfounded.
+ *
+ * A vertical_line takes ONE point and carries its text, so unlike the natives
+ * above it IS recoverable by the orphan sweep. Its format is registered in
+ * `SIGNATURES_BY_SOURCE.review`.
+ *
+ * ── The guards ──
+ *
+ *   A PAST date is never drawn. An earnings line behind price is not risk, it is
+ *   history, and it reads identically to a live catalyst on a chart.
+ *   Beyond `max_days_ahead` is not drawn either: a line 200 days out compresses
+ *   the visible bars to nothing when the chart is fitted to its content.
+ */
+export const EARNINGS_LINE = { max_days_ahead: 45 };
+
+export function earningsLinePlan(earnings, {
+  now = Date.now() / 1000, last_bar_time = null, max_days_ahead = EARNINGS_LINE.max_days_ahead,
+} = {}) {
+  if (!earnings) return { draw: false, why: 'no earnings date was supplied' };
+  const raw = earnings.date ?? earnings.earnings_date ?? null;
+  if (raw == null || raw === '') return { draw: false, why: 'the earnings row carries no date' };
+  const parsed = Date.parse(String(raw));
+  if (Number.isNaN(parsed)) {
+    // TA writes "N/A (ETF)" for a fund. That is an ANSWER — no earnings exist —
+    // and must not read as a broken date.
+    return { draw: false, why: `"${raw}" is not a date — nothing to place on the time axis` };
+  }
+  const time = Math.floor(parsed / 1000);
+  const days = dayIndex(time) - dayIndex(now);
+  if (days < 0) {
+    return { draw: false, why: `${String(raw).slice(0, 10)} is ${Math.abs(days)} days in the PAST — a past earnings date is history, not catalyst risk` };
+  }
+  if (days > max_days_ahead) {
+    return { draw: false, why: `${String(raw).slice(0, 10)} is ${days} days out, past the ${max_days_ahead}-day window` };
+  }
+  const date = new Date(time * 1000).toISOString().slice(0, 10);
+  return {
+    draw: true,
+    why: `${days} days away`,
+    time,
+    date,
+    days,
+    beyond_last_bar: Number.isFinite(last_bar_time) ? time > last_bar_time : null,
+    /** Registered in SIGNATURES_BY_SOURCE.review — a label matching nothing leaks a permanent orphan. */
+    text: `earnings ${date} (${days}d)`,
+    reported_days_until: Number.isFinite(earnings.days_until) ? earnings.days_until : null,
+  };
+}
+
+/**
+ * The window `assess().volume_analysis` measures over — `C.volumeProfile(bars.slice(-90))`.
+ *
+ * Drawn from the same slice or the shaded area describes a different profile
+ * from the VAH/VAL numbers beside it, which is the silent-drift failure this
+ * repo keeps paying for. Change one and the other must change with it.
+ */
+export const VOLUME_PROFILE_WINDOW = 90;
 
 /**
  * Should this plan leg be drawn as a native position tool, or as three lines?
@@ -44,7 +307,8 @@ const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(
  */
 export function planLegDrawing(leg, side, account) {
   const dir = String(side || '').toLowerCase();
-  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  /** `num`, not `Number`: an explicit `stop: null` would otherwise size a box against a stop of 0. */
+  const n = (v) => (Number.isFinite(num(v)) ? num(v) : null);
   const entry = n(leg?.entry), stop = n(leg?.stop), target = n(leg?.target);
 
   if (dir !== 'long' && dir !== 'short') {
@@ -371,6 +635,22 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    * passing `null` forces the fallback without editing the owner's rules file.
    */
   account = undefined,
+  /**
+   * `{ date, days_until }` for the next earnings report, from TA's calendar.
+   *
+   * Additive and optional: a caller with no portfolio context passes nothing and
+   * no line is drawn. `earningsLinePlan` owns every guard — a past date is never
+   * drawn, and "N/A (ETF)" is an ANSWER rather than a broken input.
+   */
+  earnings = null,
+  /**
+   * The fixed-range volume profile — OFF by default, on request.
+   *
+   * It is a pane-wide overlay rather than a level, so it goes on when someone
+   * asks for it rather than on every chart the batch walks. Nothing enables it
+   * from `ticker_analyze` yet; the acceptance is "rendered natively on request".
+   */
+  volume_profile = false,
 } = {}) {
   const group = groupName || `sunday-${String(ticker).replace(/^.*:/, '')}`;
   const drawn = { group, shapes: 0, items: [], errors: [], cleared: { tracked: 0, stale: 0 } };
@@ -465,8 +745,33 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       .filter(Boolean).join(', ');
   };
 
+  /**
+   * The time axis, for every shape that needs one. A callout's text box and the
+   * earnings line are both placed in BAR units, which only means anything once
+   * the median spacing is known — and it is not 86400 on an intraday chart, nor
+   * on a daily one across a weekend (measured 120,960s median on AAPL daily).
+   */
+  const lastBarTime = Number.isFinite(bars?.at(-1)?.time) ? bars.at(-1).time : null;
+  const barSeconds = (bars?.length ?? 0) > 11
+    ? Math.max(1, Math.round((bars.at(-1).time - bars.at(-11).time) / 10))
+    : 86400;
+  /** ATR sets the collision distance. `assess()` already measured it; the bars are the fallback. */
+  const atr = Number.isFinite(a?.risk?.atr_14) ? a.risk.atr_14 : atrFromBars(bars, 14);
+
   const drawnPrices = [];
   drawn.merged_levels = [];
+  /** Every level actually drawn, in order — the input to `labelPlacements`. */
+  const labelQueue = [];
+  drawn.labels_offset = [];
+
+  /** Merge extra overrides into a caller's JSON-string `overrides` without losing theirs. */
+  const withOverrides = (opts, extra) => {
+    let o = {};
+    try { o = typeof opts?.overrides === 'string' ? JSON.parse(opts.overrides) : (opts?.overrides || {}); }
+    catch { o = {}; }
+    return { ...opts, overrides: JSON.stringify({ ...o, ...extra }) };
+  };
+
   const hline = async (price, opts, label, { tol = 0.4 } = {}) => {
     if (!Number.isFinite(price)) return;
     const clash = drawnPrices.find((d) => Math.abs((d.price - price) / price) * 100 <= tol);
@@ -475,7 +780,57 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       return;
     }
     drawnPrices.push({ price: r2(price, 4), label });
-    await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: r2(price, 4) }, ...opts, group }), label);
+
+    /**
+     * THE LINE IS ALWAYS THE LINE. Only the TEXT moves.
+     *
+     * The dedupe above handles two blocks claiming the same PRICE. This handles
+     * two labels claiming the same few pixels of price scale, which is a different
+     * problem with a different fix — merging them would delete a level that
+     * deserves its own line.
+     *
+     * The text is passed to the callout UNCHANGED. Every one of these strings is
+     * registered in `SIGNATURES_BY_SOURCE.review`, and rewording one to fit a box
+     * would strand every drawing that carries the old wording.
+     */
+    labelQueue.push({ price: r2(price, 4), text: String(opts?.text ?? '') });
+    const place = labelPlacements(labelQueue, atr).at(-1);
+
+    if (place.mode !== 'callout' || !Number.isFinite(lastBarTime)) {
+      await put(() => drawing.drawShape({ shape: 'horizontal_line', point: { price: r2(price, 4) }, ...opts, group }), label);
+      return;
+    }
+
+    /**
+     * The line keeps its `text` with `showLabel: false`: hidden, but still
+     * readable by `findOrphans`, which matches on the text PROPERTY rather than
+     * on what is rendered. A line stripped of its text would be as unsweepable as
+     * the textless natives, and for no gain.
+     */
+    let lineColor = null;
+    try { lineColor = JSON.parse(opts?.overrides || '{}').linecolor || null; } catch { /* default style */ }
+    await put(() => drawing.drawShape({
+      shape: 'horizontal_line', point: { price: r2(price, 4) },
+      ...withOverrides(opts, { showLabel: false }), group,
+    }), label);
+    await put(() => drawing.drawShape({
+      shape: 'callout',
+      point: { price: r2(price, 4), time: lastBarTime },
+      point2: {
+        price: r2(price + place.price_offset, 4),
+        time: lastBarTime + place.time_offset_bars * barSeconds,
+      },
+      overrides: JSON.stringify({
+        color: lineColor || '#787B86', bordercolor: lineColor || '#787B86', textcolor: lineColor || '#787B86',
+        backgroundColor: 'rgba(0,0,0,0)', fontsize: 11, linewidth: 1, transparency: 100,
+      }),
+      text: opts?.text ?? '',
+      group,
+    }), `${label} callout`);
+    drawn.labels_offset.push({
+      price: r2(price, 4), label, why: place.why,
+      offset: { price: r2(place.price_offset, 4), bars: place.time_offset_bars },
+    });
   };
 
   /**
@@ -608,6 +963,101 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
         + 'text — a multipoint create rejects a label silently — so it is cleared by GROUP, not by the '
         + 'orphan sweep.',
     };
+  }
+
+  /**
+   * FIBONACCI — one native `fib_retracement` on the impulse the block measured.
+   *
+   * `assess()` has computed this block from the start and nothing drew it, so a
+   * reader got "retraced 45%, in the golden zone" with no way to see WHERE. The
+   * anchor comes from `assessment.js`, which ties it to the same two swings
+   * `fibLevels` measured and refuses to claim one when they do not match.
+   *
+   * No text: the tool draws its own level labels, and a duplicate caption on top
+   * of them is noise. Textless means GROUP-cleared, never swept.
+   */
+  const fibPlan = fibDrawPlan(a.fibonacci);
+  if (fibPlan.draw) {
+    const col = fibPlan.direction === 'down' ? '#ef5350' : '#26a69a';
+    await put(() => drawing.drawShape({
+      shape: 'fib_retracement',
+      point: fibPlan.points[0], point2: fibPlan.points[1],
+      overrides: JSON.stringify({ linecolor: col, linewidth: 1, showCoeffs: true, showPrices: true }),
+      group,
+    }), 'fibonacci retracement');
+    drawn.fibonacci = {
+      shape: 'fib_retracement',
+      why: fibPlan.why,
+      direction: fibPlan.direction,
+      in_golden_zone: fibPlan.in_golden_zone,
+      from: fibPlan.points[0], to: fibPlan.points[1],
+      note: 'Anchored to the SAME impulse assess() measured retraced_pct over. Textless — the tool draws '
+        + 'its own level labels — so it is cleared by GROUP, not by the orphan sweep.',
+    };
+  } else {
+    drawn.fibonacci = { drawn: false, why: fibPlan.why };
+  }
+
+  /**
+   * ELLIOTT — only when every sensitivity found the SAME count.
+   *
+   * The gate is the whole feature. A rule-valid count exists on 70.5% of random
+   * walks, so drawing one is a strong claim on weak evidence; drawing the ONE
+   * every sensitivity agreed on at least removes the choice of swing lookback
+   * from the answer. Disagreement is reported and never rendered.
+   */
+  const ellPlan = elliottDrawPlan(a.elliott);
+  if (ellPlan.draw) {
+    await put(() => drawing.drawShape({
+      shape: 'elliott_impulse_wave',
+      points: ellPlan.points,
+      overrides: JSON.stringify({ linecolor: ellPlan.direction === 'down' ? '#ef5350' : '#26a69a', linewidth: 1 }),
+      group,
+    }), 'elliott impulse count');
+    drawn.elliott = {
+      shape: 'elliott_impulse_wave', why: ellPlan.why, direction: ellPlan.direction,
+      pivots: ellPlan.points,
+      note: 'Drawn ONLY because every sensitivity that produced a count produced this one. Textless, so '
+        + 'it is cleared by GROUP. 70.5% of random walks admit a rule-valid count — agreement narrows the '
+        + 'subjectivity, it does not make the count evidence.',
+    };
+  } else {
+    drawn.elliott = { drawn: false, why: ellPlan.why };
+  }
+
+  /**
+   * FIXED-RANGE VOLUME PROFILE — opt-in, over assess()'s own 90-bar window.
+   *
+   * Off by default because it is a pane-wide overlay rather than a level, and the
+   * batch runs walk twenty charts. Drawn over `bars.slice(-VOLUME_PROFILE_WINDOW)`
+   * so the shading and the reported VAH/VAL describe the same bars — two windows
+   * would drift silently, which is this repo's most-repeated failure.
+   */
+  if (volume_profile) {
+    const va = a.volume_analysis || {};
+    if (va.value_area_low == null || va.value_area_high == null) {
+      drawn.volume_profile = { drawn: false, why: 'volume_analysis has no value area — a profile with no volume has nothing to shade' };
+    } else if ((bars?.length ?? 0) < 2) {
+      drawn.volume_profile = { drawn: false, why: 'too few bars to span a range' };
+    } else {
+      const w = bars.slice(-VOLUME_PROFILE_WINDOW);
+      await put(() => drawing.drawShape({
+        shape: 'fixed_range_volume_profile',
+        point: { price: r2(Math.min(...w.map((b) => b.low)), 4), time: w[0].time },
+        point2: { price: r2(Math.max(...w.map((b) => b.high)), 4), time: w.at(-1).time },
+        overrides: JSON.stringify({ transparency: 70 }),
+        group,
+      }), 'fixed range volume profile');
+      drawn.volume_profile = {
+        shape: 'fixed_range_volume_profile',
+        window_bars: w.length,
+        from: w[0].time, to: w.at(-1).time,
+        value_area: [va.value_area_low, va.value_area_high],
+        poc: va.poc ?? null,
+        note: `The SAME ${VOLUME_PROFILE_WINDOW}-bar window assess() measured the value area over. Textless, `
+          + 'so it is cleared by GROUP, not by the orphan sweep.',
+      };
+    }
   }
 
   // ENTRY / STOP / TARGET for whichever plan is actually live.
@@ -746,6 +1196,39 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       overrides: JSON.stringify({ linecolor: '#ff9800', linewidth: 2, linestyle: 1 }),
       text: `TA stop ${r2(taRow.stop, 2)} (${side})`,
     }, 'TA stop');
+  }
+
+  /**
+   * THE EARNINGS DATE, on the time axis — the catalyst drawn where the stop is.
+   *
+   * Every guard lives in `earningsLinePlan`, including the one that matters most:
+   * a PAST date is never drawn. Probed 2026-07-30 — a vertical_line placed beyond
+   * the last bar creates normally and TradingView snaps it to the next session,
+   * so no clamping is needed and none is done.
+   *
+   * Unlike the natives above this is a ONE-point shape, so its text survives and
+   * it IS recoverable by the orphan sweep. The format is registered.
+   */
+  const earnPlan = earningsLinePlan(earnings, { last_bar_time: lastBarTime });
+  if (earnPlan.draw) {
+    await put(() => drawing.drawShape({
+      shape: 'vertical_line',
+      point: { price: a.price ?? bars?.at(-1)?.close ?? 0, time: earnPlan.time },
+      overrides: JSON.stringify({ linecolor: '#ffa726', linewidth: 1, linestyle: 2, showLabel: true, textcolor: '#ffa726', fontsize: 11 }),
+      text: earnPlan.text,
+      group,
+    }), 'earnings date');
+    drawn.earnings = {
+      shape: 'vertical_line', date: earnPlan.date, days: earnPlan.days, time: earnPlan.time,
+      beyond_last_bar: earnPlan.beyond_last_bar,
+      ...(earnPlan.reported_days_until != null && earnPlan.reported_days_until !== earnPlan.days
+        ? { ta_days_until: earnPlan.reported_days_until, note_days: "TA's own days_until differs from the date; the DATE is what is drawn" }
+        : {}),
+      note: 'Carries text, so this one IS recoverable by the orphan sweep. TradingView snaps a future '
+        + 'time to the next session (probed 2026-07-30).',
+    };
+  } else if (earnings) {
+    drawn.earnings = { drawn: false, why: earnPlan.why };
   }
   return drawn;
 }

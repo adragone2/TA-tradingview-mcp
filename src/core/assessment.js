@@ -305,22 +305,90 @@ export function assess(bars, spy) {
   //
   // distinct_recent_counts is the number that matters here: disagreement across
   // sensitivities IS the finding, and it was not being reported at all.
+  /**
+   * The one count every sensitivity agreed on — and ONLY then.
+   *
+   * ADDITIVE (schema 2.0 is a published contract; nothing above is renamed). It
+   * exists so the drawer can render the agreeing count as TradingView's own
+   * 6-point `elliott_impulse_wave` without re-deriving the waves, which is the
+   * duplicate-beside-the-original failure this file's header forbids.
+   *
+   * `distinct_recent_counts === 1` is the gate, and it is the module's own
+   * strongest statement: every sensitivity that found a count found the SAME
+   * most-recent one. Two or more distinct counts is DISAGREEMENT, which is the
+   * finding rather than a thing to draw, and zero means no rule-valid count
+   * exists at all. Both leave this null.
+   *
+   * The pivots are read back from `findCounts` at the lookback that produced the
+   * agreed count, and are only claimed when that count's endpoints match what
+   * `surveyCounts` reported — an unverified anchor is how a drawn shape ends up
+   * describing bars it was not measured on.
+   */
+  const agreeingCount = safe(() => {
+    if ((ell?.distinct_recent_counts ?? 0) !== 1) return null;
+    const run = (ell.runs || []).find((r) => r.most_recent);
+    if (!run) return null;
+    const c = (E.findCounts(bars, { lookback: run.lookback }).counts || [])[0];
+    if (!c || c.waves?.length !== 5) return null;
+    const mr = run.most_recent;
+    if (c.direction !== mr.direction || c.waves[0].from !== mr.wave1_from || c.waves[4].to !== mr.wave5_to) return null;
+    const pivots = [
+      { time: c.waves[0].from_time, price: c.waves[0].from },
+      ...c.waves.map((w) => ({ time: w.to_time, price: w.to })),
+    ];
+    if (pivots.length !== 6 || pivots.some((p) => !Number.isFinite(p.time) || !Number.isFinite(p.price))) return null;
+    return {
+      direction: c.direction, lookback: run.lookback, pivots,
+      start_time: c.start_time, end_time: c.end_time, bars_since_end: c.bars_since_end,
+      note: 'Every sensitivity that found a count found THIS one. Still 70.5% of random walks admit some '
+        + 'rule-valid count, so agreement narrows the subjectivity — it does not make the count evidence.',
+    };
+  }, null);
   const elliott = {
     valid_counts: ell?.total_valid_counts ?? 0,
     distinct_recent_counts: ell?.distinct_recent_counts ?? null,
     sensitivities_run: (ell?.runs || []).length || null,
     agreement: ell?.agreement ?? null,
+    agreeing_count: agreeingCount,
     caveat: 'Every rule-valid count is returned, never one. Disagreement across sensitivities IS the finding.',
   };
 
   // ── fibonacci ─────────────────────────────────────────────────────────────
   const fl = safe(() => C.fibLevels(bars), { available: false });
   const ft = safe(() => C.fibTargets(bars), { available: false });
+  /**
+   * WHERE the retracement was measured from — the two swings, with their times.
+   *
+   * ADDITIVE, for the same reason as `elliott.agreeing_count`: this block was
+   * computed and never drawn, and a native `fib_retracement` needs the anchor
+   * times, not just the percentages. Nothing above is renamed; the Sunday schema
+   * keeps every key it had.
+   *
+   * `fibLevels` measures the last two ALTERNATING swings, which is exactly `sw`
+   * here — the same list, the same lookback of 5. The prices are compared before
+   * the anchor is claimed rather than assumed to line up: if the two ever
+   * diverge, an anchor asserted anyway would put a fib on a different impulse
+   * from the one the percentages describe, and nothing downstream could tell.
+   */
+  const fibAnchor = safe(() => {
+    if (!fl.available || sw.length < 2) return null;
+    const from = sw.at(-2), to = sw.at(-1);
+    const same = (x, y) => Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= Math.max(1e-6, Math.abs(y) * 1e-6);
+    if (!same(from.price, fl.impulse?.from) || !same(to.price, fl.impulse?.to)) return null;
+    if (!Number.isFinite(from.time) || !Number.isFinite(to.time)) return null;
+    return {
+      from_time: from.time, from_price: r2(from.price, 4),
+      to_time: to.time, to_price: r2(to.price, 4),
+    };
+  }, null);
   const fibonacci = {
     retraced_pct: fl.available ? fl.retraced_pct : null,
     in_golden_zone: fl.available ? fl.in_golden_zone : null,
     targets: ft.available ? (ft.levels || []).map((l) => l.price) : null,
     targets_refused_reason: ft.available ? null : (ft.note || null),
+    direction: fl.available ? fl.direction : null,
+    impulse: fl.available ? fl.impulse : null,
+    anchor: fibAnchor,
   };
 
   // ── liquidity ─────────────────────────────────────────────────────────────

@@ -336,6 +336,113 @@ describe('native shapes — one entity where there were several', () => {
       'and a polled id must beat returning null — an unidentified shape is an untrackable one');
   });
 
+  test('the fibonacci block is DRAWN, and gated on the block itself', () => {
+    /**
+     * `assess()` computed a fibonacci block from the day it existed and nothing
+     * drew it — the reader got "retraced 45%, in the golden zone" and no way to
+     * see where. The anchor comes from `assessment.js` so the grid sits on the
+     * SAME impulse the percentage describes; deriving it again in the drawer is
+     * the two-copies-drift failure this whole file exists to prevent.
+     */
+    const d = src(DRAW);
+    assert.match(d, /shape: 'fib_retracement'/);
+    assert.match(d, /export function fibDrawPlan/,
+      'the gate must be PURE, so "does this retracement deserve a grid" is testable without a chart');
+    assert.match(d, /const fibPlan = fibDrawPlan\(a\.fibonacci\)/,
+      'and it must read assess()\'s own block, not re-measure the swings');
+    const a = src('src/core/assessment.js');
+    assert.match(a, /anchor: fibAnchor/, 'assess() must carry the anchor times');
+    for (const k of ['retraced_pct:', 'in_golden_zone:', 'targets:', 'targets_refused_reason:']) {
+      assert.ok(a.includes(k), `${k} must survive — the fibonacci block is published in the 2.0 schema`);
+    }
+  });
+
+  test('the elliott count is drawn ONLY on agreement', () => {
+    /**
+     * A rule-valid count exists on 70.5% of random walks, and `surveyCounts`
+     * returns every count the rules allow precisely so that no single one is
+     * presented as THE count. Drawing one is the strongest presentation there is,
+     * so the only one drawn is the count every sensitivity agreed on.
+     */
+    const d = src(DRAW);
+    assert.match(d, /shape: 'elliott_impulse_wave'/);
+    assert.match(d, /export function elliottDrawPlan/);
+    assert.match(d, /if \(distinct > 1\)/, 'disagreement must be an explicit refusal, not a fall-through');
+    assert.match(src('src/core/assessment.js'), /if \(\(ell\?\.distinct_recent_counts \?\? 0\) !== 1\) return null;/,
+      'assess() must only carry the pivots when the survey itself reports agreement');
+  });
+
+  test('the earnings date reaches the drawer, and a PAST one is never drawn', () => {
+    /**
+     * `days_to_earnings` answers "does it report inside my hold". A LINE needs a
+     * point on the time axis, which only the date gives — so the date is threaded
+     * through rather than the distance.
+     */
+    const o = src(ORCH);
+    assert.match(o, /const earningsForDraw = earnings\?\.earnings_date/,
+      'the DATE must be threaded through, not just days_until');
+    assert.match(o, /earnings: earningsForDraw/, 'and it must reach drawFindings');
+    const d = src(DRAW);
+    assert.match(d, /shape: 'vertical_line'/);
+    assert.match(d, /export function earningsLinePlan/);
+    assert.match(d, /if \(days < 0\)/,
+      'a past earnings date must be refused — behind price it is history, and on a chart it reads '
+      + 'identically to a live catalyst');
+    assert.match(src('src/core/orphans.js'), /\^earnings \\\\d\{4\}-\\\\d\{2\}-\\\\d\{2\}/,
+      'the line carries TEXT, so its format must be registered or it leaks a permanent orphan');
+    /**
+     * The probe result belongs beside the shape catalogue, the same way
+     * triangle_pattern's failure does. The open question was whether a one-point
+     * shape can be placed past the end of the series; it can, and TradingView
+     * snaps it to the next session. Recorded so the next reader does not re-probe
+     * it, or "fix" it by clamping to the last bar.
+     */
+    assert.match(src('src/core/drawing.js'), /vertical_line BEYOND the last bar: it works/,
+      'the future-time probe result must be recorded in drawing.js beside the other shape verdicts');
+    assert.match(src('src/core/drawing.js'), /callout\s+2\/2 points, text READ BACK VERBATIM/,
+      'and so must the fact that a TWO-point create keeps its text — the no-text rule is about creates '
+      + 'with MORE than two points, and conflating them would make the callout look unusable');
+  });
+
+  test('the volume profile is OPT-IN, and not enabled from the analysis path', () => {
+    // A pane-wide overlay on twenty machine-selected charts is not a level. The
+    // acceptance is "rendered natively on request".
+    assert.match(src(DRAW), /volume_profile = false,/, 'it must default OFF');
+    assert.match(src(DRAW), /shape: 'fixed_range_volume_profile'/);
+    assert.ok(!/volume_profile: true/.test(src(ORCH)),
+      'ticker_analyze must not turn it on yet');
+  });
+
+  test('long labels come OFF the line, and the line keeps its text', () => {
+    /**
+     * The ALM/MTSI overprinting is text-on-hline collision at the right price
+     * scale, which the `hline` dedupe cannot fix — those are different prices
+     * that each deserve a line. So the line stays and the TEXT moves into a
+     * callout, probed 2/2 with its text reading back verbatim.
+     *
+     * Two properties are load-bearing and both are silent when broken:
+     * the text is passed to the callout UNCHANGED (every one of those strings is
+     * an orphan-sweep signature), and the line keeps its text with the label
+     * merely hidden, so it stays sweepable too.
+     */
+    const d = src(DRAW);
+    assert.match(d, /export function labelPlacements/,
+      'the collision logic must be PURE — a placement rule that needs a chart to test is untested');
+    assert.match(d, /const place = labelPlacements\(labelQueue, atr\)\.at\(-1\)/,
+      'and the drawer must USE it, or the tested function is not the shipped one');
+    assert.match(d, /shape: 'callout'/);
+    assert.match(d, /text: opts\?\.text \?\? ''/,
+      'the callout must carry the label CONTENT unchanged — rewording one to fit a box strands '
+      + 'every drawing that carries the old wording');
+    assert.match(d, /withOverrides\(opts, \{ showLabel: false \}\)/,
+      'the line keeps its text with the label hidden: findOrphans matches the text PROPERTY, so a '
+      + 'stripped line would be as unsweepable as the textless natives, for no gain');
+    assert.match(d, /labels_offset/, 'what moved must be reported, never silent');
+    assert.match(src('src/core/orphans.js'), /\^\[SR\] \$\{NUM\} \\\\\(\$\{NUM\}%\\\\\) -/,
+      'the level label WITH its evidence suffix must be registered — measured 2026-07-30, isMcpText '
+      + 'returned false on it, so every primary level drawn with a reason was invisible to the sweep');
+  });
+
   test('the textless natives say so, and lean on the GROUP clear', () => {
     /**
      * `findOrphans` classifies a shape with no text as FOREIGN and never touches
