@@ -73,6 +73,13 @@ SIGNATURES_BY_SOURCE.review.push(
   // every rectangle zones_draw had ever drawn was invisible to the sweep and
   // leaked as a permanent orphan at session end. `momentum_x` can round to
   // null and String(null) is "null", hence the alternation.
+  //
+  // Registered as-is rather than re-pointing the emitter at the range form
+  // above, for two reasons. The status/grade/momentum suffix is the zone's
+  // measured evidence — the label's whole job — and the range form drops it.
+  // And rectangles with THIS wording are already on live charts, so this
+  // signature would be required even if the emitter changed: an orphan is by
+  // definition written by old code, and signatures are append-only.
   new RegExp(`^(?:demand|supply) (?:fresh|tested|broken)(?: · aggressive)? · (?:${NUM}|null)x$`),
   // trade plan legs: "ENTRY long 30.77 — double_bottom", "STOP 26.11 — …", "TARGET 34.76 (R:R 0.86) — …"
   new RegExp(`^ENTRY (?:long|short) ${NUM} — .+$`),
