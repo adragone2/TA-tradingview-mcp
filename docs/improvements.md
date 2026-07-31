@@ -30,17 +30,17 @@ chart or the run output.
 
 | ID | Item | Status | Evidence / acceptance |
 |---|---|---|---|
-| P1.1 | **Wire `drawPosition` into `drawFindings`** for the verdict-side trade plan: one shaded, draggable R:R box (`long_position`/`short_position`) replaces 3 hlines + 3 labels. `position_tool.js` exists, works, is registered — and the unified drawer never calls it. Keep hlines as fallback when account/risk unknown. | in-progress | The verdict-side plan on a live analysis renders as a position tool; clear/signature rules still hold |
-| P1.2 | **`parallel_channel` for channels** (probed 3/3 points) — replaces the two separate trend lines in `assessment_draw.js`; one entity, moves together. | in-progress | Channel on a live analysis is a single parallel_channel entity |
-| P1.3 | **Re-adopt native `head_and_shoulders`** (probed **7/7 points landed** — the old "native tools broken" conclusion was `triangle_pattern`-specific). One entity instead of 7 trend lines. Keep the Escape disarm. | in-progress | H&S on a live analysis is one native entity, all 7 points on real pivots |
-| P1.4 | **`triangle_pattern` is confirmed broken** (probed 2/5, reproducibly) — keep the trend-line reconstruction and record the probe result in `drawing.js` so nobody re-tries it. | in-progress | Comment/documentation only |
+| P1.1 | **Wire `drawPosition` into `drawFindings`** for the verdict-side trade plan: one shaded, draggable R:R box (`long_position`/`short_position`) replaces 3 hlines + 3 labels. `position_tool.js` exists, works, is registered — and the unified drawer never calls it. Keep hlines as fallback when account/risk unknown. | verified | GRMN live: long_position drawn with TV-computed qty 9.36 from the 20k account; fallback run produced the 3 hlines with the reason; group clear removes the textless tool (orphan sweep cannot - stated in code) |
+| P1.2 | **`parallel_channel` for channels** (probed 3/3 points) — replaces the two separate trend lines in `assessment_draw.js`; one entity, moves together. | verified | AAPL live probe: one parallel_channel, 3/3 points, same geometry fields |
+| P1.3 | **Re-adopt native `head_and_shoulders`** (probed **7/7 points landed** — the old "native tools broken" conclusion was `triangle_pattern`-specific). One entity instead of 7 trend lines. Keep the Escape disarm. | verified | GRMN live: one native 7-point H&S with TV's own pivot labels; <7 pivots falls back to leg lines; completion hline kept as the trigger |
+| P1.4 | **`triangle_pattern` is confirmed broken** (probed 2/5, reproducibly) — keep the trend-line reconstruction and record the probe result in `drawing.js` so nobody re-tries it. | verified | Probe-dated BROKEN annotation in NATIVE_PATTERN_SHAPES; point counts validated before the chart is touched |
 | P1.5 | **Draw fibonacci** — `assess()` computes it and nothing draws it. Native `fib_retracement` probed 2/2. | todo | Fib levels appear as one native tool when fibonacci block is drawn-worthy |
 | P1.6 | **Label collision fix** with `callout`/`signpost`/`note` (all probed working): the ALM/MTSI overprinting is text-on-hline collision that `hline` merging cannot fix. | todo | A dense chart renders with readable, offset labels |
 | P1.7 | **Earnings date `vertical_line`** on-chart (`days_to_earnings` already known per ticker) — catalyst risk visible where the stop is. | todo | Line at the earnings date with days-until label |
 | P1.8 | **`fixed_range_volume_profile`** (probed 2/2) to draw the value area instead of reporting VAH/VAL numbers only. | todo | Value area rendered natively on request |
 | P1.9 | **`elliott_impulse_wave`** (probed 6/6) — draw the agreeing count when `elliott_survey` converges across sensitivities. | todo | Only drawn on agreement; never a lone count |
-| P1.10 | **Do-not-use list**: `price_label` creates nothing; `curve` landed 2/3 (encoding unclear). Record beside the flag-mark trap in `drawing.js`. | in-progress | Documented with probe date |
-| P1.11 | **Multipoint settle**: the fixed 500ms wait is empirically tight — capture created ids after settle-verify rather than fixed sleep. | in-progress | No late-resolving create ever escapes id capture |
+| P1.10 | **Do-not-use list**: `price_label` creates nothing; `curve` landed 2/3 (encoding unclear). Record beside the flag-mark trap in `drawing.js`. | verified | price_label/curve recorded do-not-use with probe dates |
+| P1.11 | **Multipoint settle**: the fixed 500ms wait is empirically tight — capture created ids after settle-verify rather than fixed sleep. | verified | settleForNewId (150ms poll, 1.5s budget, exported); id captured before the Escape disarm |
 
 ## P2 — pattern recognition
 
