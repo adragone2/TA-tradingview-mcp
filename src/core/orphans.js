@@ -67,6 +67,13 @@ SIGNATURES_BY_SOURCE.review.push(
   new RegExp(`^[SR] ${NUM} \\(${NUM}%\\)$`),
   // zones: "demand 33.16-34.2", "supply 1411.5-1573.09"
   new RegExp(`^(?:demand|supply) ${NUM}-${NUM}$`),
+  // zones_draw, the TOOL — a different format from the review's range form:
+  // "demand fresh · 2.1x", "supply tested · aggressive · 1.4x". Found by
+  // draw-smoke's label audit (P3.3, 2026-07-30): this was never registered, so
+  // every rectangle zones_draw had ever drawn was invisible to the sweep and
+  // leaked as a permanent orphan at session end. `momentum_x` can round to
+  // null and String(null) is "null", hence the alternation.
+  new RegExp(`^(?:demand|supply) (?:fresh|tested|broken)(?: · aggressive)? · (?:${NUM}|null)x$`),
   // trade plan legs: "ENTRY long 30.77 — double_bottom", "STOP 26.11 — …", "TARGET 34.76 (R:R 0.86) — …"
   new RegExp(`^ENTRY (?:long|short) ${NUM} — .+$`),
   new RegExp(`^STOP ${NUM} — .+$`),

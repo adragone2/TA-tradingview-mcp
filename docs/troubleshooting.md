@@ -146,3 +146,7 @@ Intelligence Detection → Configure → Add Folder →* `E:\git-repos`. The git
 setting above makes the failure stop; the exclusion stops the scanner competing
 for the files at all, and also speeds up every git operation in the repo.
 
+
+## A drawing tool silently landed fewer points than it was asked for
+
+`node scripts/draw-smoke.js` draws one of every shape production creates (12), checks the point count, text round-trip and the TradingView tool name against the 2026-07-30 probe, then removes them and proves the chart is exactly as it was. `--list` prints the table without touching the chart. This is the `triangle_pattern` failure (asked 5, landed 2, never threw) as a runnable command — run it after a TradingView update or when any drawn shape looks wrong. It takes the chart lock; if killed mid-run, `draw_clear scope:"mcp" group:"draw-smoke"` then `node scripts/clear-orphans.js --apply`.

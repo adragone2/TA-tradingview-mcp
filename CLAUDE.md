@@ -92,6 +92,7 @@
 | "Is this backtest real?" | `deflated_sharpe` — the best of 200 no-edge strategies scores 2.19 annualised. Below 0.95 is not a discovery |
 | "Did this ever work?" | `wrds_backtest_signal` |
 | "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
+| "Is the drawing API still behaving?" / a shape looks wrong | `node scripts/draw-smoke.js` — draws each of the 12 adopted shapes, asserts point counts against the 2026-07-30 probe, text round-trip and the tool TradingView actually created, then removes them and proves the chart is as it was. Takes the chart lock; `--list` is headless |
 | "Old drawings won't clear" | `node scripts/clear-orphans.js` — TradingView entity IDs are SESSION-scoped, so anything drawn before the app last restarted is invisible to `draw_clear`. Finds them by label text. Dry run by default; `--apply` to delete |
 
 ## Rules
