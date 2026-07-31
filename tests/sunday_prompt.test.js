@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { marketCondition } from '../src/core/review_rollup.js';
 
 /**
  * The Sunday review's PROMPT has to move with its schema, and nothing made it.
@@ -308,19 +309,63 @@ describe('the SCRIPT reads 2.0 paths too — a source contract', () => {
   });
 
   test('the market_condition block reads through `analysis`, and says why', () => {
-    // Positive half: the negative assertions above pass just as well on a file that
-    // deleted the block. These check it is still there, and still explained.
+    /**
+     * UPDATED after the owner re-surfaced this defect from the 15:16 pre-fix
+     * report (2026-07-30): the block is now EXTRACTED to
+     * src/core/review_rollup.js so it can be tested by CALL, not just by
+     * regex — a neutered condition passes every source contract (the P2.4
+     * lesson). Here: the script must still USE it, and the 2.0 paths and the
+     * why-comment must live with the function.
+     */
     const s = src(SCRIPT);
-    const i = s.indexOf('market_condition:');
-    assert.ok(i > 0, 'the market_condition block must still exist');
-    const block = s.slice(i, s.indexOf('})(),', i));
+    assert.ok(s.includes('market_condition: marketCondition(ok)'),
+      'the script must delegate to the extracted, callable rollup');
+    assert.match(s, /from '\.\.\/src\/core\/review_rollup\.js'/, 'and import it from the core module');
+    const r = src('src/core/review_rollup.js');
     for (const p of [
       't.analysis?.assessment?.market_regime?.regime',
       't.analysis?.assessment?.market_regime?.efficiency',
-      'ok[0]?.analysis?.assessment?.market_regime?.random_walk_efficiency',
-    ]) assert.ok(block.includes(p), `market_condition must read ${p}`);
-    assert.match(s.slice(Math.max(0, i - 1400), i), /undefined.?, not an error/,
-      'the comment recording why this block was vacuous must stay with it');
+      '?.analysis?.assessment?.market_regime?.random_walk_efficiency',
+    ]) assert.ok(r.includes(p), `marketCondition must read ${p}`);
+    assert.match(r, /undefined.?, not an error/,
+      'the comment recording why this block was vacuous must stay with the function');
+  });
+
+  test('marketCondition POPULATES on 2.0 rows — by call, not by regex', () => {
+    /**
+     * The half no source contract can prove. Fixture rows shaped like the real
+     * 2026-07-30 report: without the `analysis.` prefix the old code emitted
+     * {regime_counts: {}, broad_chop: false} — a positive statement that the
+     * market was fine, assembled out of nothing.
+     */
+    const row = (regime, efficiency) => ({
+      analysis: { assessment: { market_regime: { regime, efficiency, random_walk_efficiency: 0.183 } } },
+    });
+    const mc = marketCondition([
+      row('choppy', 0.15), row('choppy', 0.174), row('choppy', 0.2), row('trending', 0.5),
+    ]);
+    assert.deepEqual(mc.regime_counts, { choppy: 3, trending: 1 });
+    assert.equal(mc.choppy_share_pct, 75);
+    // floor(4/2) = index 2 of the sorted four: the block's median convention
+    // takes the upper-middle on even counts.
+    assert.equal(mc.median_efficiency, 0.2);
+    assert.equal(mc.random_walk_efficiency, 0.183);
+    assert.equal(mc.broad_chop, true, 'three choppy of four IS broad chop — false here was the whole defect');
+    assert.match(mc.note, /below the 0\.3 efficiency gate/);
+  });
+
+  test('marketCondition on 1.0-shaped rows is EMPTY and honest, never a verdict', () => {
+    // The regression the defect report feared: flat pre-2.0 rows must produce
+    // nulls — not broad_chop: false read as "the market is fine".
+    const mc = marketCondition([
+      { assessment: { market_regime: { regime: 'choppy', efficiency: 0.1 } } },
+      { assessment: { market_regime: { regime: 'choppy', efficiency: 0.2 } } },
+    ]);
+    assert.deepEqual(mc.regime_counts, {});
+    assert.equal(mc.choppy_share_pct, null);
+    assert.equal(mc.median_efficiency, null);
+    assert.equal(mc.broad_chop, false);
+    assert.equal(mc.note, null, 'no note may be manufactured from rows it could not read');
   });
 });
 

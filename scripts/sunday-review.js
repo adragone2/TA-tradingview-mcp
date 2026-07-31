@@ -31,6 +31,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as chart from '../src/core/chart.js';
+import { marketCondition } from '../src/core/review_rollup.js';
 import { acquireChartLock } from '../src/core/chart_lock.js';
 import * as data from '../src/core/data.js';
 import * as ta from '../src/core/ta_decisions.js';
@@ -542,25 +543,14 @@ const report = {
    * layer down — which is why tests/sunday_prompt.test.js now asserts as a source
    * contract that no 1.0 `t.assessment?.` read survives in this file.
    */
-  market_condition: (() => {
-    const regs = ok.map((t) => t.analysis?.assessment?.market_regime?.regime).filter(Boolean);
-    const choppy = regs.filter((r) => r === 'choppy').length;
-    const share = regs.length ? choppy / regs.length : null;
-    const effs = ok.map((t) => t.analysis?.assessment?.market_regime?.efficiency)
-      .filter((e) => e != null).sort((a, b) => a - b);
-    return {
-      regime_counts: regs.reduce((m, r) => ({ ...m, [r]: (m[r] || 0) + 1 }), {}),
-      choppy_share_pct: share == null ? null : r2(share * 100, 1),
-      median_efficiency: effs.length ? effs[Math.floor(effs.length / 2)] : null,
-      random_walk_efficiency: ok[0]?.analysis?.assessment?.market_regime?.random_walk_efficiency ?? null,
-      broad_chop: share != null && share >= 0.5,
-      note: share != null && share >= 0.5
-        ? `${r2(share * 100, 1)}% of names are below the 0.3 efficiency gate. This is a statement about the WEEK'S `
-          + 'MARKET, not about the individual names, and it is why "high conviction into chop" is recorded as a '
-          + 'conflict rather than a contradiction — a flag that fires on most rows does not discriminate.'
-        : null,
-    };
-  })(),
+  /**
+   * Extracted to src/core/review_rollup.js so it is behaviourally testable —
+   * a fixture report can be fed in and the block asserted to POPULATE, which
+   * the source contract alone cannot prove (a neutered condition passes every
+   * regex). The 1.0-path history and the 2026-07-30 numbers are documented on
+   * the function.
+   */
+  market_condition: marketCondition(ok),
   tickers,
 };
 const jsonPath = join(OUT_DIR, `sunday-review-${stamp}.json`);
