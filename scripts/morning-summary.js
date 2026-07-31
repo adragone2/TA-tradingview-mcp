@@ -54,6 +54,39 @@ P('');
 P(`GATE — ${r.gate.passed}/${r.gate.unique_symbols_gated} unique symbols survived our detectors`);
 P(`  pre-gate ${r.pipeline.pre_gate} per scanner in, top ${r.pipeline.per_scanner} survivors out`);
 
+/**
+ * Breadth and tradability, before the per-screen detail.
+ *
+ * Both were added to the report AFTER this script was written, and neither
+ * appeared in the summary — which is exactly the silent section loss this script
+ * exists to prevent. A section that runs and is never printed is indistinguishable
+ * from one that never ran.
+ */
+if (r.breadth?.available) {
+  P('');
+  P(`BREADTH — ${r.breadth.summary}`);
+  P('  CONTEXT only. Equal-weight vs cap-weight says whether a drawdown is broad or');
+  P('  concentrated in a few mega-caps. Never a reason to take or skip a trade.');
+} else if (r.breadth) {
+  P('');
+  P(`BREADTH: unavailable — ${r.breadth.summary}`);
+}
+
+if (r.tradability) {
+  P('');
+  if (!r.tradability.available) {
+    P(`TRADABILITY: NOT CHECKED — ${r.tradability.why_unavailable}`);
+    P('  Nothing was vetoed. A failed scrape is not evidence a name is untradeable.');
+  } else {
+    P(`TRADABILITY — ${r.tradability.vetoed.length} vetoed, ${r.tradability.flagged.length} flagged`);
+    for (const v of r.tradability.vetoed) P(`  VETOED ${bare(v.symbol)}: ${v.why}`);
+    for (const f of r.tradability.flagged) P(`  flag   ${bare(f.symbol)}: ${f.why}`);
+    if (!r.tradability.vetoed.length && !r.tradability.flagged.length) {
+      P('  nothing vetoed or flagged.');
+    }
+  }
+}
+
 if (r.screens_skipped?.length) {
   P('');
   P('SCREENS THAT DID NOT RUN (never ran — not "ran and found nothing"):');

@@ -20,9 +20,10 @@ node scripts/morning-screen.js
 | 2 | Top **15 per scanner** into **our detectors** — `assess()` + `ourAssessment()`, every rejection carrying its reason |
 | 3 | Top **5 survivors** per scanner. Not the five the scanner ranked highest — the five that passed |
 | 4 | One **execution tier** each, from the strategy's `execution` field: INTRADAY / WEEKLY / MONTHLY |
-| 5 | Those three watchlist sections rewritten. Any `KEEP*` section is **untouched** — not rewritten, not analysed, not cleared |
-| 6 | The **full unified analysis** (`analyzeTicker`, all 44 contract sections) on every name written, drawn on its chart |
-| 7 | `reports/morning-screen-YYYY-MM-DD.json` + `morning-screen-latest.json` |
+| 5 | **Tradability constraint** (Finviz) — a BEARISH read on a name that is not optionable-and-shortable is VETOED. Direction-aware: the same name on a bullish read is kept and flagged, because a long needs no borrow. Finviz unreachable vetoes **nothing** |
+| 6 | Those three watchlist sections rewritten. Any `KEEP*` section is **untouched** — not rewritten, not analysed, not cleared |
+| 7 | The **full unified analysis** (`analyzeTicker`, all 44 contract sections) on every name written, drawn on its chart |
+| 8 | `reports/morning-screen-YYYY-MM-DD.json` + `morning-screen-latest.json` |
 
 Useful flags: `--dry-run` (compute the watchlist, don't write it), `--no-draw`,
 `--no-analysis`, `--pre-gate N`, `--per-scanner N`.
@@ -55,6 +56,13 @@ per-ticker analysis moves.
 > them do not. `horizon_prior` is measured in trading days and reports **NOT
 > APPLICABLE** below daily, which the completeness score counts as neither a pass
 > nor a failure.
+
+**Read the report with `node scripts/morning-summary.js`** — one command, and the key
+names live in git beside the code that writes them. Hand-rolled extraction against
+remembered keys loses a section silently.
+
+**Equal-weight breadth** (RSP vs SPY, QQQE vs QQQ) is in the report as CONTEXT — it
+says whether a drawdown is broad or concentrated in the mega-caps. Never a gate.
 
 Design and reasoning: [screening.md](screening.md). Exact parameters:
 [screening-parameters.md](screening-parameters.md).

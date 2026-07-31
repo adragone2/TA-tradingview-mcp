@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -93,5 +93,42 @@ describe('against the real report', () => {
     // not — if this grows past a screenful per ticker it has stopped being a summary.
     const out = run();
     assert.ok(out.length < 20000, `summary is ${out.length} chars — too long to be a summary`);
+  });
+});
+
+describe('a section added to the report must reach the summary', () => {
+  /**
+   * This has now happened twice. `breadth` and `tradability` were added to the
+   * report and the summary printed neither — so the 05:30 agent would have seen a
+   * tradability VETO in the JSON and never mentioned it.
+   *
+   * A section that runs and is never printed is indistinguishable from one that
+   * never ran, which is the exact failure this script was written to prevent.
+   */
+  const src = readFileSync(`${process.cwd()}/scripts/morning-summary.js`, 'utf8');
+
+  test('every top-level report section the writer emits is read by the summary', () => {
+    const writer = readFileSync(`${process.cwd()}/scripts/morning-screen.js`, 'utf8');
+    const block = writer.slice(writer.indexOf('const report = {'), writer.indexOf('const jsonPath'));
+    // Top-level keys of the emitted report object.
+    const emitted = [...block.matchAll(/^  ([a-z_]+):/gm)].map((m) => m[1]);
+    // Bookkeeping and prose that a human summary has no reason to print.
+    const NOT_SUMMARISED = new Set([
+      'schema_version', 'generated_at', 'kind', 'universe', 'pipeline', 'tiers',
+      'watchlist', 'cadence', 'batch_shared', 'tier_a_factors', 'not_advice',
+      'completeness_summary', 'our_bias_summary', 'counts', 'screens', 'gate', 'tickers',
+    ]);
+    const missing = emitted.filter((k) => !NOT_SUMMARISED.has(k) && !src.includes(`r.${k}`));
+    assert.deepEqual(missing, [],
+      `the report emits ${missing.join(', ')} and morning-summary.js never reads it — the `
+      + 'scheduled agent would not report it');
+  });
+
+  test('breadth and tradability are printed, including when unavailable', () => {
+    // Unavailable must be LOUD. "Not checked" read as "all clear" is how an
+    // unchecked run gets presented as a confirmed one.
+    assert.match(src, /BREADTH/);
+    assert.match(src, /TRADABILITY: NOT CHECKED/);
+    assert.match(src, /Nothing was vetoed\. A failed scrape is not evidence/);
   });
 });
