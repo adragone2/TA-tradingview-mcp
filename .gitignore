@@ -23,3 +23,7 @@ exports/
 
 # Weekly review reports — regenerated each run, not source
 reports/
+
+# Python bytecode from scripts/finviz
+__pycache__/
+*.pyc

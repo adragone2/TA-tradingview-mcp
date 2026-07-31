@@ -57,6 +57,8 @@ import { removeOrphans } from '../src/core/orphans.js';
 import * as drawing from '../src/core/drawing.js';
 import { scannerTrust } from '../src/core/session.js';
 import { allFactors } from '../src/core/factors.js';
+import { equalWeightBreadth, BREADTH_COLUMNS, BREADTH_PAIRS } from '../src/core/breadth_ew.js';
+import { finvizConstraints, applyTradability } from '../src/core/finviz.js';
 import { requiredColumns } from '../src/core/screen_check.js';
 import { fetchGroupRows } from '../src/core/groups.js';
 import * as ta from '../src/core/ta_api.js';
@@ -174,6 +176,38 @@ if (unclassified.length) {
   for (const u of unclassified) log(`      ${bare(u.symbol)}: ${u.why}`);
 }
 
+/**
+ * ── the tradability constraint ─────────────────────────────────────────────
+ *
+ * Finviz answers what TradingView cannot: is this name optionable AND shortable,
+ * and does it report this week. This is NOT a ninth screen — it finds nothing. It
+ * removes a candidate our detectors already chose, for a reason those detectors
+ * cannot see: a BEARISH read on a name with no borrow is not a trade.
+ *
+ * Direction-aware, because shortability only binds on something we would short.
+ * And a failed scrape vetoes NOTHING — unknown is not a negative.
+ */
+const allSelected = [...tiers.intraday, ...tiers.weekly, ...tiers.monthly]
+  .map((x) => ({ ...x, bias: x.stage2?.bias ?? null }));
+let tradability = { available: false, tickers: {}, why: 'not run' };
+let tradabilityResult = { kept: allSelected, vetoed: [], flagged: [], note: 'not run' };
+if (allSelected.length) {
+  log('\n  checking tradability (Finviz: optionable/shortable, earnings this week)...');
+  tradability = await finvizConstraints(allSelected.map((x) => x.symbol));
+  tradabilityResult = applyTradability(allSelected, tradability);
+  log(`    ${tradabilityResult.note}`);
+  for (const v of tradabilityResult.vetoed) log(`    VETOED ${bare(v.symbol)} — ${v.why}`);
+  for (const f of tradabilityResult.flagged) log(`    flag   ${bare(f.symbol)} — ${f.why}`);
+
+  // Drop the vetoed names from their tier before anything is written.
+  const dead = new Set(tradabilityResult.vetoed.map((v) => v.symbol));
+  if (dead.size) {
+    for (const t of ['intraday', 'weekly', 'monthly']) {
+      tiers[t] = tiers[t].filter((x) => !dead.has(x.symbol));
+    }
+  }
+}
+
 // ── tier A factors ──────────────────────────────────────────────────────────
 //
 // ── There is NO rebalance clock on the watchlist. This is deliberate. ──
@@ -209,6 +243,30 @@ const currentList = await listContents(WATCHLIST_NAME).catch((e) => {
  * screen's survivors is a decile of an already-selected population, which is not
  * the cross-section any of these papers sorted.
  */
+/**
+ * Equal-weight against cap-weight, before the factors.
+ *
+ * One scan. It says whether a cap-weighted drawdown is BROAD or concentrated in a
+ * few mega-caps — a distinction neither index makes alone, and one the candidate
+ * list cannot make at all. CONTEXT only: untested as a predictor, and this repo has
+ * forward-tested three market-alignment gates that all failed.
+ *
+ * The universe is EMPTY on purpose — RSP, QQQE and friends are ETFs, and the
+ * index-member universes contain constituents, not funds.
+ */
+let breadth = null;
+try {
+  const syms = BREADTH_PAIRS.flatMap((p) => [p.equal, p.cap]);
+  const br = await scan({
+    universe: [], filter: [{ left: 'name', operation: 'in_range', right: syms }],
+    columns: BREADTH_COLUMNS, range: [0, 20],
+  });
+  breadth = equalWeightBreadth(br.rows);
+  log(`
+  breadth: ${breadth.summary}`);
+} catch (e) { log(`
+  breadth FAILED: ${e.message}`); }
+
 let factors = null;
 try {
   const fs = await scan({ filter: LIQUIDITY_FILTER, columns: FACTOR_COLUMNS, range: [0, 2000] });
@@ -593,6 +651,24 @@ const report = {
     keep_rule: `Any section whose name begins with ${KEEP_PREFIX} is carried through untouched — not `
       + 'rewritten, not analysed, and its charts are not cleared. Moving a ticker into a KEEP section in '
       + 'TradingView is how you tell this run to leave it alone.',
+  },
+  /**
+   * Is a cap-weighted drawdown broad, or concentrated? Neither index says alone.
+   * CONTEXT — never a gate. See src/core/breadth_ew.js.
+   */
+  breadth: breadth,
+  /**
+   * The tradability constraint. NOT a screen — it finds nothing, it only removes.
+   * `vetoed` is direction-aware (a bearish read with no borrow); `flagged` is
+   * carried rather than acted on. An unavailable Finviz vetoes nothing.
+   */
+  tradability: {
+    available: tradability.available,
+    why_unavailable: tradability.why,
+    note: tradabilityResult.note,
+    vetoed: tradabilityResult.vetoed,
+    flagged: tradabilityResult.flagged,
+    detail: tradability.tickers || {},
   },
   cadence: {
     watchlist: 'EVERY managed section is rebuilt every run. There is no rebalance clock on the '
