@@ -20,6 +20,7 @@
  * All of this is pure: bars in, patterns out.
  */
 import { findSwings, alternateSwings } from './structure.js';
+import { cupPatterns } from './cup.js';
 
 const round = (n, dp = 6) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 const pct = (a, b) => (b === 0 ? Infinity : Math.abs(a - b) / Math.abs(b) * 100);
@@ -1575,6 +1576,25 @@ export const STRUCTURAL_STATS = {
       rank: null, break_even_failure_pct: 44, average_move_pct: 9, throwback_pullback_pct: null, meeting_target_pct: 46, sample: 'hundreds',
     },
   },
+  /**
+   * His third-best pattern of 39, and the best one this toolchain can detect.
+   *
+   * Read `average_move_pct` with the cost_note below in front of it: 54% is
+   * measured to the ULTIMATE HIGH before a 20% reversal, on perfect trades gross
+   * of costs. The cup's measure rule is the cup HEIGHT, and Bulkowski discounts
+   * even that by the 61% meeting-target rate before projecting it — src/core/cup.js
+   * reports both projections rather than letting the 54% be mistaken for a target.
+   *
+   * The 62% throwback rate sits inside the 58-74% band every other pattern in this
+   * table reports, so it discriminates nothing.
+   *
+   * https://thepatternsite.com/cup.html, read 2026-07-30.
+   */
+  cup_with_handle: {
+    upward: {
+      rank: '3/39', break_even_failure_pct: 5, average_move_pct: 54, throwback_pullback_pct: 62, meeting_target_pct: 61, sample: '913',
+    },
+  },
   // Pennants carry the FLAG figures, and say so in every field that matters.
   //
   // Bulkowski does not measure pennants separately from flags. The honest
@@ -1806,6 +1826,24 @@ export const NOISE_BASELINE = {
     triple_top: 0.03,
     ascending_triangle: 0.03,
     descending_triangle: 0.03,
+    /**
+     * MEASURED, and it is the largest number in this table by a factor of sixty.
+     *
+     * 0.11 per 200-bar walk = 11% of walks, from `scripts/detector-noise.js`
+     * (seeds 7000/8000, noise 0.006) rather than from the `measure()` harness the
+     * rows above came from — stated because those rows have an UNRESOLVED
+     * provenance (see per_walk_provenance) and mixing two harnesses silently is
+     * how that note came to exist.
+     *
+     * `vsNoise` scales LINEARLY in bar count and the cup does NOT: its floor is
+     * 7/11/23.5/35% at 150/200/300/400 bars, because the detector reports the best
+     * of every rim PAIR and pairs grow quadratically. So on a 300-bar chart vsNoise
+     * reports ~0.17 expected where the measured rate is 0.235 — it UNDERSTATES the
+     * floor by a third, in the flattering direction. Read
+     * CUP_NOISE_BASELINE.length_dependence rather than the vsNoise verdict for
+     * this one pattern.
+     */
+    cup_with_handle: 0.11,
   },
   /**
    * The floor MOVED when swings moved to the kernel backbone — and the size of
@@ -1886,6 +1924,7 @@ export const STRUCTURAL_PATTERNS = [
   'rising_wedge', 'falling_wedge', 'broadening_formation',
   'bull_flag', 'bear_flag', 'high_tight_flag',
   'bullish_pennant', 'bearish_pennant',
+  'cup_with_handle',
 ];
 
 /**
@@ -1931,6 +1970,14 @@ export function detectPatterns(bars, {
     ...trendlinePatterns(bars, swings, { window_bars, flat_slope_pct, min_touches: 2 }),
     ...flagPatterns(bars, {}),
     ...pennantPatterns(bars, {}),
+    /**
+     * The cup takes `lookback` where the other structural detectors above take
+     * none, because it is the only one that reads the pivot BACKBONE directly and
+     * it needs a much sparser density than they do — see CUP_LOOKBACK_OFFSET.
+     * Passing it through is also what lets assessment.js's 3/4/5/6/8 sweep
+     * actually vary the cup, so its stability reading can fail.
+     */
+    ...cupPatterns(bars, { lookback }),
   ];
 
   // Age every pattern by how long ago it finished forming. Without this the

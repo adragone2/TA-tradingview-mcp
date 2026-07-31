@@ -50,6 +50,11 @@ export const PATTERN_FAMILY = {
   rectangle: 'bilateral',
   bullish_rectangle: 'bilateral',
   bearish_rectangle: 'bilateral',
+  // P2.1 review (2026-07-30). Without a family the cup was silently filtered
+  // out of tradePlans — detected, drawn, and planless. Not 'continuation_bull':
+  // that case reads m.flag_high/m.flag_low, which the cup correctly does not
+  // emit, and would have produced an empty plan instead of a filtered one.
+  cup_with_handle: 'cup_bull',
   broadening_formation: 'bilateral',
   ascending_channel: 'channel',
   descending_channel: 'channel',
@@ -120,6 +125,24 @@ export function tradePlan(p, { atr = null } = {}) {
       const stop = m.flag_low ?? null;
       legs.long = leg('long', entry, stop != null ? stop - pad : null, p.target ?? null,
         'Entry on a close above the consolidation high. Target is the pole projected from the break.');
+      break;
+    }
+    case 'cup_bull': {
+      /**
+       * P2.1 review (2026-07-30). Entry and stop are Bulkowski's own: a CLOSE
+       * above the right cup lip, stop under the handle low. The target is HALF
+       * the cup height — his recommendation, reached 76% in a bull market
+       * against 50% for the full height (CUP_TARGET_STATS carries both and the
+       * 61% site figure). The full-height target is what every other pattern
+       * here projects, so the note says which construction this is.
+       */
+      const lip = m.right_rim ?? p.completion_level;
+      const low = m.handle_low ?? null;
+      const height = (lip != null && m.cup_low != null) ? lip - m.cup_low : null;
+      legs.long = leg('long', lip, low != null ? low - pad : null,
+        (lip != null && height != null) ? lip + height / 2 : null,
+        'Completes only on a CLOSE above the right cup lip. Target is HALF the cup height — Bulkowski\'s own '
+        + 'recommendation, reached 76% in a bull market; the full height is met 61% (thepatternsite.com/cup.html).');
       break;
     }
     case 'continuation_bear': {

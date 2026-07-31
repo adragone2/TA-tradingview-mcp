@@ -19,6 +19,7 @@ import * as D from '../src/core/divergence.js';
 import * as B from '../src/core/breakout.js';
 import * as G from '../src/core/gaps.js';
 import * as P from '../src/core/pip.js';
+import * as CUP from '../src/core/cup.js';
 
 const args = process.argv.slice(2);
 const i = args.indexOf('--walks');
@@ -215,3 +216,118 @@ for (const mapping of PIP_MAPPINGS) {
 }
 console.log('\nThe published threshold is T = 3 at a 20-day window (Fernandes 2022, p = 20,');
 console.log('T = 3). Read the windows% column at that row before quoting any match.');
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * cup.js — prices only, so the standard path-based null is legitimate.
+ *
+ * Every clause in the cup's VERDICT reads bar highs, lows and closes, all of
+ * which `barsFromPath` produces faithfully. The one quantity it does not — volume
+ * — is deliberately excluded from the verdict (cup.js reports it under
+ * `supporting`, the pattern gaps.js established), so this floor covers the whole
+ * decision rather than part of it. Say that out loud rather than assuming it: the
+ * arm below re-runs the detector with every volume reading stripped and asserts
+ * the answer is byte-identical.
+ *
+ * TWO LENGTHS, because one measures only part of the duration space: a cup is
+ * legal from 35 to 325 bars, and at 200 bars anything past ~195 is unreachable by
+ * construction. The 400-bar arm opens the whole range and is the honest floor.
+ *
+ * The FAILING-CLAUSE table is the point of this arm. "0%" alone says the
+ * conjunction is selective without saying which part of it is doing the work,
+ * which is the criticism this repo levels at every unattributed selectivity
+ * number — so the clause that rejects each walk's best candidate is counted.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const cupWalk = (n) => (s) => barsFromPath(randomWalk({ n, seed: 7000 + s }), { noise: 0.006, seed: 8000 + s });
+
+function cupArm(label, bars_each, makeBars, opts = {}) {
+  const failing = {};
+  let qualifying = 0, scored = 0, errors = 0, candidates = 0, highs = 0;
+  const examples = [];
+  for (let s = 0; s < WALKS; s++) {
+    try {
+      const r = CUP.detectCup(makeBars(s), opts);
+      candidates += r.candidates_scored || 0;
+      highs += r.pivot_highs_found || 0;
+      if (r.qualifies) {
+        qualifying++;
+        if (examples.length < 4) examples.push({ seed: 7000 + s, m: r.measurements, status: r.status, n: r.candidates_scored });
+        continue;
+      }
+      if (r.reason) { failing[r.reason] = (failing[r.reason] || 0) + 1; continue; }
+      scored++;
+      // The clause that rejected the BEST near miss. First in the declared order,
+      // so a candidate failing three is attributed to one of them consistently.
+      const first = (r.failed_checks || [])[0] || 'unknown';
+      failing[first] = (failing[first] || 0) + 1;
+    } catch (e) { errors++; if (errors <= 2) console.error(`  cup error: ${e.message}`); }
+  }
+  return {
+    label, bars_each, qualifying, scored, failing, errors, examples,
+    pct: Number(((qualifying / WALKS) * 100).toFixed(1)),
+    candidates_per_walk: Number((candidates / WALKS).toFixed(1)),
+    highs_per_walk: Number((highs / WALKS).toFixed(1)),
+  };
+}
+
+const cupArms = [
+  cupArm('200-bar walks (only the SHORT half of the 35-325 range is reachable)', 200, cupWalk(200)),
+  cupArm('300-bar walks — THE OPERATIONAL LENGTH (ticker_analyze loads ~300 daily bars)', 300, cupWalk(300)),
+  cupArm('400-bar walks (the whole legal duration range is reachable)', 400, cupWalk(400)),
+  cupArm('300-bar walks, VOLUME STRIPPED (must match the 300-bar arm exactly)', 300,
+    (s) => cupWalk(300)(s).map(({ volume, ...b }) => b)),
+];
+
+console.log(`\n\n=== cup.js cup-with-handle — ${WALKS} walks per arm ===`);
+for (const arm of cupArms) {
+  console.log(`\n${arm.label}`);
+  console.log(`  QUALIFYING          ${String(arm.pct).padStart(6)}%  (${arm.qualifying}/${WALKS})${arm.errors ? `  [${arm.errors} errors]` : ''}`);
+  console.log(`  pivot highs/walk    ${String(arm.highs_per_walk).padStart(6)}   rim PAIRS scored/walk ${arm.candidates_per_walk}`);
+  const rows = Object.entries(arm.failing).sort((a, b) => b[1] - a[1]);
+  for (const [k, n] of rows) {
+    console.log(`    ${k.padEnd(32)} ${String(n).padStart(4)}  (${((n / WALKS) * 100).toFixed(1)}%)`);
+  }
+  for (const ex of arm.examples) {
+    console.log(`    FIRED seed ${ex.seed} ${ex.status} (best of ${ex.n}): depth ${ex.m.depth_pct}%, ${ex.m.cup_bars} bars, `
+      + `rims ${ex.m.rim_difference_pct}% apart, base time ${ex.m.base_time_pct}%, handle ${ex.m.handle_bars} bars `
+      + `retracing ${ex.m.handle_retrace_pct_of_cup}%`);
+  }
+}
+{
+  const same = cupArms[1].qualifying === cupArms[3].qualifying
+    && JSON.stringify(cupArms[1].failing) === JSON.stringify(cupArms[3].failing);
+  console.log(`\nVolume independence: ${same ? 'CONFIRMED — identical with volume stripped, so this floor covers the WHOLE verdict' : 'FAILED — a volume clause reached the verdict, and the floor is a fixture artefact'}`);
+}
+
+/**
+ * The floor is NOT a single number: it climbs with series length, because the
+ * detector reports the BEST of every legal rim PAIR and the pair count grows
+ * quadratically in the number of pivot highs. That is a trial-count problem in a
+ * detector rather than in a backtest, and CLAUDE.md's rule applies unchanged — a
+ * result without its trial count flatters itself. So `candidates_scored` is on
+ * every detection and the length dependence is measured rather than averaged away.
+ */
+console.log('\n--- length dependence: the same detector, four series lengths ---');
+console.log('  bars   qualifying%   pivot highs/walk   rim pairs scored/walk');
+for (const n of [150, 200, 300, 400]) {
+  const a = cupArm(`n=${n}`, n, cupWalk(n));
+  console.log(`  ${String(n).padStart(4)}   ${String(a.pct).padStart(10)}%   ${String(a.highs_per_walk).padStart(16)}   ${String(a.candidates_per_walk).padStart(21)}`);
+}
+
+/**
+ * Sensitivity on the two OURS numbers that do the most rejecting. Swept for the
+ * same reason gaps.js sweeps its volume multiple: a threshold with no floor
+ * beside it is not a threshold, and a reader has to be able to see how far the
+ * answer travels on a number nobody published.
+ */
+console.log('\n--- sensitivity at 300 bars: the two OURS clauses that reject most ---');
+console.log('  rim_tolerance_pct   qualifying%        min_base_time_pct   qualifying%');
+for (const [rim, base] of [[3, 25], [4, 30], [5, 35], [6, 40], [8, 45]]) {
+  const a = cupArm('rim', 300, cupWalk(300), { rim_tolerance_pct: rim });
+  const b = cupArm('base', 300, cupWalk(300), { min_base_time_pct: base });
+  console.log(`  ${String(rim).padStart(17)}   ${String(a.pct).padStart(10)}%        ${String(base).padStart(17)}   ${String(b.pct).padStart(10)}%`);
+}
+console.log('\nRead the 300-bar arm as the operational floor — it is the length the workflow loads.');
+console.log('The failing-clause table says WHICH clause earns the selectivity; a bare rate with no');
+console.log('attribution is a claim, not a measurement.');
+console.log('For comparison: VCP 0%, pennants 0%, springs/upthrusts 0%, any structural pattern 61%.');

@@ -301,3 +301,35 @@ describe('tradePlans — the whole detection set', () => {
     assert.deepEqual(tradePlans(null), []);
   });
 });
+
+// ---------------------------------------------------------------------------
+// P2.1 review (2026-07-30). The cup had no family, so tradePlans silently
+// filtered it out: detected, drawn, and planless. These pin the dedicated
+// case — NOT continuation_bull, whose flag_high/flag_low the cup does not
+// emit.
+// ---------------------------------------------------------------------------
+describe('cup_with_handle trade plan', () => {
+  const CUP = {
+    pattern: 'cup_with_handle', status: 'confirmed', direction: 'bullish',
+    completion_level: 110,
+    measurements: { left_rim: 109, right_rim: 110, cup_low: 90, handle_low: 104 },
+  };
+
+  test('long leg: entry at the right lip, stop under the handle low, HALF-height target', () => {
+    const plan = tradePlan(CUP, { atr: 2 });
+    assert.equal(plan.family, 'cup_bull');
+    const l = plan.legs.long;
+    assert.ok(l, 'the cup must produce a long leg');
+    assert.equal(l.entry, 110);
+    assert.equal(l.stop, 103); // handle_low 104 - 0.5*atr pad
+    assert.equal(l.target, 120); // lip + (110-90)/2
+    assert.match(l.note, /HALF the cup height/);
+    assert.match(l.note, /76%/);
+    assert.equal(plan.legs.short, undefined, 'a cup is a bullish construction only');
+  });
+
+  test('no handle low -> no leg, filtered like any incomplete plan, never a stop at zero', () => {
+    const plan = tradePlan({ ...CUP, measurements: { right_rim: 110, cup_low: 90 } }, { atr: 2 });
+    assert.equal(plan.legs.long, undefined);
+  });
+});

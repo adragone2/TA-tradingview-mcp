@@ -370,6 +370,90 @@
         "concentration_cap"
       ]
     },
+    "cup_with_handle": {
+      "label": "Cup with handle breakout (Bulkowski / O'Neil)",
+      "execution": "monthly",
+      "direction": "long",
+      "evidence_tier": "C",
+      "evidence": "Bulkowski ranks the cup with handle 3 of 39 — break-even failure 5%, average rise 54%, 61% meeting the price target, 62% throwback, over 913 perfect trades (thepatternsite.com/cup.html, read 2026-07-30). That is the best rank of any pattern this toolchain can detect. It is HIS measurement on patterns HE selected by eye, not a peer-reviewed study and not a measurement made here.",
+      "evidence_caveat": "OUR DETECTOR IS NOT SELECTIVE, and the rank makes that easy to miss. cup.js CUP_NOISE_BASELINE: a qualifying cup appears on 23.5% of 300-bar random walks — nearly one in four, at the length the workflow loads — against 0% for VCP, pennants and springs, and closer to breakout_check's 32.5%. The floor CLIMBS with series length (7/11/23.5/35% at 150/200/300/400 bars) because the detector reports the best of every rim PAIR and pairs grow quadratically; quote candidates_scored with any detection. It is also a BRACKET, not a point: 8-52% across defensible settings of the two thresholds Bulkowski declined to give (rim tolerance, U/V cut), and even the tightest of those leaves it at 8-13%. Bulkowski selected his 913 samples visually ('I visually inspected the cups', 'Use your own judgment'), so his rank describes a set a human picked and does not transfer to one this code picks. Three further gaps: the 54% average rise is measured to the ULTIMATE HIGH before a 20% reversal gross of costs and is NOT a target; the detector applies depth bounds he does not, so it is stricter than the sample his numbers came from; and the breakout is a CONTINUATION bet, which is why this sits in monthly and not weekly.",
+      "screener": "screens:near_52w_high",
+      "screener_note": "The closest of the eight swing screens, and it works because a cup COMPLETES at its right lip: price is back at the high it left, which is exactly what off-high <= 5% selects, and RSI 45-70 spans both a rim push and a handle pullback. The limit is real and stated: that 5% band only surfaces cups whose HANDLE is shallower than 5% off the 52-week high, while a Bulkowski-legal handle may retrace to the cup midpoint — on a 25% cup that is 12.5% off the high, two and a half times the band. So this screen finds tight-handled and already-breaking-out cups and misses deep-handled ones. `breakout` is worse (off-high <= 3%, RSI 55-80, which a handle pullback fails on both counts) and `momentum_pullback` is worse again (RSI 35-55 and Perf.1M in -15/+5 would drop a cup that has already recovered to its rim).",
+      "criteria": [
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)",
+          "note": "a cup is a base inside an advance, not a bottoming attempt"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(50)"
+        },
+        {
+          "left": "sma_slope(50)",
+          "op": ">",
+          "right": 0
+        },
+        {
+          "left": "pullback_pct",
+          "op": "<",
+          "right": 25,
+          "note": "the handle is a shallow pause off the rim, never half the cup"
+        }
+      ],
+      "criteria_note": "The cup GEOMETRY is not expressible as operands — rim tolerance, U-shape and handle position all need the bar series, and patterns_detect computes them via src/core/cup.js. These four criteria gate the CONTEXT the geometry has to sit in, and every one of them is machine-checkable: close, sma(200), sma(50) and sma_slope(50) are OPERANDS, and pullback_pct is supplied by buildStructureContext. The shape itself comes from detectCup, which names the failing clause on a near miss.",
+      "entry": "A CLOSE above the right cup lip. Bulkowski's own handle definition is 'the distance from the right cup lip to the breakout', so the lip is both the completion level and the entry. Do not anticipate it: a forming cup is a hypothesis, and 23.5% of 300-bar random walks have one.",
+      "exit": "Stop below the handle low — which by definition sits in the upper half of the cup, so the risk is bounded by construction. Targets: HALF the cup height is Bulkowski's own recommendation and is reached 76% of the time in a bull market; the full height is reached only 50%. Trail with pivot_trail once a higher high confirms, but run stopping_premium first — a trail is a bet on persistence.",
+      "exit_reason_keys": [
+        "stop_hit",
+        "target_hit",
+        "trend_broken",
+        "gap_against_trend"
+      ],
+      "indicators": [
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (50)",
+          "inputs": {
+            "length": 50
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        }
+      ],
+      "indicators_note": "Within the chart budget with NOTHING to add: the Moving Average Ribbon already plots SMA 50 and SMA 200, and Volume is permanent, so chart_indicators_for_strategy has no work to do here. Volume is listed because the handle dry-up and the breakout expansion are worth SEEING even though cup.js keeps both out of the verdict — the synthetic null has flat volume, so a volume clause there would be decided by the fixture.",
+      "skills": [
+        "chart-patterns",
+        "market-structure",
+        "risk-sizing"
+      ],
+      "tools": [
+        "patterns_detect",
+        "patterns_draw",
+        "breakout_check",
+        "horizon_prior",
+        "levels_find",
+        "pivot_trail",
+        "stopping_premium",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr",
+        "concentration_cap"
+      ]
+    },
     "short_term_reversal": {
       "label": "Short-term reversal (liquidity provision)",
       "execution": "weekly",

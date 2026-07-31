@@ -6,12 +6,12 @@ Every strategy the toolchain can express, grouped by **execution tier** (when th
 tagged with an **evidence tier** (how much to believe it). Each row names its screener, entry and exit rules,
 TradingView indicators, and the skills, tools and risk rules to invoke.
 
-20 strategies — 13 machine-scannable, 7 tiered REJECTED.
+21 strategies — 14 machine-scannable, 7 tiered REJECTED.
 
 | | |
 |---|---|
-| By execution | monthly 6 · weekly 11 · intraday 3 |
-| By evidence | A 3 · B 4 · C 6 · REJECTED 7 |
+| By execution | monthly 7 · weekly 11 · intraday 3 |
+| By evidence | A 3 · B 4 · C 7 · REJECTED 7 |
 
 ## How to read this
 
@@ -557,6 +557,38 @@ Distance to the 52-week high is not an OPERAND; momentum_read returns fifty_two_
 | `sma_slope(50)` | `>` | `0` |  |
 | `close` | `>` | `sma(200)` |  |
 | `pullback_pct` | `<` | `12` | the final contraction must be tight |
+
+</details>
+
+### Cup with handle breakout (Bulkowski / O'Neil)  ·  C
+
+`cup_with_handle` · long
+
+**Evidence.** Bulkowski ranks the cup with handle 3 of 39 — break-even failure 5%, average rise 54%, 61% meeting the price target, 62% throwback, over 913 perfect trades (thepatternsite.com/cup.html, read 2026-07-30). That is the best rank of any pattern this toolchain can detect. It is HIS measurement on patterns HE selected by eye, not a peer-reviewed study and not a measurement made here.
+
+**Caveat.** OUR DETECTOR IS NOT SELECTIVE, and the rank makes that easy to miss. cup.js CUP_NOISE_BASELINE: a qualifying cup appears on 23.5% of 300-bar random walks — nearly one in four, at the length the workflow loads — against 0% for VCP, pennants and springs, and closer to breakout_check's 32.5%. The floor CLIMBS with series length (7/11/23.5/35% at 150/200/300/400 bars) because the detector reports the best of every rim PAIR and pairs grow quadratically; quote candidates_scored with any detection. It is also a BRACKET, not a point: 8-52% across defensible settings of the two thresholds Bulkowski declined to give (rim tolerance, U/V cut), and even the tightest of those leaves it at 8-13%. Bulkowski selected his 913 samples visually ('I visually inspected the cups', 'Use your own judgment'), so his rank describes a set a human picked and does not transfer to one this code picks. Three further gaps: the 54% average rise is measured to the ULTIMATE HIGH before a 20% reversal gross of costs and is NOT a target; the detector applies depth bounds he does not, so it is stricter than the sample his numbers came from; and the breakout is a CONTINUATION bet, which is why this sits in monthly and not weekly.
+
+| | |
+|---|---|
+| **Screener** | `screens:near_52w_high` |
+| **Entry** | A CLOSE above the right cup lip. Bulkowski's own handle definition is 'the distance from the right cup lip to the breakout', so the lip is both the completion level and the entry. Do not anticipate it: a forming cup is a hypothesis, and 23.5% of 300-bar random walks have one. |
+| **Exit** | Stop below the handle low — which by definition sits in the upper half of the cup, so the risk is bounded by construction. Targets: HALF the cup height is Bulkowski's own recommendation and is reached 76% of the time in a bull market; the full height is reached only 50%. Trail with pivot_trail once a higher high confirms, but run stopping_premium first — a trail is a bet on persistence. |
+| **Exit reason keys** | `stop_hit`, `target_hit`, `trend_broken`, `gap_against_trend` — log these, `exit_mix` reads them |
+| **TradingView indicators** | `[object Object]`, `[object Object]`, `[object Object]` |
+| **Skills** | [chart-patterns](../skills/chart-patterns/SKILL.md), [market-structure](../skills/market-structure/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md) |
+| **Tools** | `patterns_detect`, `patterns_draw`, `breakout_check`, `horizon_prior`, `levels_find`, `pivot_trail`, `stopping_premium`, `position_size_constrained` |
+| **Risk rules** | `max_risk_per_trade`, `min_rr`, `concentration_cap` |
+
+<details><summary>Machine-evaluable criteria</summary>
+
+| Left | Op | Right | Note |
+|---|---|---|---|
+| `close` | `>` | `sma(200)` | a cup is a base inside an advance, not a bottoming attempt |
+| `close` | `>` | `sma(50)` |  |
+| `sma_slope(50)` | `>` | `0` |  |
+| `pullback_pct` | `<` | `25` | the handle is a shallow pause off the rim, never half the cup |
+
+The cup GEOMETRY is not expressible as operands — rim tolerance, U-shape and handle position all need the bar series, and patterns_detect computes them via src/core/cup.js. These four criteria gate the CONTEXT the geometry has to sit in, and every one of them is machine-checkable: close, sma(200), sma(50) and sma_slope(50) are OPERANDS, and pullback_pct is supplied by buildStructureContext. The shape itself comes from detectCup, which names the failing clause on a near miss.
 
 </details>
 
