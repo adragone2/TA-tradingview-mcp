@@ -426,7 +426,18 @@ export async function analyzeTicker({
     const { mergedStrategies } = await import('./catalogue.js');
     const { rules } = (await import('./rules.js')).resolveRules(null);
     const full = mergedStrategies(rules);
-    const ctx = buildContext(bars, {});
+    /**
+     * The structure operands, or five clause families are permanently UNKNOWN.
+     * strategy.js's own contextForChart documents this exact lesson — "which
+     * was true of five catalogue strategies until this was wired" — and this
+     * section repeated it: an empty options object left pullback_pct,
+     * nearest_level_* and the zone operands unresolvable, so momentum_pullback
+     * read `unknown` on every daily analysis. Sixth instance of the
+     * wrong-argument family from TA's report review.
+     */
+    const { buildStructureContext } = await import('./structure_context.js');
+    const structure = buildStructureContext(bars, { lookback });
+    const ctx = buildContext(bars, { structure: structure.available ? structure : null });
     return named.map((thin) => {
       const entry = full[thin.name];
       const base = { name: thin.name, tier: thin.evidence_tier, execution: thin.execution };

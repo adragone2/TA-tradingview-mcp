@@ -637,6 +637,13 @@ describe('the three sections TA found dead — producer call shapes (2026-07-31)
       'destructuring an array yields undefined long_bars — "got 0" on 299-bar rows');
   });
 
+  test('strategy criteria get the STRUCTURE operands — pullback_pct is not permanently unknown', () => {
+    assert.match(t, /buildStructureContext\(bars, \{ lookback \}\)/);
+    assert.match(t, /buildContext\(bars, \{ structure: structure\.available \? structure : null \}\)/);
+    assert.ok(!t.includes('buildContext(bars, {})'),
+      'an empty options object leaves five clause families unresolvable — the lesson contextForChart already documents');
+  });
+
   test('an intraday strategy on a daily chart is NOT APPLICABLE, never a wall of unknowns', () => {
     assert.match(t, /thin\.execution === 'intraday' && !ctx\.intraday/);
     assert.match(t, /not_applicable_on_this_timeframe/,
