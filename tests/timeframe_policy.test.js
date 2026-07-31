@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   TIER_TIMEFRAMES, timeframeFor, barMinutes, isDailyOrHigher,
   barWindowNote, horizonApplies, SESSION_MINUTES,
+  executionWindowStatus, tierForResolution, WINDOW_NOT_A_GATE,
 } from '../src/core/timeframe_policy.js';
 
 /**
@@ -118,6 +119,212 @@ describe('the horizon prior is measured in TRADING DAYS', () => {
   });
 });
 
+/**
+ * The window has been data on the intraday tier since this file was written, and
+ * nothing read it — so an intraday entry plan produced at 06:55 ET, before there is
+ * a VWAP or an opening range to measure anything against, came out looking exactly
+ * like one produced at 11:00.
+ *
+ * Every timestamp below is an ISO instant in UTC with its ET wall clock named, so a
+ * reader can check the arithmetic without trusting the implementation's own clock.
+ */
+describe('the intraday execution window', () => {
+  //  ET wall clock          UTC instant                 offset
+  const WED_0655_EDT = Date.parse('2026-07-15T10:55:00Z');   // -4
+  const WED_0955_EDT = Date.parse('2026-07-15T13:55:00Z');   // -4, session open, window not
+  const WED_1020_EDT = Date.parse('2026-07-15T14:20:00Z');   // -4
+  const WED_1550_EDT = Date.parse('2026-07-15T19:50:00Z');   // -4
+  const WED_1020_EST = Date.parse('2026-01-14T15:20:00Z');   // -5
+  const WED_1014_EST = Date.parse('2026-01-14T15:14:00Z');   // -5
+  const WED_1015_EST = Date.parse('2026-01-14T15:15:00Z');   // -5
+  const WED_1430_EST = Date.parse('2026-01-14T19:30:00Z');   // -5
+  const WED_1431_EST = Date.parse('2026-01-14T19:31:00Z');   // -5
+  const SAT_1120_EDT = Date.parse('2026-07-18T15:20:00Z');   // -4
+
+  test('the boundaries: 10:14 is out, 10:15 is in', () => {
+    assert.equal(executionWindowStatus('intraday', WED_1014_EST).in_window, false);
+    assert.equal(executionWindowStatus('intraday', WED_1014_EST).opens_in_minutes, 1);
+    assert.equal(executionWindowStatus('intraday', WED_1015_EST).in_window, true);
+  });
+
+  test('the boundaries: 14:30 is the last minute IN, 14:31 is out', () => {
+    /**
+     * BOTH ends inclusive, deliberately, and different from `sessionState` where
+     * 16:00 is already closed. The tier states its window as a RANGE — "10:15-14:30"
+     * — and a timestamp stamped 14:30 is inside a range written that way. A session
+     * end is a moment; a trading window is a stated range.
+     */
+    const at = executionWindowStatus('intraday', WED_1430_EST);
+    assert.equal(at.in_window, true);
+    assert.equal(at.closes_in_minutes, 0);
+    const after = executionWindowStatus('intraday', WED_1431_EST);
+    assert.equal(after.in_window, false);
+    assert.equal(after.closed_since_minutes, 1);
+  });
+
+  test('the pre-open case carries the reason, not just the flag', () => {
+    const r = executionWindowStatus('intraday', WED_0655_EDT);
+    assert.equal(r.status, 'out_of_window');
+    assert.equal(r.opens_in_minutes, 200, '06:55 to 10:15 is 3h20m');
+    assert.equal(r.session_state, 'premarket');
+    assert.match(r.note, /Generated 06:55 ET/);
+    assert.match(r.note, /opens at 10:15 ET, in 200 minutes/);
+    assert.match(r.note, /do not exist yet/, 'the flag without the reason teaches nothing');
+    assert.match(r.note, /no VWAP, no opening range/);
+  });
+
+  test('open-but-not-yet-in-window is a DIFFERENT reason from pre-open', () => {
+    // At 09:55 the conditions exist — there is a VWAP and an opening range. What is
+    // not open is the owner's window. Reusing the pre-open sentence here would be
+    // false.
+    const r = executionWindowStatus('intraday', WED_0955_EDT);
+    assert.equal(r.session_state, 'open');
+    assert.equal(r.opens_in_minutes, 20);
+    assert.ok(!/do not exist yet/.test(r.note));
+    assert.match(r.note, /opening range is still forming/);
+  });
+
+  test('after the window it says how long ago, and why late matters', () => {
+    const r = executionWindowStatus('intraday', WED_1550_EDT);
+    assert.equal(r.closed_since_minutes, 80);
+    assert.equal(r.opens_in_minutes, undefined, 'a closed window does not also report an opening');
+    assert.match(r.note, /closed at 14:30 ET, 80 minutes ago/);
+    assert.match(r.note, /into the close/);
+  });
+
+  test('in-window says so, and how much of it is left', () => {
+    const r = executionWindowStatus('intraday', WED_1020_EDT);
+    assert.equal(r.in_window, true);
+    assert.equal(r.status, 'in_window');
+    assert.equal(r.closes_in_minutes, 250);
+    assert.equal(r.window, '10:15-14:30 ET');
+  });
+});
+
+describe('the window is DST-correct, which a fixed offset is not', () => {
+  test('the same ET wall clock is in-window in January AND in July', () => {
+    /**
+     * 10:20 ET is 15:20 UTC in winter and 14:20 UTC in summer. A hardcoded UTC-5
+     * would read the July instant as 09:20 and report a mid-morning plan as
+     * pre-window — for two-thirds of the year, silently. `sessionState` formats
+     * through Intl in America/New_York, which is the mechanism this repo already
+     * uses precisely because Windows ignores TZ and reports UTC.
+     */
+    const winter = executionWindowStatus('intraday', Date.parse('2026-01-14T15:20:00Z'));
+    const summer = executionWindowStatus('intraday', Date.parse('2026-07-15T14:20:00Z'));
+    assert.equal(winter.at, '10:20 ET');
+    assert.equal(summer.at, '10:20 ET');
+    assert.equal(winter.in_window, true);
+    assert.equal(summer.in_window, true, 'a fixed UTC-5 fails exactly here');
+  });
+
+  test('and the fixed-offset reading of the summer instant would be out of window', () => {
+    // The discriminating half: prove the two instants are genuinely different UTC
+    // times, so the test above is not passing by accident.
+    const naive = new Date(Date.parse('2026-07-15T14:20:00Z') - 5 * 3600 * 1000).toISOString();
+    assert.match(naive, /T09:20/, 'UTC-5 on the July instant is 09:20 — before the window opens');
+  });
+});
+
+describe('the answers that are NOT "outside the window"', () => {
+  test('weekly and monthly are not_applicable, with the reason', () => {
+    for (const t of ['weekly', 'monthly']) {
+      const r = executionWindowStatus(t, Date.parse('2026-07-15T10:55:00Z'));
+      assert.equal(r.status, 'not_applicable', t);
+      assert.equal(r.in_window, null, `${t} must not claim false — there is no window to be outside of`);
+      assert.match(r.note, /no\s+intraday execution window applies/);
+    }
+  });
+
+  test('a weekend is out of window, and REFUSES to say how many minutes until it opens', () => {
+    /**
+     * Counting to the next open needs the next trading day, and market holidays are
+     * enumerated nowhere in this repo — session.js says so in its own limitations.
+     * A number here would be wrong every Good Friday and every Thanksgiving.
+     */
+    const r = executionWindowStatus('intraday', Date.parse('2026-07-18T15:20:00Z'));
+    assert.equal(r.in_window, false);
+    assert.equal(r.session_state, 'weekend');
+    assert.equal(r.opens_in_minutes, null, 'null, not a guess');
+    assert.match(r.note, /holidays are enumerated nowhere/);
+  });
+
+  test('a null timestamp is UNKNOWN, never "fine"', () => {
+    const r = executionWindowStatus('intraday', null);
+    assert.equal(r.status, 'unknown');
+    assert.equal(r.in_window, null);
+    assert.match(r.note, /UNKNOWN/);
+    assert.match(r.note, /Not assumed to be inside it/);
+  });
+
+  test('Number(null) is 0, and 0 is a valid epoch — the guard must be explicit', () => {
+    /**
+     * The coercion that has already conjured a finding from missing data here, in
+     * the equal-weight breadth spread. Without an explicit null check this returns a
+     * confident verdict about 1 January 1970.
+     */
+    assert.equal(Number(null), 0, 'the trap itself');
+    for (const bad of [null, undefined, NaN, 0, -1, 'soon', {}]) {
+      assert.equal(executionWindowStatus('intraday', bad).status, 'unknown', `${String(bad)} must not verdict`);
+    }
+  });
+
+  test('the timestamp is NOT defaulted to now, so the function never reads the clock', () => {
+    /**
+     * A `= Date.now()` default would make the one-argument call impure — and
+     * `entryHypothesis` calls this, which is documented pure and tested as such.
+     * Omitting the timestamp is the unknown case, not a measurement of now.
+     */
+    assert.equal(executionWindowStatus('intraday').status, 'unknown');
+  });
+
+  test('an unrecognised tier is unknown — it does NOT fall back to weekly', () => {
+    /**
+     * `timeframeFor` defaults an unknown tier to weekly, which is right for choosing
+     * a chart resolution and wrong here: it would turn "nobody said what this is"
+     * into the positive claim "no window applies".
+     */
+    assert.equal(timeframeFor('nonsense').analysis, '1D', 'the contrast this is about');
+    for (const t of [null, undefined, '', 'nonsense', 'swing']) {
+      const r = executionWindowStatus(t, Date.parse('2026-07-15T10:55:00Z'));
+      assert.equal(r.status, 'unknown', `${String(t)} must not resolve to a tier`);
+      assert.notEqual(r.status, 'not_applicable');
+    }
+  });
+
+  test('every answer carries the it-is-not-a-gate line', () => {
+    // Three market-alignment gates have been forward-tested here and all three
+    // failed. This is the fourth thing that looks like one, so it disclaims itself.
+    const at = Date.parse('2026-07-15T10:55:00Z');
+    for (const t of ['intraday', 'weekly', null]) {
+      assert.equal(executionWindowStatus(t, at).not_a_gate, WINDOW_NOT_A_GATE, String(t));
+    }
+    assert.equal(executionWindowStatus('intraday', null).not_a_gate, WINDOW_NOT_A_GATE);
+    assert.match(WINDOW_NOT_A_GATE, /never a filter/);
+  });
+});
+
+describe('tierForResolution only claims what a resolution could ONLY mean', () => {
+  test('5 and 15 minute are the intraday policy\'s own two resolutions', () => {
+    assert.equal(tierForResolution('5'), 'intraday');
+    assert.equal(tierForResolution('15'), 'intraday');
+    assert.equal(tierForResolution(TIER_TIMEFRAMES.intraday.analysis), 'intraday');
+    assert.equal(tierForResolution(TIER_TIMEFRAMES.intraday.context), 'intraday');
+  });
+
+  test('everything else is null, including 60-minute and daily', () => {
+    /**
+     * Daily cannot distinguish weekly from monthly, and 60-minute is a resolution a
+     * swing trader legitimately uses to fine-tune an entry. Guessing either way
+     * would attach an execution window to a trade that has none, or deny one that
+     * does.
+     */
+    for (const r of ['60', '240', '1D', 'D', '1W', '', null, undefined, 'garbage']) {
+      assert.equal(tierForResolution(r), null, `${String(r)} must not imply a tier`);
+    }
+  });
+});
+
 describe('the wiring', () => {
   const src = (f) => readFileSync(`${process.cwd()}/${f}`, 'utf8');
 
@@ -164,5 +371,34 @@ describe('the wiring', () => {
     assert.match(t, /horizon_applicable: horizon_validity/);
     assert.match(t, /results\.horizon = horizon_validity\.applies/,
       'the horizon SECTION must report NOT APPLICABLE off daily rather than scoring as run');
+  });
+
+  test('the entry_hypothesis TOOL supplies the clock, since the core refuses to read it', () => {
+    /**
+     * `entryHypothesis` is pure and `executionWindowStatus` has no `Date.now()`
+     * default, so if the tool does not pass a timestamp the annotation can never
+     * appear on a live call — the feature would be code nobody reaches. This is the
+     * repo's own rule about a step you have to remember, applied to a parameter.
+     */
+    const p = src('src/tools/playbook.js');
+    assert.match(p, /tier: resolved,\s*\n\s*now: Date\.now\(\),/,
+      'the tool must pass both the tier and the moment into entryHypothesis');
+    assert.match(p, /tierForResolution\(raw\?\.resolution/,
+      'and derive the tier from the chart when the caller did not state one');
+  });
+
+  test('assess() cannot carry this annotation, and the reason is its signature', () => {
+    /**
+     * `trade_plans` is built inside `assess(bars, spy)`. There is no tier and no
+     * timestamp in that call — not hidden, absent — so annotating trade_plans would
+     * mean inventing a tier at the layer that measures. Plumbing a guess there is
+     * worse than the gap: it would put a confident window verdict on every swing
+     * plan in the book. The annotation lives on entry_hypothesis, where the caller
+     * knows what it asked for.
+     */
+    const a = src('src/core/assessment.js');
+    assert.match(a, /export function assess\(bars, spy\)/,
+      'if assess() ever takes a tier or a clock, revisit trade_plans');
+    assert.ok(!/executionWindowStatus/.test(a), 'assess() must not acquire a window verdict it cannot ground');
   });
 });

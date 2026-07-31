@@ -38,8 +38,19 @@
  * else". `barWindowNote` states what the windows actually span, and
  * `horizonApplies` says when the reversal/continuation prior may be quoted at all.
  *
- * Pure.
+ * ── The window the tier already carried, and nothing read ──
+ *
+ * `execution_window` has been data here since the tier policy was written, and no
+ * caller looked at it. So an INTRADAY entry plan produced at 06:55 ET — before the
+ * bell, when there is no VWAP, no opening range and no session volume — read
+ * exactly like one produced at 11:00, and an intraday plan formed at 15:50 read the
+ * same again. `executionWindowStatus` says which. It ANNOTATES and never gates:
+ * three market-alignment gates have been forward-tested in this repo and all three
+ * failed, so nothing here suppresses a plan for being early or late.
+ *
+ * Pure — every clock reading is passed in, never taken.
  */
+import { sessionState, US_EQUITY_SESSION } from './session.js';
 
 /** A regular US session, in minutes. NOT 1440 — that error is 3.7x. */
 export const SESSION_MINUTES = 390;
@@ -158,4 +169,209 @@ export function horizonApplies(resolution) {
         + 'boundary does not describe it either way. NOT APPLICABLE is the honest reading, not a '
         + 'neutral one.',
     };
+}
+
+/* ------------------------- the intraday execution window ------------------------- */
+
+/**
+ * Said on every annotation, because it is the thing most likely to be forgotten.
+ *
+ * `level_pressure` collapsed out of sample, `stage_plan`'s Stage 2 gate made forward
+ * outcomes WORSE, and Livermore's two-leader confirmation cost 9.3 points of win
+ * rate. Three market-alignment gates measured here, three failures. This is the
+ * fourth thing that LOOKS like a gate, so it says in its own output that it is not
+ * one.
+ */
+export const WINDOW_NOT_A_GATE = 'An ANNOTATION, never a filter. Nothing here suppresses, downgrades or '
+  + 're-ranks a plan for being early or late — three market-alignment gates have been forward-tested in '
+  + 'this repo and all three failed. It reports WHEN the plan was formed and leaves the decision where it was.';
+
+/** "10:15" -> 615. Minutes from local midnight at the exchange. */
+const clockMinutes = (hhmm) => {
+  const m = String(hhmm ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+/** 615 -> "10:15". */
+const clockLabel = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+
+/**
+ * Was this plan formed inside the hours its tier is meant to be traded in?
+ *
+ * @param {string|null} tier      'intraday' | 'weekly' | 'monthly'
+ * @param {number|null} at_ms     Epoch milliseconds. REQUIRED, and deliberately not
+ *                                defaulted to `Date.now()`: a default would make the
+ *                                one-argument call read the clock, and this function
+ *                                is used inside `entryHypothesis`, which is pure. A
+ *                                caller with no timestamp is in the unknown case,
+ *                                which must not be dressed up as a measurement of
+ *                                now. The tool layer passes `Date.now()`.
+ *
+ * Three answers, and they are deliberately different things:
+ *
+ *   in_window / out_of_window   the tier HAS a window and we know which side of it
+ *                               this timestamp sits on.
+ *   not_applicable              the tier has no window. Weekly and monthly plans are
+ *                               formed on daily bars and held for days; any hour is
+ *                               as good as any other.
+ *   unknown                     no tier, an unrecognised tier, or no usable
+ *                               timestamp. NOT the same as "fine" — the same
+ *                               distinction the liquidity constraint makes when it
+ *                               reports NOT CHECKED rather than satisfied.
+ *
+ * `timeframeFor` defaults an unrecognised tier to weekly, which is right for picking
+ * a chart resolution and wrong here: it would turn "nobody said what this is" into
+ * the positive claim "no window applies".
+ *
+ * DST is handled by `exchangeParts` (via `sessionState`), which formats through Intl
+ * in `America/New_York`. A hardcoded UTC-5 would read 10:20 EDT as 09:20 and report
+ * a mid-morning plan as pre-window for two-thirds of the year.
+ */
+export function executionWindowStatus(tier, at_ms = null) {
+  const key = String(tier ?? '').trim().toLowerCase();
+  const policy = TIER_TIMEFRAMES[key];
+
+  if (!policy) {
+    return {
+      status: 'unknown',
+      in_window: null,
+      tier: tier ?? null,
+      note: `No execution tier was supplied${tier ? ` ("${tier}" is not one of `
+        + `${Object.keys(TIER_TIMEFRAMES).join(', ')})` : ''}, so whether this plan was formed inside its `
+        + 'trading window is UNKNOWN — which is not the same as fine. Pass the tier the name was '
+        + 'classified into.',
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  const w = policy.execution_window;
+  if (!w) {
+    return {
+      status: 'not_applicable',
+      in_window: null,
+      tier: key,
+      note: `The ${key} tier is analysed on ${policy.analysis_label} bars and held for days or longer, so no `
+        + 'intraday execution window applies. The hour a swing plan is written at carries no information '
+        + 'about the trade.',
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  const start = clockMinutes(w.start);
+  const end = clockMinutes(w.end);
+  const label = `${w.start}-${w.end} ${w.tz === 'America/New_York' ? 'ET' : w.tz}`;
+
+  /**
+   * `Number(null)` is 0 — a valid finite epoch (1970) that would be reported as a
+   * Thursday out of window. That exact coercion has already conjured a finding from
+   * missing data here once, in the equal-weight breadth spread. Reject the absent
+   * timestamp explicitly rather than letting it become a number.
+   */
+  const ms = at_ms == null ? NaN : Number(at_ms);
+  if (!Number.isFinite(ms) || ms <= 0 || start == null || end == null) {
+    return {
+      status: 'unknown',
+      in_window: null,
+      tier: key,
+      window: label,
+      note: `The ${key} tier is traded ${label}, but no usable timestamp was given (${JSON.stringify(at_ms ?? null)}), `
+        + 'so which side of the window this plan was formed on is UNKNOWN. Not assumed to be inside it.',
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  // ONE clock reading, in the window's own zone, giving both the wall clock and
+  // where the session is. Two readings could straddle a minute boundary.
+  const at = sessionState(ms, { ...US_EQUITY_SESSION, tz: w.tz });
+  const now = clockLabel(at.minutes);
+  // Spread in the MIDDLE of each return, so the answer — status, in_window — leads
+  // and the context follows it. A verdict buried under six context fields gets read
+  // as context.
+  const base = {
+    tier: key, window: label, at: `${now} ET`, at_date: at.date, weekday: at.weekday,
+    session_state: at.state,
+  };
+
+  if (at.is_weekend) {
+    return {
+      status: 'out_of_window',
+      in_window: false,
+      ...base,
+      opens_in_minutes: null,
+      closed_since_minutes: null,
+      note: `Generated ${at.weekday} ${now} ET — the market is shut. The ${label} window does not open again `
+        + 'until the next trading session, and how many minutes away that is is NOT stated here because '
+        + 'market holidays are enumerated nowhere in this repo. An intraday plan formed at the weekend '
+        + 'describes a session that has not happened.',
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  /**
+   * BOTH ends inclusive. The tier states its window as "10:15-14:30", and a
+   * timestamp stamped 14:30 is inside a range written that way. Note this differs
+   * from `sessionState`, where 16:00 is already `closed` — a session END is a moment,
+   * a trading window is a stated range.
+   */
+  if (at.minutes >= start && at.minutes <= end) {
+    return {
+      status: 'in_window',
+      in_window: true,
+      ...base,
+      closes_in_minutes: end - at.minutes,
+      note: `Generated ${now} ET, inside the ${label} execution window — ${end - at.minutes} minute(s) of it left.`,
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  if (at.minutes < start) {
+    const mins = start - at.minutes;
+    return {
+      status: 'out_of_window',
+      in_window: false,
+      ...base,
+      opens_in_minutes: mins,
+      note: `Generated ${now} ET — the ${label} window opens at ${w.start} ET, in ${mins} minutes. `
+        + (at.state === 'premarket'
+          ? 'A pre-open intraday plan describes conditions that do not exist yet: there is no VWAP, no '
+            + 'opening range and no session volume for the setup to be measured against, and today\'s daily '
+            + 'bar holds a fraction of its eventual volume.'
+          : 'The session is open but this tier\'s window is not — the opening range is still forming and '
+            + 'LULD bands stay doubled until 09:45 ET.'),
+      not_a_gate: WINDOW_NOT_A_GATE,
+    };
+  }
+
+  const mins = at.minutes - end;
+  return {
+    status: 'out_of_window',
+    in_window: false,
+    ...base,
+    closed_since_minutes: mins,
+    note: `Generated ${now} ET — the ${label} window closed at ${w.end} ET, ${mins} minutes ago. `
+      + (at.state === 'open'
+        ? 'Acting on it now means entering into the close, where stop-driven exits cluster and LULD bands '
+          + 'double again from 15:35 ET.'
+        : 'The session is over. By the time the window next opens these levels are a session old, and an '
+          + 'intraday setup does not survive a gap.'),
+    not_a_gate: WINDOW_NOT_A_GATE,
+  };
+}
+
+/**
+ * The execution tier a chart RESOLUTION implies — and only when it implies one.
+ *
+ * Deliberately narrow. It returns `intraday` for the two resolutions the intraday
+ * policy itself prescribes (its `analysis` and `context`), and null for everything
+ * else — including daily, where weekly and monthly are indistinguishable, and
+ * including 60-minute, which a swing trader may perfectly well be using to fine-tune
+ * an entry. A tier is an EXECUTION decision that comes from the strategy; this only
+ * recognises the case where the resolution could not mean anything else, so that the
+ * annotation is reachable without a caller having to remember to pass a tier.
+ */
+export function tierForResolution(resolution) {
+  const r = String(resolution ?? '').trim().toUpperCase();
+  if (!r) return null;
+  const intra = TIER_TIMEFRAMES.intraday;
+  return (r === intra.analysis || r === intra.context) ? 'intraday' : null;
 }

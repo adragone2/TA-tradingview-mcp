@@ -8,6 +8,7 @@ import { resolveRules } from '../core/rules.js';
 import * as chart from '../core/chart.js';
 import { planIndicators, PERMANENT_STUDIES, MAX_STUDIES } from '../core/chart_budget.js';
 import { entryHypothesis, CHASE_PCT, MIN_STOP_ATR } from '../core/entry_hypothesis.js';
+import { tierForResolution } from '../core/timeframe_policy.js';
 import { analyzeTicker } from '../core/ticker_analyze.js';
 import { SECTIONS } from '../core/analysis_contract.js';
 import { detectPatterns } from '../core/patterns.js';
@@ -97,14 +98,15 @@ export function registerPlaybookTools(server) {
 
   server.tool(
     'entry_hypothesis',
-    'AT WHAT PRICE WOULD YOU ACT — the forward half of an analysis, for BOTH directions. Every other tool here describes what already happened; this turns that into a conditional: a trigger price, the event required at it (a daily CLOSE, never "around" a number), a stop checked against 1x ATR, the price that ends the idea, and R:R measured at the trigger rather than at spot. Triggers come from the completion_level of a forming pattern, a swing extreme, or an existing level — in that order, and the basis is named. It invents nothing: a side with none of the three comes back unavailable with a reason, because a rounded guess is indistinguishable from a measured level once it is written down. Both directions always, since a report that gives the bull case a number and the bear case a sentence has quietly taken a side. A FORMING pattern is not a signal — these are the prices at which each case becomes checkable.',
+    'AT WHAT PRICE WOULD YOU ACT — the forward half of an analysis, for BOTH directions. Every other tool here describes what already happened; this turns that into a conditional: a trigger price, the event required at it (a daily CLOSE, never "around" a number), a stop checked against 1x ATR, the price that ends the idea, and R:R measured at the trigger rather than at spot. Triggers come from the completion_level of a forming pattern, a swing extreme, or an existing level — in that order, and the basis is named. It invents nothing: a side with none of the three comes back unavailable with a reason, because a rounded guess is indistinguishable from a measured level once it is written down. Both directions always, since a report that gives the bull case a number and the bear case a sentence has quietly taken a side. A FORMING pattern is not a signal — these are the prices at which each case becomes checkable. It also stamps WHEN it was written: pass `tier` (or analyse on a 5/15-minute chart) and an INTRADAY plan produced outside the 10:15-14:30 ET execution window comes back with an `execution_window` annotation saying how far outside — a pre-open intraday plan describes conditions that do not exist yet. The annotation never suppresses a side.',
     {
       count: z.coerce.number().optional().describe('Bars to load (default 300)'),
       lookback: z.coerce.number().optional().describe('Swing sensitivity (default 5)'),
       holding_days: z.coerce.number().optional().describe('Intended hold in trading days — pair it with days_to_catalyst and the tool flags a trigger that would put you INTO the event'),
       days_to_catalyst: z.coerce.number().optional().describe('Trading days to earnings or another known event'),
+      tier: z.enum(['intraday', 'weekly', 'monthly']).optional().describe('Execution tier this plan is for. Drives the execution-window annotation: INTRADAY is traded 10:15-14:30 ET, weekly and monthly have no window. Defaults to "intraday" ONLY when the chart is on a resolution the intraday policy itself prescribes (5 or 15 minute); otherwise unstated, and the annotation is omitted rather than guessed'),
     },
-    wrap(async ({ count = 300, lookback = 5, holding_days = null, days_to_catalyst = null }) => {
+    wrap(async ({ count = 300, lookback = 5, holding_days = null, days_to_catalyst = null, tier = null }) => {
       const raw = await data.getOhlcv({ count, summary: false });
       const bars = normalizeBars(raw);
       if (!bars.length) throw new Error('No price bars came back from the chart.');
@@ -116,10 +118,22 @@ export function registerPlaybookTools(server) {
       const lastHigh = [...alt].reverse().find((x) => x.kind === 'high');
       const lastLow = [...alt].reverse().find((x) => x.kind === 'low');
 
+      /**
+       * A tool nobody remembers to parameterise is a tool that never fires. The
+       * repo's own rule: "a step you have to REMEMBER is a step that will eventually
+       * not happen". So the tier falls back to what the RESOLUTION could only mean —
+       * 5- and 15-minute are the two the intraday policy prescribes, and a plan built
+       * on them is an intraday plan by construction. `tierForResolution` returns null
+       * for everything else, including 60-minute and daily, so nothing is guessed.
+       */
+      const resolved = tier || tierForResolution(raw?.resolution ?? null);
+
       return {
         success: true,
         symbol: raw?.symbol ?? null,
         timeframe: raw?.resolution ?? null,
+        tier: resolved,
+        tier_source: tier ? 'argument' : (resolved ? 'derived from the chart resolution' : 'not stated'),
         ...entryHypothesis({
           price,
           atr: atrFromBars(bars, 14),
@@ -129,6 +143,8 @@ export function registerPlaybookTools(server) {
           swing_low: lastLow?.price ?? null,
           holding_days,
           days_to_catalyst,
+          tier: resolved,
+          now: Date.now(),
         }),
         thresholds: { chase_pct: CHASE_PCT, min_stop_atr: MIN_STOP_ATR },
       };

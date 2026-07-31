@@ -126,6 +126,99 @@ describe('the two warnings that stop a hypothesis being decorative', () => {
   });
 });
 
+/**
+ * WHEN the plan was written.
+ *
+ * The intraday tier is traded 10:15-14:30 ET and has said so in data since the tier
+ * policy was written — nothing read it, so an intraday plan produced at 06:55, when
+ * there is no VWAP and no opening range for the setup to be measured against, came
+ * out of here looking identical to one produced at 11:00.
+ */
+describe('the execution-window annotation', () => {
+  const PREOPEN = Date.parse('2026-07-15T10:55:00Z');   // Wed 06:55 EDT
+  const MIDDAY = Date.parse('2026-07-15T14:20:00Z');    // Wed 10:20 EDT
+  const LATE = Date.parse('2026-07-15T19:50:00Z');      // Wed 15:50 EDT
+
+  test('an INTRADAY plan formed pre-open is annotated with how far outside it is', () => {
+    const r = entryHypothesis({ ...DLO, tier: 'intraday', now: PREOPEN });
+    assert.equal(r.execution_window.in_window, false);
+    assert.equal(r.execution_window.window, '10:15-14:30 ET');
+    assert.equal(r.execution_window.opens_in_minutes, 200);
+    assert.match(r.execution_window.note, /Generated 06:55 ET/);
+    assert.match(r.execution_window.note, /do not exist yet/);
+  });
+
+  test('the same plan formed at 15:50 is annotated the other way', () => {
+    const r = entryHypothesis({ ...DLO, tier: 'intraday', now: LATE });
+    assert.equal(r.execution_window.in_window, false);
+    assert.equal(r.execution_window.closed_since_minutes, 80);
+    assert.match(r.execution_window.note, /closed at 14:30 ET/);
+  });
+
+  test('inside the window it says in_window true — silence would be ambiguous', () => {
+    const r = entryHypothesis({ ...DLO, tier: 'intraday', now: MIDDAY });
+    assert.equal(r.execution_window.in_window, true);
+    assert.equal(r.execution_window.status, 'in_window');
+  });
+
+  test('the annotation NEVER suppresses the plan', () => {
+    /**
+     * The whole point. Three market-alignment gates have been forward-tested in this
+     * repo — level_pressure, the Stage 2 gate, Livermore's two-leader confirmation —
+     * and all three failed. This is about honesty, not gating, so an out-of-window
+     * hypothesis must be byte-identical to an in-window one apart from the added key.
+     */
+    const inside = entryHypothesis({ ...DLO, tier: 'intraday', now: MIDDAY });
+    const outside = entryHypothesis({ ...DLO, tier: 'intraday', now: PREOPEN });
+    const plain = entryHypothesis(DLO);
+    for (const k of ['long', 'short']) {
+      assert.deepEqual(outside[k], plain[k], `${k} must be untouched by the annotation`);
+      assert.deepEqual(inside[k], plain[k], `${k} must be untouched by the annotation`);
+    }
+    assert.equal(outside.long.available, true);
+    assert.equal(outside.short.available, true);
+    assert.match(outside.execution_window.not_a_gate, /never a filter/);
+  });
+
+  test('weekly and monthly carry not_applicable, not a false "outside"', () => {
+    for (const tier of ['weekly', 'monthly']) {
+      const r = entryHypothesis({ ...DLO, tier, now: PREOPEN });
+      assert.equal(r.execution_window.status, 'not_applicable', tier);
+      assert.equal(r.execution_window.in_window, null, `${tier} has no window to be outside of`);
+    }
+  });
+
+  test('no tier and no timestamp add NOTHING — unknown is not annotated', () => {
+    /**
+     * Additive keys only, and an `execution_window` block reading "unknown" on every
+     * existing caller would be noise in the Sunday schema for no information. The
+     * existing shape is untouched.
+     */
+    assert.equal(entryHypothesis(DLO).execution_window, undefined);
+    assert.equal(entryHypothesis({ ...DLO, now: PREOPEN }).execution_window, undefined, 'no tier');
+    assert.equal(entryHypothesis({ ...DLO, tier: 'intraday' }).execution_window, undefined, 'no timestamp');
+    assert.equal(entryHypothesis({ ...DLO, tier: 'intraday', now: null }).execution_window, undefined);
+    assert.equal(entryHypothesis({ ...DLO, tier: 'nonsense', now: PREOPEN }).execution_window, undefined);
+  });
+
+  test('the annotation is ADDITIVE — every pre-existing key is still there', () => {
+    const plain = entryHypothesis(DLO);
+    const annotated = entryHypothesis({ ...DLO, tier: 'intraday', now: PREOPEN });
+    for (const k of Object.keys(plain)) assert.ok(k in annotated, `${k} was dropped`);
+    assert.deepEqual(
+      Object.keys(annotated).filter((k) => !(k in plain)), ['execution_window'],
+      'exactly one new key',
+    );
+  });
+
+  test('it stays PURE — no clock is read, so the same inputs give the same result', () => {
+    // `now` is a parameter and is not defaulted to Date.now() anywhere on this path.
+    const a = entryHypothesis({ ...DLO, tier: 'intraday', now: PREOPEN });
+    const b = entryHypothesis({ ...DLO, tier: 'intraday', now: PREOPEN });
+    assert.deepEqual(a, b);
+  });
+});
+
 describe('guards', () => {
   test('no price is an error', () => {
     assert.throws(() => entryHypothesis({ atr: 1 }), /needs the current price/);

@@ -22,8 +22,19 @@
  *    trigger can plausibly be hit, that is reported — a breakout entry four
  *    sessions before earnings is a position held into the report.
  *
- * All pure.
+ * ── And the fourth thing it was silent about: WHEN it was written ──
+ *
+ * An INTRADAY plan produced at 06:55 ET is a plan for a window that is not open. The
+ * tier policy has carried `execution_window` — 10:15-14:30 ET — since it was written
+ * and nothing read it, so a pre-open plan and an 11:00 plan came out of here looking
+ * identical. Pass `tier` and `now` and the result carries an `execution_window`
+ * annotation saying which. It never suppresses a side: the annotation is about
+ * honesty, and this repo has forward-tested three market-alignment gates and buried
+ * all three.
+ *
+ * All pure — `now` is passed in, never read from the clock here.
  */
+import { executionWindowStatus } from './timeframe_policy.js';
 
 /** Livermore: more than this far above the trigger and the edge is gone. */
 export const CHASE_PCT = 10;
@@ -171,6 +182,15 @@ function side(dir, {
 export function entryHypothesis({
   price, atr = null, patterns = [], levels = [], swing_high = null, swing_low = null,
   holding_days = null, days_to_catalyst = null,
+  /**
+   * The execution tier this plan is for, and the moment it is being written.
+   *
+   * Both default to null and both must be supplied for the annotation to appear.
+   * `now` is NOT defaulted to `Date.now()`: this function is pure, and a caller with
+   * no clock reading is in the "unknown" case, which must not be dressed up as a
+   * measurement. A caller that has one passes it — `src/tools/playbook.js` does.
+   */
+  tier = null, now = null,
 } = {}) {
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('entryHypothesis needs the current price.');
@@ -185,11 +205,24 @@ export function entryHypothesis({
     holdingDays: holding_days,
     daysToCatalyst: days_to_catalyst,
   };
+
+  /**
+   * ADDITIVE, and omitted entirely when the answer is `unknown`.
+   *
+   * With no tier or no timestamp there is nothing to say, and an `execution_window`
+   * block reading "unknown" on every existing caller would be noise in the Sunday
+   * schema for no information. When a tier IS known the key is always present —
+   * including `not_applicable` for weekly and monthly — because silence cannot
+   * distinguish "no window applies" from "nobody said".
+   */
+  const window = executionWindowStatus(tier, now);
+
   return {
     price,
     atr,
     long: side(1, args),
     short: side(-1, args),
+    ...(window.status === 'unknown' ? {} : { execution_window: window }),
     method: 'Triggers come from a forming pattern\'s completion level, a swing extreme, or an existing '
       + 'level — in that order of preference, and the basis is named. Nothing is rounded and no price is '
       + 'invented: a side with none of the three returns unavailable with a reason.',
