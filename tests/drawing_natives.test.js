@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 
 import {
-  planLegDrawing, drawPatternGeometry, windowPivots,
+  planLegDrawing, drawPatternGeometry, patternPivots,
   labelPlacements, LABEL_COLLISION, fibDrawPlan, elliottDrawPlan, earningsLinePlan,
   EARNINGS_LINE, VOLUME_PROFILE_WINDOW,
 } from '../src/core/assessment_draw.js';
@@ -165,7 +165,7 @@ describe('planLegDrawing — position tool or three lines, and it never guesses'
 describe('head and shoulders — one native entity, never a partial one', () => {
   test('7 real alternating pivots draw ONE native tool, not six leg lines', async () => {
     const bars = barsFrom(zigzag(8));
-    const pv = windowPivots(bars, bars[0].time, bars[bars.length - 1].time, 7);
+    const pv = patternPivots(bars, bars[0].time, bars[bars.length - 1].time, 7);
     assert.ok(pv.length >= 7, `fixture must produce 7+ pivots, got ${pv.length}`);
 
     const r = recorder();
@@ -189,7 +189,7 @@ describe('head and shoulders — one native entity, never a partial one', () => 
      * removing, so the floor is a hard one.
      */
     const bars = barsFrom(zigzag(2, 10));
-    const pv = windowPivots(bars, bars[0].time, bars[bars.length - 1].time, 7);
+    const pv = patternPivots(bars, bars[0].time, bars[bars.length - 1].time, 7);
     assert.ok(pv.length >= 2 && pv.length < 7, `fixture must produce 2-6 pivots, got ${pv.length}`);
 
     const r = recorder();
@@ -206,7 +206,7 @@ describe('head and shoulders — one native entity, never a partial one', () => 
 
   test('no pivots at all draws no shape, and still draws the neckline', async () => {
     const bars = barsFrom(Array.from({ length: 40 }, (_, i) => 100 + i));   // monotonic: no pivots
-    assert.equal(windowPivots(bars, bars[0].time, bars[bars.length - 1].time, 7).length, 0);
+    assert.equal(patternPivots(bars, bars[0].time, bars[bars.length - 1].time, 7).length, 0);
 
     const r = recorder();
     await drawPatternGeometry(
@@ -469,10 +469,11 @@ describe('elliottDrawPlan — one count only when every sensitivity agreed', () 
 
   test('DISAGREEMENT never draws — the disagreement IS the finding', () => {
     /**
-     * The restraint is the feature. A rule-valid count exists on 70.5% of random
-     * walks; `surveyCounts` returns every count the rules allow precisely so no
-     * single one is presented as THE count, and drawing one on the chart is the
-     * strongest presentation there is.
+     * The restraint is the feature. A rule-valid count exists on 82% of random
+     * walks (ELLIOTT_NOISE_BASELINE — it was 70.5% before the pivot backbone
+     * landed and the floor got worse, not better); `surveyCounts` returns every
+     * count the rules allow precisely so no single one is presented as THE
+     * count, and drawing one on the chart is the strongest presentation there is.
      */
     for (const n of [2, 3, 5]) {
       const p = elliottDrawPlan({ ...AGREED, distinct_recent_counts: n });

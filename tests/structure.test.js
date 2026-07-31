@@ -101,6 +101,38 @@ describe('findSwings', () => {
     const tight = findSwings(b, { lookback: 2 }).length;
     const loose = findSwings(b, { lookback: 8 }).length;
     assert.ok(loose <= tight, `lookback 8 found ${loose}, lookback 2 found ${tight}`);
+    // On a clean zigzag both densities find the SAME four real turns, which is
+    // the outcome to want and also the reason the assertion above can no longer
+    // fail on this fixture. The strict version needs structure at two scales.
+    assert.equal(loose, 4);
+  });
+
+  it('lookback is a real density control — structure at two scales separates', () => {
+    /**
+     * The assertion above passes on any fixture whose turns are all the same
+     * size, and a test that cannot fail is the failure mode this repo has been
+     * bitten by eight times. So: a slow 60-bar wave with a fast 7-bar ripple on
+     * top of it, which is what a chart with minor and major swings looks like.
+     *
+     * This matters more since the pivot backbone landed. `lookback` is now a
+     * BANDWIDTH (src/core/pivots.js maps one to the other, measured), and
+     * `assessment.js` sweeps lookback 3/4/5/6/8 and calls a pattern STABLE when
+     * it survives 3 of the 5. If lookback stopped controlling density, every
+     * pattern would survive 5 of 5 and the stability figure would silently read
+     * 100% — a confidence number that cannot fail.
+     */
+    const b = bars(Array.from(
+      { length: 240 },
+      (_, i) => 100 + 10 * Math.sin(i / 9.5) + 1.5 * Math.sin(i / 1.1),
+    ));
+    const counts = [2, 3, 5, 8].map((lookback) => findSwings(b, { lookback }).length);
+    for (let i = 1; i < counts.length; i += 1) {
+      assert.ok(counts[i] < counts[i - 1],
+        `density did not fall with lookback: ${JSON.stringify(counts)} for lookbacks [2,3,5,8]`);
+    }
+    // The fast ripple must actually be visible at the tight end, or the fixture
+    // is a slow wave with decoration and proves nothing.
+    assert.ok(counts[0] > 40, `expected the 7-bar ripple to show at lookback 2, got ${counts[0]}`);
   });
 });
 

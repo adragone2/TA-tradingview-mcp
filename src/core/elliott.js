@@ -265,24 +265,51 @@ export const ELLIOTT_CAVEAT = {
  *
  * Measured by scripts/detector-noise.js over 200 random walks of 200 bars:
  *
- *   at least one rule-valid count   70.5% of walks
- *   counts per walk                 1.74
+ *   at least one rule-valid count   82% of walks
+ *   counts per walk                 2.17
  *
- * Seven walks in ten admit a count that satisfies every Elliott rule. The rules
+ * Four walks in five admit a count that satisfies every Elliott rule. The rules
  * are permissive enough that noise passes them, which is precisely why
  * surveyCounts returns EVERY valid count rather than one, and why the
  * disagreement across sensitivities is reported as the finding.
  *
  * A single count is not a reading of the market. It is one of several the same
  * bars support, on data that need not contain waves at all.
+ *
+ * ── The floor MOVED, and it moved because the pivots changed ──
+ *
+ * It was 70.5% / 1.74 while `structure.findSwings` was a fractal scan. It is
+ * 82% / 2.17 now that swings come from the kernel backbone (src/core/pivots.js).
+ * Paired re-run at 500 walks on identical seeds, both arms: 76.2% -> 82.4%,
+ * 1.89 -> 2.20 counts. Same direction, so it is the detector and not the sample.
+ *
+ * The mechanism is `alternateSwings`, not the raw pivot count. The backbone is
+ * calibrated to produce the SAME number of raw swings as the fractal did (22.02
+ * vs 22.05 at lookback 5 over 200 walks). But kernel extrema already alternate,
+ * so `alternateSwings` collapses NONE of them, where it collapsed 13% of the
+ * fractal's — the fractal emitted runs of one kind, and the collapse threw the
+ * less extreme of each pair away. This module counts waves from six consecutive
+ * ALTERNATING swings, so it sees ~15% more material to build a count from.
+ *
+ * Read it as making an existing verdict worse, not as a new one: 70.5% already
+ * said the rules do not discriminate against noise. 82% says so louder.
  */
 export const ELLIOTT_NOISE_BASELINE = {
   measured: true,
   script: 'scripts/detector-noise.js',
   walks: 200,
   bars_per_walk: 200,
-  walks_with_valid_count_pct: 70.5,
-  counts_per_walk: 1.74,
-  note: 'A rule-valid count exists on 70.5% of random walks. Never present one count as THE count — '
+  walks_with_valid_count_pct: 82.0,
+  counts_per_walk: 2.17,
+  cross_check_500_walks: { before_pivot_backbone: 76.2, after: 82.4 },
+  previous: {
+    walks_with_valid_count_pct: 70.5,
+    counts_per_walk: 1.74,
+    why_it_changed: 'Swings moved from a fractal scan to the kernel backbone (src/core/pivots.js). Raw pivot '
+      + 'counts are calibrated to match, but kernel pivots already alternate, so alternateSwings collapses '
+      + 'none of them where it collapsed 13% of the fractal\'s. A count is built from six consecutive '
+      + 'alternating swings, so there is more material.',
+  },
+  note: 'A rule-valid count exists on 82% of random walks. Never present one count as THE count — '
     + 'the survey returns all of them because the rules do not discriminate against noise.',
 };

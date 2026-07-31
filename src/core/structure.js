@@ -22,6 +22,7 @@ import * as data from './data.js';
 import { completeBars } from './session.js';
 import { COLORS, resolveTime, drawShape } from './drawing.js';
 import { evaluate, getChartApi } from '../connection.js';
+import { findPivots } from './pivots.js';
 import {
   selectForDisplay, selectPrimary, atrFromBars, DISPLAY_DEFAULTS,
 } from './level_display.js';
@@ -81,38 +82,39 @@ export function completeSeries(raw, { now = Date.now(), resolution = null } = {}
 }
 
 /**
- * Fractal swing detection: a bar is a swing high when its high is the highest
- * in the window `lookback` bars either side.
+ * Swing detection — a THIN ADAPTER over the one pivot backbone.
  *
- * The comparison is deliberately asymmetric — STRICTLY beyond every bar to the
- * left, ties allowed to the right. On a flat shelf every bar is tied for the
- * highest, so a symmetric test marks the whole shelf and then clusters it into
- * a fistful of "levels" that are really one. Asymmetry marks the shelf once, at
- * the bar where price first reached it.
+ * This was a fractal scan: a bar was a swing high when its high beat every bar
+ * within `lookback` either side. It is now `pivots.findPivots`, which locates
+ * extrema on a Nadaraya-Watson smoothed curve and then maps each one back to
+ * the REAL high or low in the bars around it (Lo, Mamaysky & Wang 2000). Same
+ * name, same signature, same output shape — `{ index, time, price, kind }`,
+ * oldest first — so the ~27 call sites downstream did not have to change.
+ *
+ * THE VALUES CHANGE, and that is the point. Three implementations of "what is a
+ * swing" coexisted here (this one, `assessment_draw.windowPivots`, and the
+ * kernel) and could disagree about the same chart. See `src/core/pivots.js` for
+ * why the kernel is the one that survived, and for the measured `lookback` ->
+ * bandwidth mapping that keeps the pivot COUNT comparable to what the fractal
+ * scan produced.
+ *
+ * Two behavioural differences worth knowing at the call sites:
+ *
+ *   - The output ALTERNATES high/low already, because the kernel enforces it
+ *     after mapping back to real prices. `alternateSwings` below is therefore
+ *     idempotent rather than load-bearing — keep calling it, it is free, and
+ *     it is what documents the intent.
+ *   - A bar can no longer be both a swing high and a swing low. Under the
+ *     fractal rule an outside bar could be, and it entered level clustering
+ *     twice.
+ *
+ * The old asymmetric-tie rule (strictly beyond on the left, ties allowed on the
+ * right) existed so a flat shelf was marked once instead of at every bar of it.
+ * Smoothing solves the same problem structurally: a shelf is one turn in the
+ * smoothed curve, so it produces one pivot.
  */
 export function findSwings(bars, { lookback = 5 } = {}) {
-  const L = Math.max(1, Math.floor(lookback));
-  const swings = [];
-
-  for (let i = L; i < bars.length - L; i++) {
-    const bar = bars[i];
-    let isHigh = true, isLow = true;
-
-    for (let j = i - L; j < i; j++) {
-      if (bars[j].high >= bar.high) isHigh = false;
-      if (bars[j].low <= bar.low) isLow = false;
-    }
-    for (let j = i + 1; j <= i + L; j++) {
-      if (bars[j].high > bar.high) isHigh = false;
-      if (bars[j].low < bar.low) isLow = false;
-    }
-
-    if (isHigh) swings.push({ index: i, time: bar.time, price: bar.high, kind: 'high' });
-    if (isLow) swings.push({ index: i, time: bar.time, price: bar.low, kind: 'low' });
-  }
-
-  swings.sort((a, b) => a.index - b.index);
-  return swings;
+  return findPivots(bars, { lookback });
 }
 
 /**
@@ -140,9 +142,15 @@ export function alternateSwings(swings) {
  * CHoCH — the trend's defining low/high fails, the first sign it has turned.
  *
  * These are read off confirmed swings, so they are what the structure HAS done.
- * A swing needs `lookback` bars to its right before it is confirmed, so the
- * most recent bars are deliberately not represented — that lag is the price of
- * not inventing structure that has yet to happen.
+ *
+ * The confirmation lag USED to be exactly `lookback` bars, because the fractal
+ * scan could not mark a swing without that many bars to its right. The pivot
+ * backbone has no such rule, and its edge behaviour is measured instead of
+ * guaranteed (`pivots.PIVOT_EDGE_STABILITY`): a pivot on the very last bar is
+ * dropped because it was revised in 100% of cases, and beyond ~7 bars back a
+ * pivot never moved at all. In between it can still be revised — 50% one bar
+ * back, 13% three bars back. So the most recent structure is live rather than
+ * absent, and it is less settled than what came before it.
  */
 export function classifyStructure(alt) {
   const labelled = [];
@@ -833,7 +841,12 @@ export async function analyzeStructure({ count = 200, lookback = 5, max_swings =
     swings: recent,
     events: s.events.slice(-10).map((e) => ({ ...e, price: round(e.price, 6) })),
     ...(s.swings.length > recent.length ? { note: `${s.swings.length} swings found; showing the last ${recent.length}.` } : {}),
-    caveat: `Swings need ${lookback} bars to their right before they confirm, so the most recent ${lookback} bars are not yet represented. Structure describes what price has done, not what it will do.`,
+    caveat: 'Structure describes what price has done, not what it will do. Swings come from kernel extrema '
+      + 'mapped back to real bar highs and lows, so every price here traded. The most recent ones are the '
+      + 'least settled: measured on random walks, a pivot one bar back from the end is revised 50% of the '
+      + 'time once another bar arrives, three bars back 13%, and beyond seven bars 0%. A pivot ON the last '
+      + 'bar is not reported at all — it was revised every time.',
+    swing_source: 'kernel (src/core/pivots.js)',
   };
 }
 

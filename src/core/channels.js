@@ -390,7 +390,14 @@ export const CHANNEL_NOISE_BASELINE = {
     + 'as a fit rather than a shape. The pre-gate figures show why the R2 and width '
     + 'tests exist: without them the detector fired on 93.5% of noise.',
   context: {
-    structural_patterns_pct: 68,
+    // 68 before the pivot backbone (src/core/pivots.js) replaced the fractal
+    // swing detector; 75 after, on the same 40-walk harness. See
+    // patterns.NOISE_BASELINE, which also carries the 200-walk arm showing the
+    // move is really ~+3 points and that 40 walks was over-reading by ~10.
+    structural_patterns_pct: 75,
+    // Unchanged by the pivot swap, measured: lmw_patterns reads kernel extrema
+    // directly and never went through findSwings. Channels likewise — 33.5% on
+    // both arms of a paired 200-walk run.
     lmw_definitions_pct: 43.4,
     vcp_pct: 0,
     pennants_pct: 0,

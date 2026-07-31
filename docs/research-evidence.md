@@ -382,3 +382,20 @@ The published threshold is **T = 3 at a 20-day window**. Two arms, same scan:
 | T=7 pip | 0.7 | 0.3 |
 
 **At the published threshold the PIP mapping matches real charts and pure noise at the same rate.** Real charts trend; a bull-flag template firing no more on real data than on noise is the template failing to see what it claims to see — the strongest evidence yet that the 62–104% annualised excess returns those studies report did not come from the template. Every 200-bar walk of pure noise contains at least one T = 3 match (12 under rank, 31 under PIP). Selectivity exists only at thresholds the papers never used (T ≥ 5 rank, T ≥ 7 PIP), and even there the real-over-noise lift is at most ~2× on sub-1% rates. The two mappings disagree on purpose — rank reads only ordering (a 4% and a 40% pullback map identically), PIP scales prices — and the disagreement is the output, in the `lmw_patterns.js` second-opinion sense.
+
+## The pivot backbone moved the noise floors — and exposed a sampling error in one of them
+
+P2.3 consolidated three definitions of "what is a swing" (fractal `findSwings`, the drawer's `windowPivots`, kernel extrema) onto one kernel-validated backbone, `src/core/pivots.js`, calibrated so `lookback: 5` finds the same swing COUNT the fractal did (bandwidth = 0.4 × lookback, measured over 40 walks at two series lengths — `scripts/pivot-calibration.js`). Deliberately not cross-validated: CV picks the bandwidth from the data alone, which would make `lookback` a no-op and silently push the pattern stability sweep to 100%.
+
+Changing the pivot source changed the floors, paired on identical seeds:
+
+| detector | before | after | reading |
+|---|---|---|---|
+| divergence, 2+ agreeing | 13.5% | **19.5%** | the material move — kernel pivots already alternate, so `alternateSwings` no longer collapses 13% of them; more pairs agree by accident. The filter still removes 4 in 5 |
+| Elliott rule-valid | 70.5% | **82%** | same mechanism |
+| structural patterns | 68% / 0.78 per walk | 75% / 0.85 | see below |
+| zones, Wyckoff, breakouts, channels, LMW, VCP, pennants | — | — | unchanged (none consume `findSwings`) |
+
+**The structural-pattern row carries its own lesson about harness size.** The published 68% reproduced to the digit on a pristine pre-change tree — and at 200 walks instead of 40 it is **58%**, so the published figure was ~10 points high from sampling error alone, and the true backbone effect is ~+3 points (58 → 61). Both are recorded in the source constant. Separately, `patterns.NOISE_BASELINE.per_walk` could not be reproduced from its own harness at any walk count (recorded ~half the measured values — the flattering direction, since `vsNoise()` divides by it); flagged `per_walk_provenance: 'UNRESOLVED'` in source rather than silently overwritten.
+
+Also measured on the way through: raw `findKernelPivots` emits index-INVERTED adjacent pivot pairs (23 per 200 walks of 300 bars — alternation is enforced on `kind`, never on `index`). The backbone repairs the sequence; `pivots_kernel` and `lmw_patterns.js` still consume the raw one (tracked as follow-up work). And kernel pivots near the series end are less settled than the fractal's hard confirmation lag: a pivot ON the final bar is wrong 100% of the time and is dropped; 1–2 bars back revise ~50/43%; 7+ bars back 0% (`PIVOT_EDGE_STABILITY`).

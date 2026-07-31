@@ -113,7 +113,7 @@ export const SCREENS = [
     horizon_side: 'REVERSAL — the side the evidence favours under 21 days.',
     evidence: 'B. Stage 2 accepts only a Wyckoff spring/upthrust (0% on noise), a confirmed '
       + 'double bottom with its Bulkowski base rate, or 2+ indicators diverging in agreement '
-      + '(13.5% on noise). A lone divergence is 99% and worth nothing.',
+      + '(19.5% on noise). A lone divergence is 99.5% and worth nothing.',
     filter: [
       ...LIQUIDITY_FILTER,
       { left: 'market_cap_basic', operation: 'greater', right: 1e9 },

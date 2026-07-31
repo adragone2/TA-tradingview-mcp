@@ -87,8 +87,10 @@ console.log(`${'detector'.padEnd(pad)}   walks%   per-walk`);
 for (const [k, v] of Object.entries(out)) {
   console.log(`${k.padEnd(pad)}   ${String(v.walks_with_any_pct).padStart(5)}   ${String(v.per_walk).padStart(7)}${v.errors ? `   (${v.errors} errors)` : ''}`);
 }
-console.log('\nFor comparison: structural patterns 68% of walks, LMW definitions 43.4%,');
+console.log('\nFor comparison: structural patterns 75% of walks, LMW definitions 43.4%,');
 console.log('channels 33.5% (12% stable), VCP 0%, pennants 0%.');
+console.log('(Structural patterns was 68% before the pivot backbone; measured at 200 walks the');
+console.log(' move is 58% -> 61%, so the 40-walk harness both figures come from over-reads by ~10.)');
 
 /* ────────────────────────────────────────────────────────────────────────────
  * gaps.js — and the reason it could not use the walk above.

@@ -286,27 +286,62 @@ export const DIVERGENCE_CAVEAT = {
  *
  * Measured by scripts/detector-noise.js over 200 random walks of 200 bars:
  *
- *   at least one recent divergence        99% of walks, 7.08 per walk
- *   TWO OR MORE indicators agreeing     13.5% of walks
+ *   at least one recent divergence        99.5% of walks, 7.92 per walk
+ *   TWO OR MORE indicators agreeing       19.5% of walks
  *
- * This is the sharpest result of the whole exercise, and it validates the rule
- * this repo already applied on judgement: a single divergence is worthless —
- * it appears on 99 walks in 100, seven times each — while agreement across
- * independent indicators appears on 13.5%.
+ * This is still the sharpest result of the whole exercise, and it still supports
+ * the rule this repo applied on judgement: a single divergence is worthless — it
+ * appears on essentially every walk, eight times each — while agreement across
+ * independent indicators appears on one walk in five.
  *
  * The agreement filter is doing ALL of the discriminating. DIVERGENCE_CAVEAT
  * has always said divergence "occurs constantly and price ignores it most of
  * the time"; this is the measurement behind it.
+ *
+ * ── The agreement floor MOVED, and it moved the wrong way ──
+ *
+ * It was 13.5% while `structure.findSwings` was a fractal scan. It is 19.5% now
+ * that swings come from the kernel backbone (src/core/pivots.js). Paired re-run
+ * at 500 walks on identical seeds, both arms: 13.2% -> 20.0%. Same direction, so
+ * it is the detector and not the sample. In relative terms the noise floor for
+ * the one clause that made divergence usable rose by HALF.
+ *
+ * The mechanism is `alternateSwings`, not the raw pivot count. The backbone is
+ * calibrated to produce the SAME number of raw swings as the fractal did (22.02
+ * vs 22.05 at lookback 5 over 200 walks). But kernel extrema already alternate,
+ * so `alternateSwings` collapses NONE of them, where it collapsed 13% of the
+ * fractal's. This module reads each indicator at the bar of every PRICE swing,
+ * so more swings means more pairs to compare, and more chances for two
+ * indicators to line up by accident.
+ *
+ * What it does NOT change: the ratio is what matters, and it is still stark.
+ * 99.5% against 19.5% is a filter that removes four cases in five. Quote the
+ * agreement count. But 19.5% is the number to quote against, not 13.5% — one
+ * agreeing pair in five is noise, and that is a fifth of the walks rather than
+ * an eighth.
  */
 export const DIVERGENCE_NOISE_BASELINE = {
   measured: true,
   script: 'scripts/detector-noise.js',
   walks: 200,
   bars_per_walk: 200,
-  walks_with_any_divergence_pct: 99,
-  divergences_per_walk: 7.08,
-  walks_with_two_or_more_agreeing_pct: 13.5,
-  note: 'A single divergence is found on 99% of random walks, 7 times per walk. TWO OR MORE indicators '
-    + 'agreeing drops to 13.5%. Quote the agreement count, never a lone divergence — the filter is the '
-    + 'entire signal.',
+  walks_with_any_divergence_pct: 99.5,
+  divergences_per_walk: 7.92,
+  walks_with_two_or_more_agreeing_pct: 19.5,
+  cross_check_500_walks: {
+    before_pivot_backbone: { any: 99.0, two_or_more: 13.2 },
+    after: { any: 99.4, two_or_more: 20.0 },
+  },
+  previous: {
+    walks_with_any_divergence_pct: 99,
+    divergences_per_walk: 7.08,
+    walks_with_two_or_more_agreeing_pct: 13.5,
+    why_it_changed: 'Swings moved from a fractal scan to the kernel backbone (src/core/pivots.js). Raw pivot '
+      + 'counts are calibrated to match, but kernel pivots already alternate, so alternateSwings collapses '
+      + 'none of them where it collapsed 13% of the fractal\'s. Indicators are read at every price swing, so '
+      + 'more swings means more pairs and more accidental agreement.',
+  },
+  note: 'A single divergence is found on 99.5% of random walks, 8 times per walk. TWO OR MORE indicators '
+    + 'agreeing drops to 19.5%. Quote the agreement count, never a lone divergence — the filter is the '
+    + 'entire signal. It is a weaker filter than the 13.5% previously recorded here.',
 };

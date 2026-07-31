@@ -1789,8 +1789,8 @@ export const NOISE_BASELINE = {
   // bull_flag also returned bullish_pennant — the pause window had swallowed
   // the pole's last leg and converged for the wrong reason.
   flag_cross_detected_as_pennant_pct: 0,
-  detections_per_walk: 0.78,
-  walks_with_any_pattern_pct: 68,
+  detections_per_walk: 0.85,
+  walks_with_any_pattern_pct: 75,
   per_walk: {
     // Rectangles, measured over 200 walks when prior-trend typing split them
     // into three names. Typing does not make the shape rarer — it distributes
@@ -1807,6 +1807,51 @@ export const NOISE_BASELINE = {
     ascending_triangle: 0.03,
     descending_triangle: 0.03,
   },
+  /**
+   * The floor MOVED when swings moved to the kernel backbone — and the size of
+   * the move depends on how many walks you run, which is the more useful lesson.
+   *
+   * Re-run of the EXACT published harness (`measure(detect, { walk_trials: 40 })`,
+   * lookback 4) against a pristine copy of the pre-change tree reproduces
+   * 68% / 0.78 to the digit, then gives 75% / 0.85 after. Both numbers are in
+   * the fields above and below.
+   *
+   * But the same harness at 200 walks gives 58% -> 61%, per-walk 0.67 -> 0.69.
+   * So the real move is about +3 points, and the published 68% was ~10 points
+   * high because 40 walks carries a ±7-point standard error. The headline field
+   * stays on the 40-walk harness so it is comparable with what it replaces; read
+   * the 200-walk row for the size of the change.
+   *
+   * Mechanism: `structuralPatterns` runs on `alternateSwings(swings)`. Kernel
+   * pivots already alternate, so the collapse that removed 13% of the fractal's
+   * swings now removes none, and there is more material for double tops, wedges
+   * and triangles to be built from.
+   */
+  cross_check_200_walks: {
+    before_pivot_backbone: { walks_with_any_pattern_pct: 58, detections_per_walk: 0.67 },
+    after: { walks_with_any_pattern_pct: 61, detections_per_walk: 0.69 },
+    note: 'Same measure() harness, walk_trials raised from 40 to 200. The 40-walk figures above are the '
+      + 'published methodology; these are the better-estimated ones.',
+  },
+  before_pivot_backbone: {
+    detections_per_walk: 0.78,
+    walks_with_any_pattern_pct: 68,
+    note: 'Measured with structure.findSwings as a FRACTAL scan, before src/core/pivots.js. Kept so the '
+      + 'effect of changing the pivot source is visible rather than absorbed.',
+  },
+  /**
+   * NOT re-measured, and the reason is a discrepancy that predates the pivot
+   * backbone: the rows above cannot be reproduced from `measure()` at any walk
+   * count. The pre-change tree at 200 walks gives rectangle 0.13 against the
+   * 0.065 recorded here, bullish_rectangle 0.06 against 0.015 — roughly double,
+   * consistently. So this table came from a harness (different seeds, different
+   * noise, or a different detector configuration) that is no longer identified
+   * anywhere. `vsNoise` divides by these numbers, so it is currently comparing
+   * against a floor about half the measured one, which is the FLATTERING
+   * direction. Flagged rather than silently overwritten, because replacing it
+   * with numbers from a third harness would repeat the mistake.
+   */
+  per_walk_provenance: 'UNRESOLVED — see the comment above per_walk. Predates the pivot backbone.',
   previously: {
     detections_per_walk: 19.3,
     double_bottom: 5.15,

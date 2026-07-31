@@ -35,7 +35,27 @@ import { findSwings, alternateSwings, findKeyLevels } from '../src/core/structur
  * 15.5433 — the level sitting on the swing high — so `selectPrimary` had nothing to
  * anchor to and silently fell back to "nearest". A fixture with fewer than 12
  * candidates cannot reproduce it, which is exactly why the first version of this
- * test passed with the fix reverted and was worthless.
+ * test passed with the fix reverted and was worthless. The guard on that count is
+ * in the test itself and must stay.
+ *
+ * ── Why each price is now held for TWO bars ──
+ *
+ * The shelves used to be one bar each: lvl, lvl-0.3, lvl, lvl-0.25. Under the
+ * fractal swing detector that produced 17 swings and 16 candidate levels. Under
+ * the pivot backbone (kernel extrema, src/core/pivots.js) it produced FOUR, and
+ * the fixture stopped exercising the cap it exists to exercise.
+ *
+ * That is not the backbone getting it wrong — it is a property of smoothing, and
+ * worth stating because it will surprise the next person to write a fixture here.
+ * The old shelf oscillated with a period of TWO bars on a series stepping 0.45
+ * every twelve, and a Gaussian smooth at the bandwidth `lookback: 5` maps to
+ * (2.0 bars) treats a two-bar wiggle as noise on a rising line — correctly. The
+ * fractal rule is a rank filter and degrades gently; the kernel has a cutoff.
+ *
+ * Holding each price for two bars doubles the oscillation's period and it
+ * resolves again: 66 swings, 16 candidates against the default's 12. The SHAPE
+ * of the fixture is unchanged — sixteen shelves 0.45 apart, each visited three
+ * times, then a decline and a chop. Only the dwell changed.
  */
 function fixtureBars() {
   const out = [];
@@ -44,9 +64,10 @@ function fixtureBars() {
     out.push({ time: t, open: p, high: p * 1.004, low: p * 0.996, close: p, volume: vol });
     t += 86400;
   };
+  const hold = (p, vol) => { push(p, vol); push(p, vol); };
   for (let s = 0; s < 16; s += 1) {
     const lvl = 10 + s * 0.45;
-    for (let k = 0; k < 3; k += 1) { push(lvl, 1.5e6); push(lvl - 0.3); push(lvl, 1.4e6); push(lvl - 0.25); }
+    for (let k = 0; k < 3; k += 1) { hold(lvl, 1.5e6); hold(lvl - 0.3); hold(lvl, 1.4e6); hold(lvl - 0.25); }
   }
   for (let i = 0; i < 25; i += 1) push(16.5 - i * 0.14);
   for (let i = 0; i < 15; i += 1) push(13.1 + Math.sin(i / 3) * 0.2);

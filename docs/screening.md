@@ -186,7 +186,7 @@ stage 2 requires a detector that noise does not produce.
 
 Stage 2 accepts **only**: a Wyckoff spring/upthrust (0% on noise), a confirmed
 double bottom/top with its Bulkowski base rate, or **two or more indicators
-diverging in agreement** (13.5% on noise — a lone divergence is 99% and worth
+diverging in agreement** (19.5% on noise — a lone divergence is 99.5% and worth
 nothing).
 
 ### 5. Relative strength leadership
@@ -284,8 +284,8 @@ performance.
 This is deliberate. A weighted composite across six screens invents six
 coefficients nobody measured, which is curve-fitting with extra steps. Counting
 agreement invents nothing, and it is the rule this repo already runs on — the
-same reason a lone divergence is discarded at a 99% noise floor and two
-agreeing are kept at 13.5%.
+same reason a lone divergence is discarded at a 99.5% noise floor and two
+agreeing are kept at 19.5%.
 
 A name hitting one screen is not excluded; it ranks below a name hitting three.
 

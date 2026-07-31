@@ -15,6 +15,7 @@ import { removeOrphans } from './orphans.js';
 import { selectPrimary, atrFromBars } from './level_display.js';
 import { planPatternDrawings } from './patterns_draw.js';
 import { accountSettings } from './rules.js';
+import { findPivots } from './pivots.js';
 
 const r2 = (n, dp = 2) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 
@@ -174,7 +175,7 @@ export function fibDrawPlan(fib) {
  * The agreeing Elliott count, or nothing.
  *
  * `elliott_impulse_wave` probed 6 of 6 points on 2026-07-30, so the shape works.
- * The restraint is the point: a rule-valid count exists on **70.5% of random
+ * The restraint is the point: a rule-valid count exists on **82% of random
  * walks**, and `surveyCounts` returns every count the rules allow precisely so
  * that no single one is presented as THE count. Drawing one on a chart is the
  * strongest possible presentation of it.
@@ -340,37 +341,34 @@ export function planLegDrawing(leg, side, account) {
 }
 
 /**
- * Alternating swing pivots inside a pattern's own window.
+ * Alternating swing pivots inside a pattern's own window, for the native tools.
  *
- * TradingView's native pattern tools take N alternating points and render the
- * shape themselves. Feeding them REAL pivots is the whole point — it is what
- * stops a drawn boundary from floating away from the price, which is exactly
- * how the CQTM wedge ended up with a lower edge at 22.25 on a bar trading ~29.
+ * ── `windowPivots` used to live here, and it is GONE ──
+ *
+ * It was a third implementation of "what is a swing", beside
+ * `structure.findSwings` and the kernel. Three answers to one question about
+ * one chart: a wedge could be drawn through pivots the structure block never
+ * saw, and neither of them would look wrong on its own. It is
+ * `pivots.findPivots` now — the same backbone every detector reads — and the
+ * two behaviours that mattered are parameters rather than a private loop:
+ *
+ *   - the WINDOW  — `from_time` / `to_time`. Better than the original, which
+ *     restricted the scan range but still read its comparison window out of the
+ *     full array; the backbone smooths the whole series and then filters, so a
+ *     pattern near the edge of its window gets real context on both sides.
+ *   - the FLOOR   — `want`. The old 3/2/1 lookback ladder is a bandwidth ladder
+ *     now. The reason for it is unchanged and is not cosmetic: a native pattern
+ *     tool handed fewer points than it declares places what it has and STAYS
+ *     ARMED, leaving a stray diagonal and a live drawing cursor on the chart.
+ *
+ * `lookback: 3` is the base density because that is what the old ladder started
+ * at; `pivots.js` carries the measured lookback -> bandwidth mapping. Prices
+ * are rounded here rather than in the backbone — a pivot is a measurement, and
+ * only the drawing needs it short.
  */
-export function windowPivots(bars, fromTime, toTime, want) {
-  const s = Math.max(0, bars.findIndex((b) => b.time >= fromTime));
-  let e = bars.findIndex((b) => b.time >= toTime);
-  if (e < 0) e = bars.length - 1;
-  const out = [];
-  for (const lb of [3, 2, 1]) {          // loosen until enough pivots are found
-    out.length = 0;
-    for (let i = Math.max(s, lb); i <= Math.min(e, bars.length - 1 - lb); i++) {
-      const w = bars.slice(i - lb, i + lb + 1);
-      const isHigh = bars[i].high === Math.max(...w.map((b) => b.high));
-      const isLow = bars[i].low === Math.min(...w.map((b) => b.low));
-      if (!isHigh && !isLow) continue;
-      const kind = isHigh ? 'high' : 'low';
-      const price = isHigh ? bars[i].high : bars[i].low;
-      const last = out[out.length - 1];
-      if (last && last.kind === kind) {   // keep the more extreme of a run
-        if (kind === 'high' ? price > last.price : price < last.price) out[out.length - 1] = { time: bars[i].time, price, kind };
-        continue;
-      }
-      out.push({ time: bars[i].time, price, kind });
-    }
-    if (out.length >= want) break;
-  }
-  return out.map(({ time, price, kind }) => ({ time, price: r2(price, 4), kind }));
+export function patternPivots(bars, fromTime, toTime, want) {
+  return findPivots(bars, { lookback: 3, from_time: fromTime, to_time: toTime, want })
+    .map(({ time, price, kind }) => ({ time, price: r2(price, 4), kind }));
 }
 
 /**
@@ -471,7 +469,7 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
      * CQTM fix: running a 0.93%/bar slope back 46 bars once put a lower edge at
      * 22.25 on a bar trading near 29 — a line touching nothing.
      */
-    const pv = windowPivots(bars, p.from_time, p.to_time, 5);
+    const pv = patternPivots(bars, p.from_time, p.to_time, 5);
     const highs = pv.filter((x) => x.kind === 'high');
     const lows = pv.filter((x) => x.kind === 'low');
     let drew = 0;
@@ -550,7 +548,7 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
   // Head and shoulders — TradingView's own 7-point tool, which draws the
   // shoulders, the head and the neckline in the standard visual language.
   if (m.left_shoulder != null && m.head != null && m.right_shoulder != null) {
-    const pv = windowPivots(bars, p.from_time, p.to_time, 7);
+    const pv = patternPivots(bars, p.from_time, p.to_time, 7);
     if (pv.length >= 7) {
       /**
        * ONE NATIVE ENTITY, not six trend lines.
@@ -1001,7 +999,7 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
   /**
    * ELLIOTT — only when every sensitivity found the SAME count.
    *
-   * The gate is the whole feature. A rule-valid count exists on 70.5% of random
+   * The gate is the whole feature. A rule-valid count exists on 82% of random
    * walks, so drawing one is a strong claim on weak evidence; drawing the ONE
    * every sensitivity agreed on at least removes the choice of swing lookback
    * from the answer. Disagreement is reported and never rendered.
@@ -1018,7 +1016,7 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       shape: 'elliott_impulse_wave', why: ellPlan.why, direction: ellPlan.direction,
       pivots: ellPlan.points,
       note: 'Drawn ONLY because every sensitivity that produced a count produced this one. Textless, so '
-        + 'it is cleared by GROUP. 70.5% of random walks admit a rule-valid count — agreement narrows the '
+        + 'it is cleared by GROUP. 82% of random walks admit a rule-valid count — agreement narrows the '
         + 'subjectivity, it does not make the count evidence.',
     };
   } else {

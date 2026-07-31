@@ -356,7 +356,7 @@ export function assess(bars, spy) {
     return {
       direction: c.direction, lookback: run.lookback, pivots,
       start_time: c.start_time, end_time: c.end_time, bars_since_end: c.bars_since_end,
-      note: 'Every sensitivity that found a count found THIS one. Still 70.5% of random walks admit some '
+      note: 'Every sensitivity that found a count found THIS one. Still 82% of random walks admit some '
         + 'rule-valid count, so agreement narrows the subjectivity — it does not make the count evidence.',
     };
   }, null);
