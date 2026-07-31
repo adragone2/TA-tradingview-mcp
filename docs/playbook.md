@@ -64,6 +64,10 @@ These are **risk management**, not entry criteria — they belong in `risk_rules
 
 Double top/bottom, triple top/bottom, head-and-shoulders and its inverse. Each reports its **completion level** and the standard measured-move **target** (pattern height projected from the completion level).
 
+Head-and-shoulders detections also carry **`neckline_slope`** — direction, the raw price-per-bar slope, and both armpit anchors, so the claim is checkable on the chart. "Flat" is a number, not a judgement: |slope| below 0.05% of price per bar, the same threshold that calls a triangle boundary horizontal.
+
+**The slope changes the base rate, and it points opposite ways on the two variants.** Bulkowski measures tops best with a **horizontal** neckline (−24%, against −23% up-sloping and −21% down-sloping) and bottoms best with a **down-sloping** one (42% against 34%) — [thepatternsite.com/HSTExplained.html](https://www.thepatternsite.com/HSTExplained.html). Reusing one rule for both gets the top backwards. Caveats before quoting: the tops spread is **3 points and Bulkowski calls it "minor"**, no per-slope sample size is published, and these figures do not reconcile with the headline numbers from `hst.html`/`hsb.html` — a different page of different vintage. Quote a slope figure against the other slopes, never against the headline.
+
 ### The two rules that matter most
 
 **1. A pattern is not complete until price closes through its completion level.** Everything else is a shape. `patterns_detect` reports `status: "forming"` or `"confirmed"` for exactly this reason — never present a forming pattern as a signal.

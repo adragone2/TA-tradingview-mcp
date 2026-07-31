@@ -906,6 +906,188 @@ function pennantPatterns(bars, {
  * of similar highs constantly; it throws up pairs separated by a genuine 10%
  * retracement far less often.
  */
+/**
+ * Bulkowski's measured performance BY NECKLINE SLOPE.
+ *
+ * The neckline connects the two ARMPITS of a head-and-shoulders — the troughs
+ * either side of the head on a top, the peaks either side of the head on a
+ * bottom. Both armpits were already computed here to place the neckline, and
+ * the slope between them was then thrown away, so this is arithmetic on numbers
+ * the detector already had.
+ *
+ * His two findings, quoted verbatim so the assignment below can be audited
+ * against the source rather than trusted:
+ *
+ *   "Head-and-shoulders tops with horizontal necklines outperform, but the
+ *    difference is minor, -24% to -23% (up-sloping) and -21% (down-sloping)."
+ *
+ *   "Head-and-shoulders bottoms with down-sloping necklines show outstanding
+ *    performance, 42% versus 34% for trendlines that either slope upward or are
+ *    horizontal."
+ *
+ * ── Three things that must travel with these numbers ──
+ *
+ * ONE. The tops sentence carries THREE numbers and only TWO labels. The
+ * unlabelled -24% is read here as the horizontal case, because horizontal is
+ * the sentence's subject and is stated to outperform, and -24% is the largest
+ * decline of the three. That reading is recorded in `assignment_note` and the
+ * quote is carried in full so a reader can disagree with it.
+ *
+ * TWO. These do NOT reconcile with the headline figures in STRUCTURAL_STATS —
+ * 16% average decline for tops, 45% average rise for bottoms. Those come from
+ * hst.html and hsb.html; these come from HSTExplained.html, a different page of
+ * different vintage. Do not mix them, and do not compute a slope figure as a
+ * fraction of the headline.
+ *
+ * THREE. For TOPS the down-sloping neckline is the WORST of the three. That
+ * directly contradicts the `structure_confirms` prose this detector already
+ * attaches to the same pattern, which flatly called the down-sloping version
+ * "the stronger version" on market-structure reasoning until this measurement
+ * landed; the prose now states both readings. Reasoning against
+ * measurement is the argument this repo settles the same way every time. The
+ * spread is 3 points and Bulkowski himself calls it "minor", so the honest
+ * reading is that neither claim has much left once the error bars are on.
+ *
+ * Sample sizes and a per-slope breakdown are NOT published on that page, so
+ * there is no n, no dispersion and no trial count behind any of this. It is his
+ * measurement, not one made here, and it has no noise floor attached.
+ *
+ * Source: https://www.thepatternsite.com/HSTExplained.html, read July 2026.
+ */
+export const NECKLINE_SLOPE_STATS = {
+  head_and_shoulders: {
+    measure: 'average decline after the breakout — more negative is better performance',
+    by_slope: {
+      flat: { average_move_pct: -24, rank_of_3: 1 },
+      up: { average_move_pct: -23, rank_of_3: 2 },
+      down: { average_move_pct: -21, rank_of_3: 3 },
+    },
+    best_slope: 'flat',
+    spread_pct_points: 3,
+    author_verdict: 'minor',
+    quote: 'Head-and-shoulders tops with horizontal necklines outperform, but the difference is minor, '
+      + '-24% to -23% (up-sloping) and -21% (down-sloping).',
+    assignment_note: 'Three numbers, two labels. -24% is read as the HORIZONTAL case here: horizontal is '
+      + 'the subject of the sentence, is stated to outperform, and -24% is the largest decline of the three. '
+      + 'The quote is carried in full because that reading is an inference, not a label he wrote.',
+    contradiction_note: 'The DOWN-sloping neckline ranks LAST here, while the market-structure reasoning in '
+      + '`structure_confirms` (second trough lower = structure turned before the break) would predict it to be '
+      + 'the STRONGEST. Measurement and reasoning disagree, the measured spread is only 3 points, and the '
+      + '`structure_confirms` prose on this detection now states both readings.',
+    url: 'https://www.thepatternsite.com/HSTExplained.html',
+  },
+  inverse_head_and_shoulders: {
+    measure: 'average rise after the breakout — higher is better performance',
+    by_slope: {
+      down: { average_move_pct: 42, rank_of_3: 1 },
+      up: { average_move_pct: 34, rank_of_3: 2 },
+      flat: { average_move_pct: 34, rank_of_3: 2 },
+    },
+    best_slope: 'down',
+    spread_pct_points: 8,
+    author_verdict: 'outstanding',
+    quote: 'Head-and-shoulders bottoms with down-sloping necklines show outstanding performance, '
+      + '42% versus 34% for trendlines that either slope upward or are horizontal.',
+    assignment_note: 'Up-sloping and horizontal share the 34% figure because the source groups them: '
+      + '"trendlines that either slope upward or are horizontal". They are not measured separately, so '
+      + 'they rank equal here rather than being split on a number he did not publish.',
+    url: 'https://www.thepatternsite.com/HSTExplained.html',
+  },
+};
+
+/**
+ * The neckline slope between two armpits, or null if it cannot be measured.
+ *
+ * `left` and `right` are swing objects — `{ index, price }`, the shape
+ * `findSwings` returns. The raw slope is PRICE PER BAR; the flat test is run on
+ * the slope normalised to PERCENT OF PRICE PER BAR, so a $400 stock and a $4
+ * stock are judged on the same scale.
+ *
+ * `flat_slope_pct` is the SAME 0.05%/bar threshold `trendlinePatterns` already
+ * uses to call a triangle boundary horizontal, and the comparison is `<` there
+ * too — exactly at the threshold reads as sloped, not flat. Reusing it means a
+ * neckline and a triangle boundary on the same chart cannot disagree about what
+ * "flat" means, and it puts the number in one place rather than two.
+ *
+ * The threshold actually applied is returned in the object, because a rule the
+ * reader cannot see is a rule the reader cannot check.
+ *
+ * ── Null rather than a number that lies ──
+ *
+ * Missing armpits, a non-finite price or index, two armpits on the SAME bar
+ * (an infinite slope), a reversed pair, or a non-positive mean price all return
+ * `null`. None of them may return 0, because 0 reads as a flat neckline and
+ * would earn the flat base rate — `Number(null) === 0` has produced a finding
+ * out of missing data three times in this repo already.
+ */
+export function necklineSlope(left, right, { pattern = null, flat_slope_pct = 0.05 } = {}) {
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return null;
+  const li = left.index, ri = right.index, lp = left.price, rp = right.price;
+  if (![li, ri, lp, rp].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+
+  const bars = ri - li;
+  // Same bar is a vertical line, not a slope; a reversed pair means the caller
+  // handed the armpits over in the wrong order and the sign would be inverted.
+  if (!(bars > 0)) return null;
+
+  const mean = (lp + rp) / 2;
+  if (!(mean > 0)) return null;
+
+  const perBar = (rp - lp) / bars;
+  const pctPerBar = (perBar / mean) * 100;
+  if (!Number.isFinite(pctPerBar)) return null;
+
+  // A caller passing null or NaN as the threshold would make every comparison
+  // false and read every neckline as sloped. Fall back, and report what was used.
+  const flat = Number.isFinite(flat_slope_pct) && flat_slope_pct >= 0 ? flat_slope_pct : 0.05;
+  const direction = Math.abs(pctPerBar) < flat ? 'flat' : pctPerBar > 0 ? 'up' : 'down';
+
+  const stats = pattern ? NECKLINE_SLOPE_STATS[pattern] : null;
+  const forSlope = stats?.by_slope?.[direction] ?? null;
+
+  return {
+    direction,
+    slope_per_bar: round(perBar),
+    units: 'price per bar',
+    slope_pct_per_bar: round(pctPerBar, 4),
+    flat_threshold_pct_per_bar: flat,
+    flat_rule: `direction is "flat" when |slope_pct_per_bar| < ${flat}, the same per-bar percent-of-price `
+      + 'threshold trendlinePatterns uses to call a triangle boundary horizontal. Exactly at the threshold '
+      + 'reads as sloped.',
+    left_armpit: { index: li, price: round(lp), ...(left.time != null ? { time: left.time } : {}) },
+    right_armpit: { index: ri, price: round(rp), ...(right.time != null ? { time: right.time } : {}) },
+    bars_between: bars,
+    ...(forSlope ? {
+      base_rate: {
+        slope: direction,
+        ...forSlope,
+        of_3_slopes: 3,
+        best_slope: stats.best_slope,
+        is_best: direction === stats.best_slope,
+        measure: stats.measure,
+        spread_pct_points: stats.spread_pct_points,
+        author_verdict: stats.author_verdict,
+        quote: stats.quote,
+        assignment_note: stats.assignment_note,
+        ...(stats.contradiction_note ? { contradiction_note: stats.contradiction_note } : {}),
+        applies_from_breakout: 'Measured from the breakout onward. On a FORMING pattern this describes what '
+          + 'this neckline configuration has historically done AFTER confirming, not what it is doing now.',
+        not_comparable_to_headline: 'Do not reconcile these against `measured.average_move_pct`. That comes '
+          + 'from hst.html / hsb.html; these come from HSTExplained.html, a different page of different '
+          + 'vintage, and the two do not agree.',
+        no_sample_published: 'No per-slope sample size, dispersion or trial count is published, so there is '
+          + 'no noise floor on this split. His measurement, not one made here.',
+        source: 'thepatternsite.com (Bulkowski), read July 2026',
+        url: stats.url,
+      },
+    } : {}),
+    ...(pattern && !stats ? {
+      base_rate_note: `No slope-split statistics are published for ${pattern}. The slope is reported as `
+        + 'geometry only.',
+    } : {}),
+  };
+}
+
 const ID_DEFAULTS = {
   min_valley_pct: 10,
   // Bulkowski's "16 days is the median" is DESCRIPTIVE, not a floor — using a
@@ -924,6 +1106,9 @@ function structuralPatterns(bars, swings, opts) {
     min_valley_pct = ID_DEFAULTS.min_valley_pct,
     min_separation_bars = ID_DEFAULTS.min_separation_bars,
     require_prior_trend = ID_DEFAULTS.require_prior_trend,
+    // Same threshold trendlinePatterns uses for a horizontal boundary, threaded
+    // through so "flat" means one thing across the whole detector.
+    flat_slope_pct = 0.05,
   } = opts;
   const alt = alternateSwings(swings);
   const found = [];
@@ -1026,10 +1211,15 @@ function structuralPatterns(bars, swings, opts) {
           status: confirm(neck, 'down'),
           completion_level: round(neck), target: round(neck - height),
           measurements: { left_shoulder: round(p1.price), head: round(p2.price), right_shoulder: round(p3.price), neckline: round(neck), shoulder_difference_pct: round(pct(p1.price, p3.price), 2), height: round(height), trough_1: round(t1.price), trough_2: round(t2.price), downsloping_neckline: t2.price < t1.price },
+          // The armpits are the two troughs flanking the head. `downsloping_neckline`
+          // above is a bare SIGN test with no threshold, so it can read true on a
+          // neckline this calls flat — that is the threshold doing its job, not a
+          // disagreement. Explicit null when the slope cannot be measured.
+          neckline_slope: necklineSlope(t1, t2, { pattern: 'head_and_shoulders', flat_slope_pct }),
           from_time: p1.time, to_time: p3.time,
           note: 'Completes only on a close below the neckline. Target is head-to-neckline projected down from the neckline.',
           ...(t2.price < t1.price
-            ? { structure_confirms: 'The second trough is below the first, so price is already making lower highs AND lower lows — structure has turned before the neckline breaks. This is the stronger version.' }
+            ? { structure_confirms: 'The second trough is below the first, so price is already making lower highs AND lower lows — structure has turned before the neckline breaks. Structurally the more advanced version — but Bulkowski measures down-sloping tops LAST of the three neckline slopes for post-breakout decline (-21% vs -24% horizontal, a 3-point spread he calls "minor"); see neckline_slope.base_rate.' }
             : { structure_caveat: 'The second trough is not below the first, so structure has not yet turned. Weaker than the down-sloping-neckline version.' }),
         });
       }
@@ -1064,6 +1254,10 @@ function structuralPatterns(bars, swings, opts) {
           status: confirm(neck, 'up'),
           completion_level: round(neck), target: round(neck + height),
           measurements: { left_shoulder: round(t1.price), head: round(t2.price), right_shoulder: round(t3.price), neckline: round(neck), shoulder_difference_pct: round(pct(t1.price, t3.price), 2), height: round(height) },
+          // The armpits are the two PEAKS flanking the head. Both were computed to
+          // place the neckline and then discarded — neither reaches `measurements`,
+          // so the slope is the only place they surface.
+          neckline_slope: necklineSlope(p1, p2, { pattern: 'inverse_head_and_shoulders', flat_slope_pct }),
           from_time: t1.time, to_time: t3.time,
           note: 'Completes only on a close above the neckline.',
         });
@@ -1674,7 +1868,7 @@ export function detectPatterns(bars, {
     return { candlestick: [], structural: [], note: 'Not enough bars to detect anything.' };
   }
 
-  const opts = { doji_body_pct, wick_ratio, small_body_pct, peak_tolerance_pct };
+  const opts = { doji_body_pct, wick_ratio, small_body_pct, peak_tolerance_pct, flat_slope_pct };
   const start = Math.max(1, bars.length - recent_bars);
 
   const candlestick = [];

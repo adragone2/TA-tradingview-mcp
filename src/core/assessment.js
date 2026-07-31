@@ -170,6 +170,22 @@ export function assess(bars, spy) {
       target: p.target ?? null, completion_level: p.completion_level ?? null, bars_ago: p.bars_ago ?? null,
       break_even_failure_pct: p.measured?.break_even_failure_pct ?? null,
       meeting_target_pct: p.measured?.meeting_target_pct ?? null,
+      // Compact projection of neckline_slope (H&S variants only; null elsewhere).
+      // Additive key — the Sunday schema TA imports must never lose a key. The
+      // long provenance notes stay in patterns_detect; the weekly report gets
+      // the reading and the base rate, not the essay.
+      neckline_slope: p.neckline_slope ? {
+        direction: p.neckline_slope.direction,
+        slope_pct_per_bar: p.neckline_slope.slope_pct_per_bar ?? null,
+        flat_threshold_pct_per_bar: p.neckline_slope.flat_threshold_pct_per_bar ?? null,
+        base_rate: p.neckline_slope.base_rate ? {
+          slope: p.neckline_slope.base_rate.slope ?? null,
+          average_move_pct: p.neckline_slope.base_rate.average_move_pct ?? null,
+          best_slope: p.neckline_slope.base_rate.best_slope ?? null,
+          is_best: p.neckline_slope.base_rate.is_best ?? null,
+          url: p.neckline_slope.base_rate.url ?? null,
+        } : null,
+      } : null,
     })),
     sensitivity_sweep: sweep,
     stable_across_sensitivities: stable,
