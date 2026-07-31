@@ -27,6 +27,20 @@ const p = (s = '') => L.push(s);
 const TIER_BADGE = { A: '**A**', B: 'B', C: 'C', REJECTED: '~~REJECTED~~' };
 const list = (a) => (a && a.length ? a.map((x) => `\`${x}\``).join(', ') : '—');
 
+// indicators are {study, label, inputs?, external?} objects (_indicator_schema
+// in strategies.json), not strings — `list` would render "[object Object]".
+// Backticks only for real TradingView studies: an `external` entry has no study
+// name chart_manage_indicator could take. The label carries the period; a bare
+// study does not, so its inputs are stated beside it.
+const indicator = (i) => {
+  if (i == null || typeof i !== 'object') return `\`${i}\``;
+  if (i.external || !i.study) return `_${i.label || i.study} — not a TV study_`;
+  if (i.label) return `\`${i.label}\``;
+  const inputs = Object.entries(i.inputs || {}).map(([k, v]) => `${k} ${v}`).join(', ');
+  return `\`${i.study}\`${inputs ? ` (${inputs})` : ''}`;
+};
+const indicatorList = (a) => (a && a.length ? a.map(indicator).join(', ') : '—');
+
 p('# Strategy catalogue');
 p();
 p('**Generated** — `node scripts/gen-strategies-doc.js`. Source of truth: [strategies.json](../strategies.json).');
@@ -102,7 +116,7 @@ for (const [key, tier] of Object.entries(cat.execution_tiers)) {
     p(`| **Entry** | ${s.entry} |`);
     p(`| **Exit** | ${s.exit} |`);
     if (s.exit_reason_keys?.length) p(`| **Exit reason keys** | ${list(s.exit_reason_keys)} — log these, \`exit_mix\` reads them |`);
-    p(`| **TradingView indicators** | ${list(s.indicators)} |`);
+    p(`| **TradingView indicators** | ${indicatorList(s.indicators)} |`);
     p(`| **Skills** | ${s.skills?.length ? s.skills.map((k) => `[${k}](../skills/${k}/SKILL.md)`).join(', ') : '—'} |`);
     p(`| **Tools** | ${list(s.tools)} |`);
     p(`| **Risk rules** | ${list(s.risk_rules)} |`);
