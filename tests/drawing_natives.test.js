@@ -1107,3 +1107,313 @@ describe('mergeTolerance — a percentage is not a distance a chart can read', (
       + 'answers, and an empty merged_levels cannot tell them apart');
   });
 });
+
+// ── 2026-08-01 — the drawn geometry's COORDINATES, for TA's dashboard ───────
+//
+// `drawings.items` carried NAMES and nothing else — "pattern bear_flag pole"
+// with no idea where the pole was. TA measured 127 pattern instances across one
+// weekly report with zero coordinates, so its lightweight-charts canvas could
+// name every shape this toolchain drew and redraw none of them.
+//
+// These are CALLS, not greps. The whole point of the change is that the numbers
+// in the report are the numbers handed to `drawShape`, and only a call can show
+// that: a recomputation beside the drawer would pass any source contract while
+// describing a different shape.
+// ---------------------------------------------------------------------------
+describe('drawPatternGeometry returns the coordinates of what it drew', () => {
+  const ZZ = barsFrom(zigzag(8));
+  const T = (i) => ZZ[i].time;
+  const times = new Set(ZZ.map((b) => b.time));
+
+  const DOUBLE_TOP = {
+    pattern: 'double_top', status: 'forming', direction: 'bearish', completion_level: 100.4,
+    measurements: { peak_1: 108.2, peak_2: 107.9, trough: 100.4, height: 7.8 },
+    from_time: T(10), to_time: T(40),
+  };
+  const WEDGE = {
+    pattern: 'rising_wedge', status: 'confirmed', direction: 'bearish', completion_level: 97.41,
+    measurements: { resistance_now: 102.61, support_now: 97.41, touches_high: 3, touches_low: 4 },
+    from_time: ZZ[0].time, to_time: ZZ.at(-1).time,
+  };
+  const BULL_FLAG = {
+    pattern: 'bull_flag', status: 'forming', direction: 'bullish', completion_level: 100.75,
+    measurements: { pole_pct: 17.32, pole_bars: 10, flag_bars: 8, retrace_pct: 45.9, flag_high: 100.75, flag_low: 91.51 },
+    from_time: T(20), to_time: ZZ.at(-1).time,
+  };
+
+  /** Every create fails — `put` returns null, which is what a rejected draw looks like. */
+  const deadRecorder = () => ({ put: async () => null, hline: async () => {} });
+
+  const geometryOf = async (p, bars = ZZ, rec = recorder()) => ({
+    geometry: await drawPatternGeometry(p, bars, 'g', rec.put, rec.hline),
+    items: rec.labels,
+  });
+
+  test('a DOUBLE TOP yields its two peaks in drawing order, plus the neckline', async () => {
+    const { geometry } = await geometryOf(DOUBLE_TOP);
+    assert.deepEqual(geometry, {
+      name: 'double_top',
+      status: 'forming',
+      points: [
+        { time: T(10), price: 108.2, label: 'peak 1' },
+        { time: T(40), price: 107.9, label: 'peak 2' },
+      ],
+      neckline: [{ time: T(10), price: 100.4 }, { time: T(40), price: 100.4 }],
+    });
+    assert.equal('lines' in geometry, false,
+      'one polyline needs no `lines` — a consumer must not have to handle a key that only ever '
+      + 'repeats `points`');
+  });
+
+  test('a DOUBLE BOTTOM is labelled from the measurement keys it was read out of', async () => {
+    /**
+     * The labels are the drawer's own vocabulary, not a constant pair: the peaks
+     * branch reads `peak_1`/`peak_2` on a top and `trough_1`/`trough_2` on a
+     * bottom, and the geometry has to say which it drew.
+     */
+    const { geometry } = await geometryOf({
+      pattern: 'double_bottom', status: 'confirmed', direction: 'bullish', completion_level: 106.2,
+      measurements: { trough_1: 99.5, trough_2: 99.8, peak: 106.2 },
+      from_time: T(10), to_time: T(40),
+    });
+    assert.deepEqual(geometry.points.map((x) => x.label), ['trough 1', 'trough 2']);
+    assert.deepEqual(geometry.neckline.map((x) => x.price), [106.2, 106.2],
+      'the neckline is the price the hline was drawn at, at both ends of the pattern window');
+  });
+
+  test('a HEAD AND SHOULDERS yields the SEVEN points the native tool was given', async () => {
+    const pv = patternPivots(ZZ, ZZ[0].time, ZZ.at(-1).time, 7);
+    assert.ok(pv.length >= 7, `fixture must produce 7+ pivots, got ${pv.length}`);
+
+    const { geometry, items } = await geometryOf({
+      ...HNS, from_time: ZZ[0].time, to_time: ZZ.at(-1).time,
+    });
+    assert.ok(items.includes('pattern head_and_shoulders head and shoulders'), 'the native path must be the one taken');
+    assert.equal(geometry.points.length, 7);
+    assert.deepEqual(
+      geometry.points.map(({ time, price }) => ({ time, price })),
+      pv.slice(-7).map(({ time, price }) => ({ time, price })),
+      'the SAME seven anchors handed to the tool — captured, not recomputed');
+    assert.deepEqual([...new Set(geometry.points.map((x) => x.label))].sort(), ['pivot high', 'pivot low'],
+      'labelled by the pivot KIND, which is all this path knows. `left_shoulder` is a price from the '
+      + 'detector and is not what anchors this drawing, so naming one here would invent a reading');
+  });
+
+  test('the leg FALLBACK yields ONE connected polyline, not one entry per leg', async () => {
+    const bars = barsFrom(zigzag(4, 8));
+    const pv = patternPivots(bars, bars[0].time, bars.at(-1).time, 7);
+    assert.ok(pv.length >= 3 && pv.length < 7, `fixture must fall back, got ${pv.length} pivots`);
+
+    const { geometry, items } = await geometryOf(
+      { ...HNS, from_time: bars[0].time, to_time: bars.at(-1).time }, bars,
+    );
+    assert.ok(items.some((l) => /leg 1$/.test(l)), 'the fallback must be the path taken');
+    assert.equal('lines' in geometry, false, 'consecutive legs are ONE path on the chart and must be one here');
+    assert.deepEqual(
+      geometry.points.map(({ time, price }) => ({ time, price })),
+      pv.map(({ time, price }) => ({ time, price })),
+      'every real pivot, in order — nothing interpolated and nothing dropped');
+  });
+
+  test('a WEDGE keeps its two boundaries as two lines, and traces them as one outline', async () => {
+    /**
+     * Two converging trendlines cannot be one polyline: joining them end-to-end
+     * runs a diagonal back across the middle of the shape, which is a line the
+     * chart does not have. So `lines` carries the two segments exactly as drawn
+     * and `points` traces the OUTLINE — upper boundary, down the right end, back
+     * along the lower one. Both end caps are the only segments the reader gets
+     * that the chart lacks, and all four points are real drawn anchors.
+     */
+    const { geometry } = await geometryOf(WEDGE);
+    assert.equal(geometry.lines.length, 2);
+    const [upper, lower] = geometry.lines;
+    assert.deepEqual(upper.map((x) => x.label), ['upper start', 'upper end']);
+    assert.deepEqual(lower.map((x) => x.label), ['lower start', 'lower end']);
+    assert.deepEqual(geometry.points, [upper[0], upper[1], lower[1], lower[0]],
+      'the outline is the four boundary endpoints traced round the shape — no fifth point is computed');
+
+    const pv = patternPivots(ZZ, WEDGE.from_time, WEDGE.to_time, 5);
+    const highs = pv.filter((x) => x.kind === 'high');
+    const lows = pv.filter((x) => x.kind === 'low');
+    assert.deepEqual(upper, [
+      { time: highs[0].time, price: highs[0].price, label: 'upper start' },
+      { time: highs.at(-1).time, price: highs.at(-1).price, label: 'upper end' },
+    ], 'anchored to the REAL pivots the trend_line was drawn through');
+    assert.deepEqual(lower.map((x) => x.price), [lows[0].price, lows.at(-1).price]);
+  });
+
+  test('a FLAG yields its pole and its pause box, joined into one path without a jump', async () => {
+    const { geometry } = await geometryOf(BULL_FLAG);
+    const [pole, box] = geometry.lines;
+    assert.deepEqual(pole.map((x) => x.label), ['pole start', 'pole end']);
+    assert.equal(box.length, 5, 'a box is a CLOSED polyline — four corners and the first repeated');
+    assert.deepEqual(
+      { time: box.at(-1).time, price: box.at(-1).price },
+      { time: box[0].time, price: box[0].price },
+      'closed, or a renderer draws three sides of a rectangle');
+    assert.deepEqual(box.slice(0, 4).map((x) => x.label), ['flag high', 'flag high', 'flag low', 'flag low']);
+    assert.deepEqual(box.map((x) => x.price), [100.75, 100.75, 91.51, 91.51, 100.75]);
+
+    // The pole LANDS on the box's first corner, so the joined path repeats no point.
+    assert.deepEqual({ time: pole.at(-1).time, price: pole.at(-1).price },
+      { time: box[0].time, price: box[0].price });
+    assert.deepEqual(geometry.points, [...pole, ...box.slice(1)]);
+  });
+
+  test('a BEAR flag traces its box from the LOW, because that is where its pole lands', async () => {
+    const { geometry } = await geometryOf({
+      ...BULL_FLAG, pattern: 'bear_flag', direction: 'bearish', completion_level: 91.51,
+      measurements: { ...BULL_FLAG.measurements, pole_pct: -12 },
+    });
+    const [pole, box] = geometry.lines;
+    assert.equal(pole.at(-1).price, 91.51, 'a bearish pole ends at the flag LOW');
+    assert.deepEqual(box.slice(0, 4).map((x) => x.label), ['flag low', 'flag low', 'flag high', 'flag high']);
+    assert.deepEqual({ time: pole.at(-1).time, price: pole.at(-1).price },
+      { time: box[0].time, price: box[0].price }, 'and the box is traced from that corner');
+  });
+
+  test('a RECTANGLE is one closed polyline — the drawn corners, and the pair they imply', async () => {
+    const { geometry } = await geometryOf({
+      pattern: 'bullish_rectangle', status: 'forming', direction: 'bullish', completion_level: 102,
+      measurements: { resistance_now: 102, support_now: 97 },
+      from_time: T(10), to_time: T(40),
+    });
+    assert.equal('lines' in geometry, false);
+    assert.deepEqual(geometry.points, [
+      { time: T(10), price: 97, label: 'support' },
+      { time: T(10), price: 102, label: 'resistance' },
+      { time: T(40), price: 102, label: 'resistance' },
+      { time: T(40), price: 97, label: 'support' },
+      { time: T(10), price: 97 },
+    ], 'drawShape is given two diagonal corners; the other two are those same numbers paired the '
+      + 'other way, which is what a rectangle IS');
+  });
+
+  test('a create that FAILS contributes no points — the block mirrors the chart', async () => {
+    /**
+     * `put` returns the drawer's result on success and null on failure, and this
+     * has to be read rather than assumed: `drawShape` reports `success: true`
+     * while having drawn nothing, which is the failure mode this repo has been
+     * bitten by eight times. A geometry array that describes shapes the chart
+     * does not carry is worse than no array.
+     */
+    const { geometry } = await geometryOf(DOUBLE_TOP, ZZ, deadRecorder());
+    assert.deepEqual(geometry.points, [], 'the peaks line never landed, so it contributes nothing');
+    assert.ok(geometry.neckline, 'the neckline is a LEVEL and is reported even when hline merged it away — '
+      + 'a merge means another block already drew that price');
+    const wedge = await geometryOf(WEDGE, ZZ, deadRecorder());
+    assert.equal(wedge.geometry, null, 'a wedge whose boundaries both failed has nothing to report at all');
+  });
+
+  test('TOO FEW PIVOTS reports an empty points array and a WHY, never invented coordinates', async () => {
+    /**
+     * The branch draws a single level line and says so on the chart. The geometry
+     * says the same thing rather than guessing a boundary: "drew a level, not a
+     * shape" and "did not run" are different answers, the same distinction
+     * `pattern_age` and `merge_tolerance` already make.
+     */
+    const flat = barsFrom(Array.from({ length: 40 }, (_, i) => 100 + i));
+    const { geometry, items } = await geometryOf({
+      pattern: 'falling_wedge', status: 'forming', direction: 'bullish', completion_level: 120,
+      measurements: { resistance_now: 130, support_now: 110 },
+      from_time: flat[0].time, to_time: flat.at(-1).time,
+    }, flat);
+    assert.ok(items.includes('pattern falling_wedge unanchored'));
+    assert.deepEqual(geometry.points, []);
+    assert.match(geometry.why, /too few to anchor either boundary/);
+    assert.equal('lines' in geometry, false);
+  });
+
+  test('a TRIPLE TOP comes back with a neckline and no shape — because that is what is drawn', async () => {
+    // The drawer has never connected three peaks; `measurements.peaks` is a list
+    // of prices it does not draw. The geometry mirrors the chart rather than
+    // inventing the shape the name implies.
+    const flat = barsFrom(Array.from({ length: 40 }, (_, i) => 100 + i));
+    const { geometry } = await geometryOf({
+      pattern: 'triple_top', status: 'forming', direction: 'bearish', completion_level: 99.5,
+      measurements: { peaks: [108, 108.1, 107.9], troughs: [100, 99.5], height: 8 },
+      from_time: flat[0].time, to_time: flat.at(-1).time,
+    }, flat);
+    assert.deepEqual(geometry.points, []);
+    assert.deepEqual(geometry.neckline.map((x) => x.price), [99.5, 99.5]);
+  });
+
+  test('nothing drawable at all returns NULL, not an empty husk', async () => {
+    const bars = barsFrom(Array.from({ length: 40 }, (_, i) => 100 + i));
+    const g = await drawPatternGeometry(
+      { pattern: 'broadening_formation', status: 'forming', direction: 'bullish', measurements: {} },
+      bars, 'g', recorder().put, recorder().hline,
+    );
+    assert.equal(g, null);
+  });
+
+  test('every time is a REAL BAR TIME in epoch seconds, and every price a finite number', async () => {
+    /**
+     * The same `{time, price}` form as `drawings.elliott.pivots` and
+     * `drawings.fibonacci.from/to`, which TA already renders — so the units have
+     * to match those, not merely be self-consistent. Seconds, and a time that
+     * exists on the series rather than an interpolated one.
+     */
+    for (const p of [DOUBLE_TOP, WEDGE, BULL_FLAG, { ...HNS, from_time: ZZ[0].time, to_time: ZZ.at(-1).time }]) {
+      const { geometry } = await geometryOf(p);
+      const all = [...geometry.points, ...(geometry.lines || []).flat(), ...(geometry.neckline || [])];
+      assert.ok(all.length, `${p.pattern} produced no points`);
+      for (const q of all) {
+        assert.ok(times.has(q.time), `${p.pattern}: ${q.time} is not a bar time on this series`);
+        assert.ok(Number.isFinite(q.price), `${p.pattern}: ${q.price} is not a price`);
+        assert.ok(q.time < 1e11, 'epoch SECONDS — elliott and fibonacci are in seconds and TA renders those');
+      }
+    }
+  });
+
+  test('prices are the DRAWN price — rounded exactly as drawShape received them', async () => {
+    // 4dp, because that is what `r2(price, 4)` hands the chart. A report price
+    // that is not the drawn price describes a line nobody can point at.
+    const { geometry } = await geometryOf({ ...DOUBLE_TOP, measurements: { ...DOUBLE_TOP.measurements, peak_1: 108.123456, trough: 100.987654 } });
+    assert.equal(geometry.points[0].price, 108.1235);
+    assert.equal(geometry.neckline[0].price, 100.9877);
+  });
+
+  test('the pipeline the workflow runs yields one entry per DRAWN pattern, and none for a stale one', async () => {
+    /**
+     * `drawFindings` composes age filter -> bias filter -> geometry, and the
+     * geometry array must be exactly the patterns that survived both. A stale
+     * shape is already reported in `patterns_skipped`; a coordinate for it here
+     * would put it back on TA's canvas after the cutoff took it off ours.
+     */
+    const fresh = { ...DOUBLE_TOP, bars_ago: 2 };
+    const stale = {
+      ...HNS, bars_ago: 45, completion_level: 100,
+      from_time: ZZ[0].time, to_time: ZZ.at(-1).time,
+    };
+    const agePlan = patternAgePlan([stale, fresh]);
+    assert.deepEqual(agePlan.stale.map((s) => s.pattern), ['head_and_shoulders']);
+
+    const plan = planPatternDrawings(agePlan.fresh, { max_patterns: 6, bias: 'BEARISH' });
+    const r = recorder();
+    const out = [];
+    for (const p of plan.patterns) {
+      const g = await drawPatternGeometry(p, ZZ, 'g', r.put, r.hline);
+      if (g) out.push(g);
+    }
+    assert.deepEqual(out.map((x) => x.name), ['double_top']);
+    assert.ok(out[0].points.length, 'and it carries coordinates, not just a name');
+  });
+
+  test('drawFindings collects it into drawn.pattern — an ARRAY, empty rather than absent', () => {
+    /**
+     * A source contract, and stated as one: `drawFindings` drives a live chart,
+     * so the aggregation itself cannot be called here. What IS called above is
+     * every branch that produces the entries, and the pipeline that selects them.
+     */
+    const d = readFileSync(new URL('../src/core/assessment_draw.js', import.meta.url), 'utf8');
+    const body = d.slice(d.indexOf('const plan = planPatternDrawings(agePlan.fresh'), d.indexOf('const patternsSkipped'));
+    assert.match(body, /drawn\.pattern = \[\];/,
+      'initialised to an empty array, so "the drawer ran and drew no geometry" is distinguishable '
+      + 'from "no drawer ran" — the same property pattern_age and merge_tolerance carry');
+    assert.match(body, /const geometry = await drawPatternGeometry\(p, bars, group, put, hline\);/,
+      'the geometry must come BACK from the drawer; recomputing it beside the loop is the drift '
+      + 'assessment.js opens by forbidding');
+    assert.match(body, /if \(geometry\) drawn\.pattern\.push\(geometry\);/);
+  });
+});

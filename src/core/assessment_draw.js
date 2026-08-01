@@ -687,6 +687,12 @@ export function patternPivots(bars, fromTime, toTime, want) {
  *
  * The completion level is drawn too, but as the *break* level rather than as
  * the pattern.
+ *
+ * ── RETURNS the coordinates of what it drew (2026-08-01) ────────────────────
+ *
+ * `{ name, status, points[], lines?, neckline?, why? }`, or `null` when nothing
+ * with a position on the chart was drawn. See the capture block inside for what
+ * each key means and what it deliberately refuses to invent.
  */
 export async function drawPatternGeometry(p, bars, group, put, hline = null) {
   /**
@@ -705,6 +711,83 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
   const label = `${p.pattern} ${p.status}`;
   const COL = p.direction === 'bearish' ? '#ef5350' : p.direction === 'bullish' ? '#26a69a' : '#42a5f5';
   const idxOf = (t) => { const i = bars.findIndex((b) => b.time >= t); return i < 0 ? bars.length - 1 : i; };
+
+  /**
+   * ── GEOMETRY CAPTURE (2026-08-01) ─────────────────────────────────────────
+   *
+   * TA redraws these shapes on its own lightweight-charts canvas, and until now
+   * the report handed it NAMES only: `drawings.items` said "pattern bear_flag
+   * pole" and nothing about where the pole was. TA measured 127 pattern
+   * instances across one weekly report with zero coordinates.
+   *
+   * So every branch below CAPTURES the anchors it is about to hand to
+   * `drawShape`, and this function returns them. Captured, never recomputed —
+   * the points pushed here are built from the same expressions the draw call
+   * uses, so a coordinate in the report cannot describe a different shape from
+   * the one on the chart. A second derivation beside the drawer is the failure
+   * `assessment.js` opens by forbidding: "two copies drift, and the drift is
+   * silent."
+   *
+   * FORM: epoch SECONDS and the DRAWN price (4dp) — the same `{time, price}`
+   * shape as `drawings.elliott.pivots` and `drawings.fibonacci.from/to`, which
+   * TA already renders. `label` is optional per point and only ever carries the
+   * drawer's own vocabulary ("peak 1", "pole start", "pivot high"); a role this
+   * path did not compute is not named.
+   *
+   * ONLY WHAT LANDED. `put` returns the drawer's result on success and `null` on
+   * failure, so a shape that did not draw contributes no points — including when
+   * a native create fails and the code falls back to something else. Nothing is
+   * ever fabricated to fill the array: a pattern drawn as a LEVEL only (too few
+   * pivots to anchor a boundary; a triple top, whose peaks this drawer has never
+   * connected) comes back with an EMPTY `points` and a `why`.
+   *
+   * `points` is the polyline a single-path renderer should draw, in drawing
+   * order. `lines` appears ONLY where the shape genuinely is more than one
+   * polyline — two converging wedge boundaries, a flag's pole beside its pause
+   * box — and then carries each of them exactly as drawn, because flattening two
+   * boundaries into one path would zig-zag a line across the middle of the shape.
+   */
+  const pt = (time, price, plabel) => (Number.isFinite(time) && Number.isFinite(price)
+    ? { time, price, ...(plabel ? { label: plabel } : {}) }
+    : null);
+  const geo = { lines: [], neckline: null, why: null };
+  /** A whole polyline, or nothing. A path with a hole in it is not a path. */
+  const addLine = (pts) => {
+    if (!Array.isArray(pts) || pts.length < 2 || pts.some((x) => !x)) return null;
+    geo.lines.push(pts);
+    return pts;
+  };
+  /**
+   * A segment, MERGED onto the previous polyline when it starts where that one
+   * ended. The head-and-shoulders fallback draws its legs one `trend_line` at a
+   * time and they form a single connected path; two wedge boundaries do not, and
+   * stay two.
+   */
+  const addSegment = (a, b) => {
+    if (!a || !b) return;
+    const last = geo.lines.at(-1);
+    if (last && last.at(-1).time === a.time && last.at(-1).price === a.price) last.push(b);
+    else geo.lines.push([a, b]);
+  };
+  /**
+   * `points` explicitly, or the single polyline drawn, or the longest of several.
+   * Null only when there is no position on the chart to report at all — an entry
+   * with empty `points` and a `why` is a different answer from no entry, the same
+   * distinction `pattern_age` and `merge_tolerance` already make.
+   */
+  const emit = (points) => {
+    const pts = points || (geo.lines.length === 1 ? geo.lines[0]
+      : geo.lines.length ? geo.lines.reduce((a, b) => (b.length > a.length ? b : a)) : []);
+    if (!pts.length && !geo.lines.length && !geo.neckline && !geo.why) return null;
+    return {
+      name: p.pattern,
+      status: p.status ?? null,
+      points: pts,
+      ...(geo.lines.length > 1 ? { lines: geo.lines } : {}),
+      ...(geo.neckline ? { neckline: geo.neckline } : {}),
+      ...(geo.why ? { why: geo.why } : {}),
+    };
+  };
 
   /**
    * The COMPLETION LEVEL, always — drawn alongside the shape rather than instead
@@ -736,16 +819,32 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
     // stays bilateral, so the colour comes from the name here.
     const rectCol = p.pattern.startsWith('bullish') ? '#26a69a'
       : p.pattern.startsWith('bearish') ? '#ef5350' : '#42a5f5';
-    await put(() => drawing.drawShape({ shape: 'rectangle',
-      point: { price: r2(m.support_now, 4), time: p.from_time },
-      point2: { price: r2(m.resistance_now, 4), time: p.to_time },
+    const rectLow = r2(m.support_now, 4);
+    const rectHigh = r2(m.resistance_now, 4);
+    const rectRes = await put(() => drawing.drawShape({ shape: 'rectangle',
+      point: { price: rectLow, time: p.from_time },
+      point2: { price: rectHigh, time: p.to_time },
       // Outline only — a fill over the range hides the bars that define it.
       overrides: JSON.stringify({
         color: rectCol, linewidth: 2, fillBackground: false, transparency: 100,
         showLabel: true, textcolor: rectCol, fontsize: 11, vertLabelsAlign: 'top',
       }),
       text: label, group }), `pattern ${p.pattern} range`);
-    return;
+    /**
+     * A box is a CLOSED polyline — four corners with the first repeated — which
+     * renders the drawn rectangle exactly and needs no second concept from a
+     * consumer. Both PRICES and both TIMES are the ones handed to `drawShape`
+     * above; the two corners it never states are those same four numbers paired
+     * the other way, which is what a rectangle is.
+     */
+    if (rectRes) {
+      addLine([
+        pt(p.from_time, rectLow, 'support'), pt(p.from_time, rectHigh, 'resistance'),
+        pt(p.to_time, rectHigh, 'resistance'), pt(p.to_time, rectLow, 'support'),
+        pt(p.from_time, rectLow),
+      ]);
+    }
+    return emit();
   }
 
   // ── trendline family: TradingView's native triangle_pattern tool ─────────
@@ -776,20 +875,34 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
     const highs = pv.filter((x) => x.kind === 'high');
     const lows = pv.filter((x) => x.kind === 'low');
     let drew = 0;
+    let upper = null;
+    let lower = null;
     if (highs.length >= 2) {
-      await put(() => drawing.drawShape({ shape: 'trend_line',
+      const res = await put(() => drawing.drawShape({ shape: 'trend_line',
         point: { price: highs[0].price, time: highs[0].time },
         point2: { price: highs[highs.length - 1].price, time: highs[highs.length - 1].time },
         overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
         text: `${label} upper`, group }), `pattern ${p.pattern} upper`);
+      if (res) {
+        upper = addLine([
+          pt(highs[0].time, highs[0].price, 'upper start'),
+          pt(highs[highs.length - 1].time, highs[highs.length - 1].price, 'upper end'),
+        ]);
+      }
       drew += 1;
     }
     if (lows.length >= 2) {
-      await put(() => drawing.drawShape({ shape: 'trend_line',
+      const res = await put(() => drawing.drawShape({ shape: 'trend_line',
         point: { price: lows[0].price, time: lows[0].time },
         point2: { price: lows[lows.length - 1].price, time: lows[lows.length - 1].time },
         overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
         text: `${label} lower`, group }), `pattern ${p.pattern} lower`);
+      if (res) {
+        lower = addLine([
+          pt(lows[0].time, lows[0].price, 'lower start'),
+          pt(lows[lows.length - 1].time, lows[lows.length - 1].price, 'lower end'),
+        ]);
+      }
       drew += 1;
     }
     if (!drew) {
@@ -798,8 +911,18 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
         overrides: JSON.stringify({ linecolor: COL, linewidth: 1, linestyle: 2 }),
         text: `${label} — only ${pv.length} pivots, too few to draw`,
       }, `pattern ${p.pattern} unanchored`);
+      geo.why = `only ${pv.length} pivots inside the pattern window, too few to anchor either boundary — `
+        + 'a single level line was drawn instead of the shape, so there is no geometry to redraw';
     }
-    return;
+    /**
+     * TWO boundaries cannot be ONE polyline without a diagonal cutting back across
+     * the middle of the shape, so `lines` carries them exactly as drawn and
+     * `points` traces the OUTLINE instead: upper boundary, down the right end,
+     * back along the lower one. All four are real drawn anchors — nothing between
+     * them is interpolated, and the two end caps are the only segments a reader
+     * gets that the chart does not have.
+     */
+    return emit(upper && lower ? [upper[0], upper[1], lower[1], lower[0]] : null);
   }
 
   // ── flags: pole as a line, consolidation as a box ─────────────────────────
@@ -812,13 +935,17 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
     const poleStartIdx = Math.max(0, flagStartIdx - (m.pole_bars || 0));
     const poleStart = p.direction === 'bullish' ? bars[poleStartIdx].low : bars[poleStartIdx].high;
     const poleEnd = p.direction === 'bullish' ? (m.flag_high ?? bars[flagStartIdx].high) : (m.flag_low ?? bars[flagStartIdx].low);
-    await put(() => drawing.drawShape({ shape: 'trend_line',
+    const poleFrom = pt(bars[poleStartIdx].time, r2(poleStart, 4), 'pole start');
+    const poleTo = pt(bars[flagStartIdx].time, r2(poleEnd, 4), 'pole end');
+    const poleRes = await put(() => drawing.drawShape({ shape: 'trend_line',
       point: { price: r2(poleStart, 4), time: bars[poleStartIdx].time },
       point2: { price: r2(poleEnd, 4), time: bars[flagStartIdx].time },
       overrides: JSON.stringify({ linecolor: COL, linewidth: 3 }),
       text: `${label} pole +${m.pole_pct}%`, group }), `pattern ${p.pattern} pole`);
+    const poleLine = poleRes ? addLine([poleFrom, poleTo]) : null;
+    let box = null;
     if (m.flag_high != null && m.flag_low != null) {
-      await put(() => drawing.drawShape({ shape: 'rectangle',
+      const boxRes = await put(() => drawing.drawShape({ shape: 'rectangle',
         point: { price: r2(m.flag_low, 4), time: bars[flagStartIdx].time },
         point2: { price: r2(m.flag_high, 4), time: p.to_time },
         /**
@@ -834,8 +961,32 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
           showLabel: true, textcolor: COL, fontsize: 11, vertLabelsAlign: 'top',
         }),
         text: `${label} — ${pauseBars} bars, ${m.retrace_pct}% retrace`, group }), `pattern ${p.pattern} pause`);
+      /**
+       * The box is traced from the corner the POLE lands on, so the two shapes
+       * read as one path: `poleEnd` IS `flag_high` on a bullish flag and
+       * `flag_low` otherwise (the `??` fallbacks only apply when the box is not
+       * drawn at all), and the box's left edge sits on that same bar. Closed with
+       * the first corner repeated, like the rectangle above.
+       */
+      const near = r2(p.direction === 'bullish' ? m.flag_high : m.flag_low, 4);
+      const far = r2(p.direction === 'bullish' ? m.flag_low : m.flag_high, 4);
+      const nearLabel = p.direction === 'bullish' ? 'flag high' : 'flag low';
+      const farLabel = p.direction === 'bullish' ? 'flag low' : 'flag high';
+      const pauseFrom = bars[flagStartIdx].time;
+      if (boxRes) {
+        box = addLine([
+          pt(pauseFrom, near, nearLabel), pt(p.to_time, near, nearLabel),
+          pt(p.to_time, far, farLabel), pt(pauseFrom, far, farLabel), pt(pauseFrom, near),
+        ]);
+      }
     }
-    return;
+    /**
+     * Pole then box, as ONE polyline: the box's first corner is the pole's own
+     * end point, so `slice(1)` joins them without repeating it or jumping. `lines`
+     * still carries the two shapes separately, because they ARE two shapes on the
+     * chart and a consumer drawing a box needs to know which points are its box.
+     */
+    return emit(poleLine && box ? [...poleLine, ...box.slice(1)] : null);
   }
 
   // ── structural: connect the peaks, then the neckline ──────────────────────
@@ -843,10 +994,19 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
     : m.trough_1 != null && m.trough_2 != null && m.left_shoulder == null ? [m.trough_1, m.trough_2]
     : null;
   if (pair) {
-    await put(() => drawing.drawShape({ shape: 'trend_line',
+    const res = await put(() => drawing.drawShape({ shape: 'trend_line',
       point: { price: r2(pair[0], 4), time: p.from_time }, point2: { price: r2(pair[1], 4), time: p.to_time },
       overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
       text: `${label}`, group }), `pattern ${p.pattern} peaks`);
+    /**
+     * Labelled from the measurement KEYS the pair was read out of — `peak_1` and
+     * `peak_2` on a double top, `trough_1` and `trough_2` on a double bottom. The
+     * drawer's own vocabulary, so nothing is being named that it did not compute.
+     */
+    if (res) {
+      const roles = m.peak_1 != null ? ['peak 1', 'peak 2'] : ['trough 1', 'trough 2'];
+      addLine([pt(p.from_time, r2(pair[0], 4), roles[0]), pt(p.to_time, r2(pair[1], 4), roles[1])]);
+    }
   }
   // Head and shoulders — TradingView's own 7-point tool, which draws the
   // shoulders, the head and the neckline in the standard visual language.
@@ -887,6 +1047,20 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
         await put(() => { throw new Error('the native 7-point create returned no entity id — either it silently drew nothing, or it is on the chart untracked'); },
           `pattern ${p.pattern} head and shoulders`);
       }
+      /**
+       * Labelled by each pivot's own KIND, which is all this path knows: seven
+       * ALTERNATING PIVOTS were handed to TradingView's tool, not seven roles it
+       * identified. Calling one "left shoulder" here would name a reading of the
+       * shape that nothing in this branch computed —
+       * `measurements.left_shoulder` is a price from the detector and is not what
+       * anchors this drawing.
+       *
+       * Recorded on the same terms `drawn.items` counts it: `put` reported
+       * success. The no-entity-id case is ambiguous by its own error message and
+       * that ambiguity is already reported in `errors`, so it is not re-decided
+       * here.
+       */
+      if (res) addLine(pv.slice(-7).map((x) => pt(x.time, x.price, `pivot ${x.kind}`)));
     } else if (pv.length >= 2) {
       /**
        * FALLBACK: the leg lines, through the real pivots that exist.
@@ -897,11 +1071,23 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
        * through real pivots show the structure with no tool state left behind.
        */
       for (let i = 0; i < pv.length - 1; i += 1) {
-        await put(() => drawing.drawShape({ shape: 'trend_line',
+        const res = await put(() => drawing.drawShape({ shape: 'trend_line',
           point: { price: pv[i].price, time: pv[i].time },
           point2: { price: pv[i + 1].price, time: pv[i + 1].time },
           overrides: JSON.stringify({ linecolor: COL, linewidth: 2 }),
           text: i === 0 ? label : '', group }), `pattern ${p.pattern} leg ${i + 1}`);
+        /**
+         * One leg at a time, and `addSegment` joins consecutive ones back into the
+         * single connected path they are on the chart. A leg that failed to draw
+         * breaks the path, and the geometry then reports two polylines rather than
+         * bridging a segment that is not there.
+         */
+        if (res) {
+          addSegment(
+            pt(pv[i].time, pv[i].price, `pivot ${pv[i].kind}`),
+            pt(pv[i + 1].time, pv[i + 1].price, `pivot ${pv[i + 1].kind}`),
+          );
+        }
       }
     }
   }
@@ -912,7 +1098,21 @@ export async function drawPatternGeometry(p, bars, group, put, hline = null) {
       overrides: JSON.stringify({ linecolor: COL, linewidth: 2, linestyle: 2 }),
       text: `${label} — breaks at ${r2(neck, 2)}`,
     }, `pattern ${p.pattern} neckline`);
+    /**
+     * The drawn line is a HORIZONTAL — one price, no time — so the two points
+     * given here span the pattern's OWN window rather than an invented length.
+     * The PRICE is exactly what was drawn (4dp, as `hline` rounds it); the times
+     * are `from_time` and `to_time`, the same two the shape above is anchored
+     * between. No label: TA's contract has none on this pair.
+     *
+     * Recorded whether or not `hline` merged it away. A merge means another block
+     * had already drawn a line at that price, so the level is on the chart
+     * either way — `drawn.merged_levels` says which line kept it.
+     */
+    const nl = [pt(p.from_time, r2(neck, 4)), pt(p.to_time, r2(neck, 4))];
+    if (nl.every(Boolean)) geo.neckline = nl;
   }
+  return emit();
 }
 
 /** Draw the report's own findings on the chart, so the two can be read together. */
@@ -1303,7 +1503,27 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    */
   const agePlan = patternAgePlan(stable, max_pattern_age_bars);
   const plan = planPatternDrawings(agePlan.fresh, { max_patterns: 6, bias });
-  for (const p of plan.patterns) await drawPatternGeometry(p, bars, group, put, hline);
+  /**
+   * The COORDINATES of every shape drawn, one entry per pattern, for TA's
+   * dashboard to redraw them on its own canvas.
+   *
+   * `drawings.items` has only ever carried NAMES — "pattern bear_flag pole" — so
+   * a consumer could see that a shape existed and never where it was: 127 pattern
+   * instances in one weekly report, zero coordinates. The points come back from
+   * `drawPatternGeometry`, which captures what it hands to `drawShape`; they are
+   * NOT recomputed here, because a second derivation beside the drawer is exactly
+   * the silent drift this file exists to avoid.
+   *
+   * The array mirrors the CHART: it holds the patterns that survived the age
+   * cutoff and the bias filter and actually drew. Everything withheld is already
+   * in `patterns_skipped`, and an EMPTY array is a real answer — "the drawer ran
+   * and drew no pattern geometry" is not the same as "no drawer ran".
+   */
+  drawn.pattern = [];
+  for (const p of plan.patterns) {
+    const geometry = await drawPatternGeometry(p, bars, group, put, hline);
+    if (geometry) drawn.pattern.push(geometry);
+  }
   const patternsSkipped = agePlan.stale.concat(plan.skipped);
   if (patternsSkipped.length) drawn.patterns_skipped = patternsSkipped;
   drawn.pattern_age = {

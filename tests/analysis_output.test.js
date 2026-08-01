@@ -171,7 +171,15 @@ describe('what gets drawn, asserted at the source', () => {
      */
     const fn = draw.slice(draw.indexOf('export async function drawPatternGeometry'));
     const completionAt = fn.indexOf('Number.isFinite(p.completion_level)');
-    const firstReturn = fn.indexOf('\n    return;');
+    /**
+     * 2026-08-01: a branch return is `return emit(...)` now rather than a bare
+     * `return;` — every branch hands back the coordinates it drew, so TA can
+     * redraw the shape on its own canvas. The CONTRACT is unchanged and both
+     * forms are matched; the alternation also keeps this off the geometry
+     * helpers' own returns (`return null` / `return pts` / `return {`), which
+     * are not branches of the dispatch.
+     */
+    const firstReturn = fn.search(/\n {4}return(?: emit\(|;)/);
     assert.ok(completionAt > -1, 'drawPatternGeometry never draws the completion level');
     assert.ok(completionAt < firstReturn,
       'the completion level is drawn after a branch that returns — wedges and flags would get a '
