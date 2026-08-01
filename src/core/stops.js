@@ -365,3 +365,66 @@ export function backtestStop(bars, { threshold_pct = 8, cooldown_bars = 5, entry
       + 'Use stoppingPremium() for the structural answer and this only to see the mechanics on a specific chart.',
   };
 }
+
+/**
+ * ATR (chandelier) trailing stop as a SERIES, one point per bar.
+ *
+ * TA's dashboard request (2026-07-31): its own ATR stop is a single stored
+ * value per position, so it renders as one flat line beside the pivot trail's
+ * full ratcheting staircase — not visually comparable, and TA cannot rebuild
+ * the history from bars because its watermark is a stored per-position price,
+ * not the max of any window (AMD: watermark 552.33 against a 584.73 bar high).
+ *
+ * Construction, stated because there is no entry date to anchor to: the
+ * watermark is the running extreme over the WHOLE series (max of highs for a
+ * long, min of lows for a short), ATR is Wilder-smoothed exactly as
+ * `atrFromBars` computes it, and the stop ratchets — monotone non-decreasing
+ * for a long, non-increasing for a short — because a trailing stop that
+ * loosens is not a trailing stop. Points begin once the ATR is defined
+ * (lookback + 1 bars in).
+ *
+ * A DISPLAY series, not advice: like pivotTrail, this is a bet on persistence
+ * — read stoppingPremium before trailing anything.
+ */
+export function atrTrail(bars, { mult = 2.5, atr_lookback = 14, direction = 'long' } = {}) {
+  const long = direction !== 'short';
+  if (!Array.isArray(bars) || bars.length < atr_lookback + 2) {
+    return {
+      available: false,
+      note: `Need at least ${atr_lookback + 2} bars for a ${atr_lookback}-period ATR series; got ${Array.isArray(bars) ? bars.length : 0}.`,
+    };
+  }
+  const tr = [];
+  for (let i = 1; i < bars.length; i += 1) {
+    const b = bars[i]; const p = bars[i - 1];
+    tr.push(Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close)));
+  }
+  // Wilder smoothing, the same recurrence atrFromBars uses.
+  let a = tr.slice(0, atr_lookback).reduce((x, y) => x + y, 0) / atr_lookback;
+  const series = [];
+  let watermark = long ? -Infinity : Infinity;
+  let stop = null;
+  // Warm the watermark over the bars the ATR consumed, so the first emitted
+  // point already knows the running extreme rather than starting blind.
+  for (let i = 0; i <= atr_lookback; i += 1) {
+    watermark = long ? Math.max(watermark, bars[i].high) : Math.min(watermark, bars[i].low);
+  }
+  for (let i = atr_lookback + 1; i < bars.length; i += 1) {
+    a = (a * (atr_lookback - 1) + tr[i - 1]) / atr_lookback;
+    watermark = long ? Math.max(watermark, bars[i].high) : Math.min(watermark, bars[i].low);
+    const raw = long ? watermark - mult * a : watermark + mult * a;
+    stop = stop == null ? raw : (long ? Math.max(stop, raw) : Math.min(stop, raw));
+    series.push({ time: bars[i].time, value: round(stop) });
+  }
+  return {
+    available: true,
+    direction: long ? 'long' : 'short',
+    mult,
+    atr_lookback,
+    stop: series.length ? series[series.length - 1].value : null,
+    series,
+    note: 'Ratcheted chandelier: running-extreme watermark minus (plus, for a short) mult x Wilder ATR, '
+      + 'never loosened. A display series for comparison beside the pivot trail; a trail is a persistence '
+      + 'bet — see stopping_premium.',
+  };
+}

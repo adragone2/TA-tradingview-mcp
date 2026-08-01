@@ -485,6 +485,10 @@ export async function analyzeTicker({
     };
   });
   await section(results, 'scaling_exponent', async () => tf.scalingExponent(bars));
+  // TA request (2026-07-31): the chandelier as a SERIES, so its dashboard can
+  // draw the ratcheting history beside the pivot staircase instead of one
+  // flat stored value.
+  await section(results, 'atr_trail', async () => stops.atrTrail(bars, { direction: verdict?.bias === 'BEARISH' ? 'short' : 'long' }));
   /**
    * Same review, same disease: `stagePlan` takes `{long_bars, short_bars}`,
    * and this call site passed the bars array positionally — destructuring an

@@ -141,8 +141,11 @@ export function assess(bars, spy) {
     support_count: sup.length, resistance_count: res.length,
     nearest_support: sup.length ? { price: sup[0].price, distance_pct: sup[0].distance_pct, tests: sup[0].tests ?? null, reason: sup[0].reason } : null,
     nearest_resistance: res.length ? { price: res[res.length - 1].price, distance_pct: res[res.length - 1].distance_pct, tests: res[res.length - 1].tests ?? null, reason: res[res.length - 1].reason } : null,
-    all_supports: sup.slice(0, 5).map((l) => ({ price: l.price, distance_pct: l.distance_pct, reason: l.reason })),
-    all_resistances: res.slice(-5).map((l) => ({ price: l.price, distance_pct: l.distance_pct, reason: l.reason })),
+    // `tests` as an INTEGER on every entry (TA request 2026-07-31): the
+    // dashboard was regex-parsing it out of the `reason` prose. nearest_* has
+    // carried the field all along; the lists dropped it. `reason` unchanged.
+    all_supports: sup.slice(0, 5).map((l) => ({ price: l.price, distance_pct: l.distance_pct, tests: l.tests ?? null, reason: l.reason })),
+    all_resistances: res.slice(-5).map((l) => ({ price: l.price, distance_pct: l.distance_pct, tests: l.tests ?? null, reason: l.reason })),
     no_support_below: sup.length === 0,
   };
 

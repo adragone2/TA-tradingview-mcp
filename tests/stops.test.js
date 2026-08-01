@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { autocorrelation, stoppingPremium, backtestStop } from '../src/core/stops.js';
+import { autocorrelation, stoppingPremium, backtestStop, atrTrail } from '../src/core/stops.js';
 import { movingAverageDistance } from '../src/core/momentum.js';
 import { CANDLE_ACADEMIC_EVIDENCE, detectPatterns } from '../src/core/patterns.js';
 import { barsFromPath, randomWalk, rng } from '../src/core/synthetic.js';
@@ -155,5 +155,54 @@ describe('candlestick academic counter-evidence', () => {
       assert.ok(out.candlestick_academic_evidence, 'candlestick detections must carry the counter-evidence');
       assert.match(out.candlestick_academic_evidence.japan.market, /Tokyo Stock Exchange/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// atrTrail — TA's dashboard request (2026-07-31): the chandelier as a series.
+// ---------------------------------------------------------------------------
+describe('atrTrail', () => {
+  const mk = (n, drift) => {
+    const bars = []; let px = 100;
+    for (let i = 0; i < n; i++) { px += typeof drift === 'function' ? drift(i) : drift; bars.push({ time: 1700000000 + i * 86400, open: px, high: px + 1, low: px - 1, close: px, volume: 1 }); }
+    return bars;
+  };
+
+  test('a long trail is monotone non-decreasing, even through a pullback', () => {
+    const t = atrTrail(mk(60, (i) => (i < 40 ? 0.8 : -0.5)), { mult: 2.5 });
+    assert.equal(t.available, true);
+    const v = t.series.map((s) => s.value);
+    assert.ok(v.every((x, i) => i === 0 || x >= v[i - 1]), 'the ratchet must never loosen');
+    assert.equal(t.stop, v[v.length - 1]);
+    assert.equal(t.mult, 2.5);
+  });
+
+  test('a short trail is monotone non-increasing', () => {
+    const t = atrTrail(mk(60, (i) => (i < 40 ? -0.8 : 0.5)), { direction: 'short' });
+    const v = t.series.map((s) => s.value);
+    assert.ok(v.every((x, i) => i === 0 || x <= v[i - 1]));
+    assert.equal(t.direction, 'short');
+  });
+
+  test('one point per bar once ATR is defined, each carrying the bar time', () => {
+    const bars = mk(60, 0.5);
+    const t = atrTrail(bars, { atr_lookback: 14 });
+    assert.equal(t.series.length, bars.length - 15, 'points begin after lookback+1 bars');
+    assert.equal(t.series[0].time, bars[15].time);
+    assert.equal(t.series.at(-1).time, bars.at(-1).time);
+  });
+
+  test('too few bars refuses with the arithmetic, never a fabricated series', () => {
+    const t = atrTrail(mk(10, 0.5));
+    assert.equal(t.available, false);
+    assert.match(t.note, /Need at least 16 bars/);
+  });
+
+  test('the ratchet BINDS: after a deep pullback the stop is above the raw chandelier', () => {
+    const bars = mk(80, (i) => (i < 50 ? 1.0 : -1.2));
+    const t = atrTrail(bars, { mult: 2.5 });
+    const last = bars.at(-1);
+    // raw chandelier at the end sits far below the ratcheted stop
+    assert.ok(t.stop > last.close - 10, 'the stop held its ground while price fell');
   });
 });

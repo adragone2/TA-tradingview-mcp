@@ -67,6 +67,7 @@ export const SECTIONS = Object.freeze([
   { key: 'luld_band', required: false, tool: 'luld_band', why: 'How far it can run before halting. Tier 1 is 5%, not 10%, and bands double into the close.' },
   { key: 'breakout_check', required: false, tool: 'breakout_check', why: 'The five breakout criteria, scored at each PRIMARY level rather than at a level chosen by hand.' },
   { key: 'pivot_trail', required: false, tool: 'pivot_trail', why: 'Where a trailing stop goes. One-directional ratchet; check stopping_premium first.' },
+  { key: 'atr_trail', required: false, tool: 'stops.atrTrail', why: 'The chandelier series beside the pivot staircase — TA renders both, and a single stored value is not visually comparable. Same caveat: a trail is a persistence bet.' },
   { key: 'walls', required: false, tool: 'walls_get', why: 'Options walls from TA. Drawing them needs the TA-Trading layout; the data reads anywhere.' },
   { key: 'level_test_history', required: false, tool: 'level_test_history', why: 'Every test of every level, with all four measurement arms attached.' },
   { key: 'scaling_exponent', required: false, tool: 'scaling_exponent', why: 'Whether the series trends or mean-reverts, as a property of the data rather than a citation.' },

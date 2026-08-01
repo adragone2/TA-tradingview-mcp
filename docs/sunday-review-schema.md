@@ -297,3 +297,11 @@ matches them by label text and leaves hand-drawn work alone.
 A random walk over an n-bar window has expected efficiency **~1/√n**. At the default 30-bar window that is **0.183**. So an efficiency of 0.18 is not a weak signal — it is exactly what *no* signal looks like, and the 0.3 gate means "meaningfully better than random".
 
 On the first full run **54 of 58 tickers were below the gate**. That is why "high conviction into a choppy regime" is recorded as a `conflict` rather than a `contradiction`: a flag that fires on 93% of rows is a market condition, not a per-ticker finding, and promoting it would drown the specific contradictions that do discriminate. The market-wide share is reported once, in `market_condition`.
+
+## Additive keys, 2026-07-31 (TA dashboard requests)
+
+Three additions, all ADDITIVE — nothing existing moved or renamed:
+
+- **`analysis.context.atr_trail`** — the chandelier trailing stop as a SERIES: `{ available, direction, mult, atr_lookback, stop, series: [{time, value}...] }`, one point per bar once the ATR is defined, already ratcheted (monotone non-decreasing for a long, non-increasing for a short). Renders beside the pivot trail's staircase. The watermark is the running extreme of the whole series — there is no entry date to anchor to — and the note says so.
+- **`analysis.assessment.key_levels.all_supports[].tests`** and **`.all_resistances[].tests`** — the test count as an INTEGER on every level entry, matching what `nearest_support`/`nearest_resistance` always carried. `reason` is unchanged; stop regex-parsing it.
+- **`analysis.drawings.pattern`** — the drawn patterns' geometry as `{name, status, points: [{time, price, label?}], neckline?}` in the same `{time, price}` form as `elliott.pivots` (documented fully when that block lands).
