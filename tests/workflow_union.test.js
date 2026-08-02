@@ -749,3 +749,21 @@ describe('native groups ride the drawer — organized after drawing, isolated fr
       'the default carries its evidence — flip it off and the doc string goes stale with it');
   });
 });
+
+describe('the cycle gate is surfaced only once ESTABLISHED (2026-08-02, TA found it)', () => {
+  /**
+   * The weekly gate cannot warm up on a 300-bar daily chart (150 weekly bars
+   * is ~3 years), so quoting its state bare produced "undetermined" on 61 of
+   * 61 Sunday rows — a constant column that reads as a dead section. The
+   * projection must gate on established-ness and carry the WHY otherwise.
+   */
+  const t = src(ORCH);
+  test('established-ness is computed from bars minus undetermined bars', () => {
+    assert.match(t, /\(h\.gate\?\.bars \?\? 0\) - \(h\.gate\?\.undetermined_bars \?\? 0\)\) > 0/);
+  });
+  test('the unestablished arm carries the why, and the bare gate_current spelling is gone', () => {
+    assert.match(t, /weekly gate not warm on this history/);
+    assert.ok(!t.includes('gate_current:'),
+      'a bare gate state with no explanation is the walls-Map mistake again');
+  });
+});

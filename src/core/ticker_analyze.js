@@ -502,12 +502,27 @@ export async function analyzeTicker({
     const { stageHistory } = await import('./stage_history.js');
     cycleHistory = stageHistory(bars);
     const h = cycleHistory;
+    /**
+     * The weekly GATE never warms up on a 300-bar daily chart — a 150-period
+     * average of weekly bars is ~3 years — so quoting its state bare put
+     * "undetermined" on 61 of 61 Sunday rows, a column of pure noise wearing a
+     * finding's clothes (TA read it as a dead section, 2026-08-02, and the walls
+     * Map taught the same lesson: a value without its explanation misleads).
+     * The gate state is only surfaced once it has actually established; until
+     * then the field carries the WHY instead.
+     */
+    const gateEstablished = ((h.gate?.bars ?? 0) - (h.gate?.undetermined_bars ?? 0)) > 0;
     return {
       current: h.current ?? null,
       transitions: (h.transitions || []).slice(-6),
       occupancy: h.occupancy ?? null,
       flicker_segments: h.flicker_segments ?? 0,
-      gate_current: h.gate?.current ?? null,
+      gate: gateEstablished
+        ? { current: h.gate?.current ?? null, grouped_by: h.gate?.grouped_by ?? null }
+        : {
+          current: null,
+          why: 'weekly gate not warm on this history (~3 years of daily bars needed) — the cycle is read on the loaded series; gate_too_short in stage_history carries the arithmetic',
+        },
       noise_floor: 'entry state on 43-52% of random walks (CYCLE_NOISE_BASELINE)',
       forward_test: 'unpaid at the swing horizon (+1.0pp z 0.14, CYCLE_FORWARD_TEST); own weeks-to-months horizon untested — a data limit, not a verdict',
     };
