@@ -1166,6 +1166,17 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    */
   cycle = null,
   /**
+   * Organize the drawn shapes into NATIVE TradingView groups — one Object Tree
+   * row per category ("MCP levels", "MCP patterns", "MCP cycle"...), each with
+   * its own eye icon, so the owner can hide/show a category with one click and
+   * no MCP call. ON by default: probed 2026-08-02 that groups persist across a
+   * symbol round-trip, that deleting the members (the weekly clear) auto-removes
+   * the group, and that a re-run dissolves and regroups rather than stacking.
+   * Failure-isolated — a grouping error reports in `drawn.native_groups` and
+   * never takes the analysis down with it.
+   */
+  native_groups = true,
+  /**
    * The fixed-range volume profile — OFF by default, on request.
    *
    * It is a pane-wide overlay rather than a level, so it goes on when someone
@@ -1903,6 +1914,24 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
       };
     } else {
       drawn.cycle = { drawn: 0, current: cycle.current?.state ?? null, why: cyclePlan.why ?? 'no transition on this window — a series that held one state has no boundary to mark' };
+    }
+  }
+
+  /**
+   * NATIVE GROUPS — after every shape exists, before alerts. The census walks
+   * the chart, so shapes from other MCP sources (a walls overlay, TA decision
+   * levels) get their rows too — a row is a toggle, not a claim of authorship
+   * beyond what the label signatures already establish.
+   */
+  if (native_groups) {
+    try {
+      const { organizeNativeGroups } = await import('./draw_visibility.js');
+      const org = await organizeNativeGroups({});
+      drawn.native_groups = org.groups?.length
+        ? { groups: org.groups.map((g) => ({ name: g.name, members: g.members ?? null, ...(g.error ? { error: g.error } : {}) })) }
+        : { groups: [], why: org.why ?? 'nothing to organize' };
+    } catch (e) {
+      drawn.native_groups = { error: e.message };
     }
   }
 

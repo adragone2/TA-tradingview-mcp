@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/drawing.js';
+import * as vis from '../core/draw_visibility.js';
 
 const timeField = z.union([z.number(), z.string()]).optional()
   .describe('Unix timestamp, "now", "last_bar", or an ISO date like "2026-07-26". Omit to use the last bar.');
@@ -79,5 +80,34 @@ export function registerDrawingTools(server) {
   }, async ({ entity_id }) => {
     try { return jsonResult(await core.getProperties({ entity_id })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+  });
+
+  server.tool('draw_toggle', 'Hide or show MCP drawings WITHOUT deleting them — by category (levels, patterns, plans, zones, cycle, earnings, fib, elliott, walls...), by registry group, or by explicit entity ids. Omit every selector to get the census: what is on the chart, by category, with visible/hidden counts. Every write is READ BACK from the entity before it is counted as changed — setProperties has a history of silent no-ops here. Foreign (hand-drawn) shapes are reported in the census but never touched by a category toggle.', {
+    category: z.string().optional().describe('One census category, e.g. "levels", "patterns", "cycle". See the census output for what is on this chart.'),
+    group: z.string().optional().describe('A registry group, e.g. "analysis-AMD" — tracked shapes only'),
+    entity_ids: z.array(z.string()).optional().describe('Explicit entity ids from draw_list / the census'),
+    visible: z.coerce.boolean().optional().describe('true = show, false = hide. Required with any selector; ignored for the bare census call.'),
+  }, async ({ category, group, entity_ids, visible } = {}) => {
+    try {
+      if (category == null && group == null && entity_ids == null) {
+        const c = await vis.visibilityCensus();
+        // the per-shape rows are census detail; the categories are the answer
+        return jsonResult({ success: true, count: c.count, categories: c.categories });
+      }
+      if (typeof visible !== 'boolean') {
+        return jsonResult({ success: false, error: 'visible (true/false) is required when toggling.' }, true);
+      }
+      return jsonResult(await vis.toggleDrawings({ category, group, entity_ids, visible }));
+    } catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+  });
+
+  server.tool('draw_organize', 'Organize MCP drawings into NATIVE TradingView groups — one row per category ("MCP levels", "MCP patterns", "MCP cycle"...) in the chart\'s Object Tree panel, each with its own eye icon, so the user can hide/show a whole category with one click and no MCP call. mode "group" creates/refreshes them (re-running after a redraw regroups the new shapes), "dissolve" removes the group rows while LEAVING every drawing on the chart, "status" lists ours with visibility. Never call the raw removeGroup API: it deletes the member drawings — dissolve here excludes members first, which is the probed-safe path.', {
+    mode: z.enum(['group', 'dissolve', 'status']).optional().describe('Default "group"'),
+  }, async ({ mode = 'group' } = {}) => {
+    try {
+      if (mode === 'dissolve') return jsonResult(await vis.dissolveNativeGroups({}));
+      if (mode === 'status') return jsonResult(await vis.nativeGroupStatus({}));
+      return jsonResult(await vis.organizeNativeGroups({}));
+    } catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 }

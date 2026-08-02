@@ -719,3 +719,33 @@ describe('the cycle reaches the report AND the chart through the one drawer (202
     assert.match(c, /key: 'cycle', required: false/);
   });
 });
+
+describe('native groups ride the drawer — organized after drawing, isolated from it (2026-08-02)', () => {
+  /**
+   * The owner's toggle request: one Object Tree row per category, eye icon per
+   * row. The organize step must see EVERY shape (so it runs after the last
+   * draw block) and must never take an analysis down (a grouping error is a
+   * report, not a throw). The removeGroup trap lives in draw_visibility's own
+   * suite; what this pins is the drawer's wiring.
+   */
+  const d = src('src/core/assessment_draw.js');
+
+  test('organize runs after the cycle block and before ALERTS', () => {
+    const cycleIdx = d.indexOf("drawStageHistory(cyclePlan, group, put, drawing.drawShape)");
+    const orgIdx = d.indexOf('organizeNativeGroups');
+    const alertIdx = d.indexOf('ALERTS — the only thing here');
+    assert.ok(cycleIdx > 0 && orgIdx > cycleIdx, 'organize must come after the last draw block');
+    assert.ok(alertIdx > orgIdx, 'and before alerts — alerts are the one irreversible step and stay last');
+  });
+
+  test('a grouping failure is a field, never a throw', () => {
+    const block = d.slice(d.indexOf('if (native_groups)'), d.indexOf('ALERTS — the only thing here'));
+    assert.match(block, /catch \(e\) \{\s*drawn\.native_groups = \{ error: e\.message \}/);
+  });
+
+  test('the option defaults ON, with the persistence probe as its licence', () => {
+    assert.match(d, /native_groups = true,/);
+    assert.match(d, /persist across a\s+\* symbol round-trip/,
+      'the default carries its evidence — flip it off and the doc string goes stale with it');
+  });
+});

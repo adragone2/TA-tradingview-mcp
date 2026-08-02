@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-191 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+193 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 191 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 193 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 22 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), 7 of them kept as REJECTED so nobody rediscovers one, each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
@@ -95,6 +95,7 @@
 | "Is this backtest real?" | `deflated_sharpe` — the best of 200 no-edge strategies scores 2.19 annualised. Below 0.95 is not a discovery |
 | "Did this ever work?" | `wrds_backtest_signal` |
 | "Clean up the chart" | `draw_clear` — removes only MCP drawings by default |
+| "Hide/show the MCP drawings" / "toggle the levels off" | `draw_toggle` — by category (levels, patterns, plans, zones, cycle, earnings…), no args for the census. Hiding is not deleting. `draw_organize` puts one row per category in TradingView's own Object Tree, each with its eye icon, so the owner toggles without any MCP call — every analysis does this automatically |
 | "Is the drawing API still behaving?" / a shape looks wrong | `node scripts/draw-smoke.js` — draws each of the 12 adopted shapes, asserts point counts against the 2026-07-30 probe, text round-trip and the tool TradingView actually created, then removes them and proves the chart is as it was. Takes the chart lock; `--list` is headless |
 | "Old drawings won't clear" | `node scripts/clear-orphans.js` — TradingView entity IDs are SESSION-scoped, so anything drawn before the app last restarted is invisible to `draw_clear`. Finds them by label text. Dry run by default; `--apply` to delete |
 
@@ -229,6 +230,8 @@ Each of these exists because it has already gone wrong here.
 **A `Map` does not survive `JSON.stringify` — it becomes `{}`, silently.** `loadWalls` returned 40 gamma-wall entries in a Map beside `rows: 40` and a 40-ticker coverage list; the count and the list were already plain values so they serialised, the Map did not, and **every walls block in every Sunday review and morning screen wrote `byTicker: {}`** while the data sat in memory — TA's most distinctive input, arriving empty. The same call passed `{ symbol }` to a signature that read `{ force }`: an ignored argument is not an error either. Two rules follow: a count and the collection it counts must be derived from ONE parse at serialisation time (`wallsManifest`'s `toJSON` makes the mismatch unrepresentable), and a fixture must mirror the REAL file, not the code's tolerance — every prior walls fixture quote-wrapped its JSON in a form TA never sends, so the served shape was green and untested.
 
 **A percentage is not a distance a chart can read.** The `hline` merge tolerance was a fixed 0.4% — 0.11 ATR on the median daily chart but **1.21 ATR** on the 5-minute charts the INTRADAY tier analyses, so intraday it merged everything within a full ATR and the callout-displacement arm could never fire. It is `0.1 × ATR/price` now, capped at `findKeyLevels`' own 0.75% clustering tolerance (merging past it fuses levels the detector kept apart) and held below `LABEL_COLLISION.min_atr_gap` (0.35 ATR) so the merge/callout hand-off stays reachable. k = 0.1 is derived, not chosen: 0.4% ÷ 3.64%, the measured median ATR% over 79 real analyses, rounded DOWN because the errors are asymmetric — too wide deletes a level, too narrow draws one visible extra line. No ATR falls back to the old 0.4% and says `basis: 'fallback'`; the only floor is identity at 4dp. `drawn.merge_tolerance` reports the rule even when nothing merged.
+
+**TradingView's `removeGroup` DELETES the member drawings — it is not an ungroup.** Measured live 2026-08-02: two vertical lines died with their group. Everything else about native groups is friendly — `setGroupVisibility` propagates to the members' own `visible` property, excluding the last member auto-removes the group, deleting all members (the weekly clear) leaves no ghost, and groups persist across symbol switches — but the one operation named like a dissolve is a delete. `draw_visibility.js` never calls it on a group that still has members, a test pins the guard, and `draw_organize mode:"dissolve"` is the safe path (13 shapes before, 13 after, verified). The same probe found `setProperties({visible})` genuinely round-trips — the rare TradingView write that CAN be believed, and it is still read back anyway.
 
 **Live account, live chart.** `draw_clear scope:"all"` deletes the user's own drawings — always ask. It is also rarely what you want: `clear-orphans` recovers drawings lost to a session restart WITHOUT touching anything hand-drawn, and on 2026-07-28 removed 545 stale shapes across 45 symbols while preserving 7 of the user's own. If you add or change a drawing label, append its format to `MCP_TEXT_SIGNATURES` — a label with no signature leaks an orphan that can never be cleaned up. `alert_create` makes a real alert that can fire; check the price is on the correct side of spot. `alert_delete` needs explicit ids. Scans drive the chart and must restore it.
 

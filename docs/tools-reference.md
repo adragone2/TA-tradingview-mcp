@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **191 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **193 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -78,7 +78,7 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`indicator_set_inputs`** — Change indicator/study input values (e.g., length, source, period)
 - **`indicator_toggle_visibility`** — Show or hide an indicator/study on the chart
 
-### draw_* (7)
+### draw_* (9)
 
 - **`draw_shape`** — Draw a shape/line on the chart
 - **`draw_trade_plan`** — Draw a complete trade plan — entry, stop, targets with optional partial percentages, and optional break-even — as labelled, colour-coded, non-overlapp
@@ -87,6 +87,8 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 - **`draw_list_groups`** — List the drawing groups this tool has created, so you can clear or reference a specific trade plan.
 - **`draw_remove_one`** — Remove a specific drawing by entity ID
 - **`draw_get_properties`** — Get properties and points of a specific drawing
+- **`draw_toggle`** — Hide or show MCP drawings WITHOUT deleting them — by category (levels, patterns, plans, zones, cycle, earnings, fib, elliott, walls...), by registry g
+- **`draw_organize`** — Organize MCP drawings into NATIVE TradingView groups — one row per category ("MCP levels", "MCP patterns", "MCP cycle"...) in the chart's Object Tree 
 
 ### walls_* (5)
 
