@@ -59,6 +59,8 @@ export const SIGNATURES_BY_SOURCE = {
   ta_decision: [],
   /** walls_draw / walls_apply. */
   walls: [],
+  /** stage_draw — the Weinstein/Shannon stage boundaries and the current segment. */
+  stage: [],
 };
 
 // ── the Sunday review's own vocabulary ──────────────────────────────────────
@@ -178,6 +180,37 @@ SIGNATURES_BY_SOURCE.ta_decision.push(
 // "W Put GEX / M Call Wall 1180", "Gamma Flip 1195".
 SIGNATURES_BY_SOURCE.walls.push(
   new RegExp(`^(?:(?:[DWM] (?:Call Wall|Put Wall|Call GEX|Put GEX)|Gamma Flip)(?: / )?)+ ${NUM}$`),
+);
+
+// ── stage_draw (planned in src/core/stage_history.js) ──────────────────────
+//
+// The OWNER'S cycle machine — base / accumulation / distribution / declining —
+// in a source group of its own, so `stage_draw` can sweep its own prior output
+// without touching a walls overlay or the review's levels. Two formats:
+//
+//   "cycle base>accumulation 2026-05-14"            a boundary — one vertical_line
+//   "cycle accumulation since 2026-05-14 (34 bars)" the current segment — one callout
+//
+// Anchored end to end, and the discrimination is the SHAPE rather than any one
+// token: lowercase `cycle`, a word from a CLOSED five-word vocabulary, a bare `>`
+// with NO spaces around it (people write "base -> accumulation", "Base to
+// Accumulation"), an ISO date, and then the END of the string. Neither form can be
+// reached by prefixing or appending to a person's note, and the two cannot collide
+// with each other — one carries `>` and no " since ", the other the reverse. Both
+// bar counts are matched because the emitter writes "(1 bar)" and "(34 bars)".
+//
+// `undetermined` is admitted on BOTH sides of the arrow although the machine never
+// transitions INTO it: the vocabulary stays closed either way, and a signature
+// narrower than its emitter is how an orphan becomes permanent.
+//
+// A first draft of this tool used "stage 1>2 <date>" with Shannon's numerals. It
+// never reached a chart — the tool had not been run — so there is nothing to
+// strand and the retired form is deliberately NOT kept. (Signatures are
+// append-only for formats that were EMITTED; carrying one that never was only
+// widens the false-match surface.)
+SIGNATURES_BY_SOURCE.stage.push(
+  /^cycle (?:undetermined|base|accumulation|distribution|declining)>(?:undetermined|base|accumulation|distribution|declining) \d{4}-\d{2}-\d{2}$/,
+  /^cycle (?:undetermined|base|accumulation|distribution|declining) since \d{4}-\d{2}-\d{2} \(\d+ bars?\)$/,
 );
 
 /** The flat union. The full sweep should still reach everything. */

@@ -105,6 +105,9 @@ export const SCREEN_BUCKET = Object.freeze({
   short_term_reversal: 'WEEKS',      // Nagel's 2-10 day window, by construction
   group_leadership: 'MONTHS',        // a cross-sectional group rank, so it inherits the
                                     // monthly cadence every cross-sectional factor needs
+  stage2_onset: 'MONTHS',            // the owner's cycle is a weeks-to-months hold on the
+                                    // 150-day average; its strategy (weinstein_stage_2)
+                                    // executes MONTHLY, and the tier comes from the strategy
 });
 
 /**

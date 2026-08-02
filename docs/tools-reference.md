@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **189 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **191 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -359,9 +359,11 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`scaling_exponent`** — The realised volatility scaling exponent on this chart
 
-### stage_* (1)
+### stage_* (3)
 
 - **`stage_plan`** — Shannon's four-stage ACTION machine: what to DO right now, from two timeframes
+- **`stage_history`** — THE OWNER'S OWN FOUR-STATE CYCLE, run bar by bar: base / accumulation / distribution / declining
+- **`stage_draw`** — Draw the OWNER'S CYCLE boundaries on the chart: one dashed vertical line per TRANSITION, labelled "cycle base>accumulation 2026-05-14", plus ONE callo
 
 ### relative_* (1)
 

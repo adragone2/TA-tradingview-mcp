@@ -508,3 +508,7 @@ carries no session gate because every field it reads is price-only.
 - **List name: `Swing Opportunities`**, created by hand in TradingView and
   resolved by exact name. `TA_TradingView_Watchlist` (314) and `Watchlist` (175)
   are never written to.
+
+### stage2_onset (added 2026-07-31)
+
+A coarse approximation of the owner's ACCUMULATION state. The scanner has **no SMA150**, so the 30-week average is bracketed by SMA100/SMA200 (price above both, the 100 above the 200) with extension capped at 30% above the SMA200 — the conservative bracket. The bandwidth percentile, the volume spike and the base's own high are invisible to the scanner; `stage_history` gives the verdict at the gate. Session-safe (price/MA fields only), routes to MONTHLY via `weinstein_stage_2`. Measured overlap on first run: 194 candidates, **16 seen by no other swing screen** — the early-trend population `near_52w_high` structurally misses.

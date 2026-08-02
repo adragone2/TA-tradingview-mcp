@@ -58,7 +58,7 @@ These feed the INTRADAY / WEEKLY / MONTHLY split via the strategy each points at
 **Horizon:** CONTINUATION  
 **Bet:** Price near its 52-week high, which is cross-sectionally documented.  
 **Evidence:** A, but CROSS-SECTIONAL — measured on 1000+ ranked stocks. edge_breadth gives what one position retains of that.  
-**Strategies:** `near_52w_high` (monthly, tier A)  
+**Strategies:** `near_52w_high` (monthly, tier A), `cup_with_handle` (monthly, tier C)  
 **Session:** any — nothing it reads is session-sensitive
 
 | Field | Op | Value |
@@ -91,7 +91,7 @@ These feed the INTRADAY / WEEKLY / MONTHLY split via the strategy each points at
 **Direction:** reversal  
 **Horizon:** REVERSAL — the side the evidence favours under 21 days.  
 **Bet:** An extended name where a reversal STRUCTURE has formed — not merely a low RSI.  
-**Evidence:** B. Stage 2 accepts only a Wyckoff spring/upthrust (0% on noise), a confirmed double bottom with its Bulkowski base rate, or 2+ indicators diverging in agreement (13.5% on noise). A lone divergence is 99% and worth nothing.  
+**Evidence:** B. Stage 2 accepts only a Wyckoff spring/upthrust (0% on noise), a confirmed double bottom with its Bulkowski base rate, or 2+ indicators diverging in agreement (19.5% on noise). A lone divergence is 99.5% and worth nothing.  
 **Strategies:** `wyckoff_spring_reclaim` (weekly, tier B)  
 **Session:** any — nothing it reads is session-sensitive
 
@@ -172,6 +172,28 @@ These feed the INTRADAY / WEEKLY / MONTHLY split via the strategy each points at
 | `RSI` | in | 45 … 75 |
 
 **Client-side refine:** (r) => !!r.industry
+
+## Weinstein Stage 2 onset — `stage2_onset`
+
+**Direction:** continuation  
+**Horizon:** CONTINUATION — the weak side below ~21 trading days. Its strategy executes MONTHLY (weeks to months), which is the horizon Weinstein wrote for and the side of the boundary where continuation evidence begins (~63 days). Run horizon_prior anyway.  
+**Bet:** A name advancing above its long-term averages and not yet extended from them — a COARSE approximation of the owner's ACCUMULATION state, bracketed by SMA100/SMA200 because the scanner has no SMA150 for the 30-week average the machine actually uses, and blind to the bandwidth percentile, the volume spike and the base's own high. stage_history is what decides.  
+**Evidence:** C. The owner's own criteria over a Weinstein (1988) lineage, UNTESTED HERE at its own horizon. Two measured numbers travel with it. The machine's ACCUMULATION state — the entry signal this screen approximates — is reached by 43.0% of random walks on dispersed volume and 52.5% with gap bars elevated (CYCLE_NOISE_BASELINE, 200 walks x 600 bars). And the Shannon stage GATE, a DIFFERENT construct on a 10/20/50 triple with no volume in it, was forward-tested NEGATIVE at a 20-bar hold (long 33.5% vs a 36.4% direction-matched baseline, short 21.2% vs 28.9%, four configurations, none favouring it). That test measured a swing horizon and a different backbone, so it does not refute this — and an untested variant of a refuted idea is not evidence for it either. See REJECTED_stage_gate_as_edge, which stays.  
+**Strategies:** `weinstein_stage_2` (monthly, tier C)  
+**Session:** any — nothing it reads is session-sensitive
+
+> Runs at ANY hour and needs no session gate. close is scannerTrust-safe; SMA100/SMA200 are DEGRADED but usable (a moving average dilutes the forming day 1/N); RSI and Perf.6M/Perf.1M are price-only. Perf.W is scannerTrust-unsafe and is not used. The only volume-derived field is the shared liquidity floor, and nothing is RANKED on volume.
+
+| Field | Op | Value |
+|---|---|---|
+| `market_cap_basic` | > | 1000M |
+| `Perf.6M` | in | 0 … 100 |
+| `RSI` | in | 45 … 75 |
+| `Perf.1M` | in | -5 … 25 |
+
+**Client-side refine:** (r) => { const c = Number(r.close); const s100 = Number(r.SMA100); const s200 = Number(r.S
+
+> **Approximation:** SMA150 IS NOT A SCANNER COLUMN. The 30-week average is bracketed by SMA100 and SMA200 (price above both, the 100 above the 200) and the extension is capped at 30% above the SMA200 — the slower bracket, so the cap is at least as strict as the same cap on the 150 would be. THREE OF THE MACHINE'S FOUR ENTRY CLAUSES ARE NOT VISIBLE HERE AT ALL: the Bollinger-bandwidth percentile that defines BASE, the per-bar volume spike (>= 1.5x the prior 20 bars, closing UP), and the breakout above the base segment's own high. This screen approximates the SHAPE of an advance; stage_history runs the machine and strategy_check evaluates weinstein_stage_2's criteria on bars.
 
 # Intraday screens
 

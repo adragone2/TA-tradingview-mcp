@@ -24,6 +24,18 @@
 import { LIQUIDITY_FILTER, offHighPct, daysToEarnings } from './scanner.js';
 
 /**
+ * How far above its long-term average a Stage 2 name may already be.
+ *
+ * Weinstein's own rule is stated against the BREAKOUT PRICE — do not pay much more
+ * than ~5-10% above the top of the base — and the scanner cannot see a base. The
+ * distance above the long-term average is the nearest thing it can see, and 30% is
+ * the outer bound at which "advancing" has become "chased". Exported because the
+ * screen's own description quotes it, and a threshold quoted from a second copy is
+ * a threshold that drifts.
+ */
+export const STAGE2_MAX_EXTENSION = 0.30;
+
+/**
  * The screens.
  *
  * `filter` is what TradingView evaluates. `refine` is a client-side predicate
@@ -259,6 +271,133 @@ export const SCREENS = [
       + 'positive. A median rather than a mean, so one runaway name cannot make a group look strong. Dual share classes '
       + 'are NOT deduped here — call dedupeShareClasses from groups.js if that matters, because GOOG and GOOGL are one '
       + 'company and treating them as two leaders is a tautology.',
+  },
+
+  /**
+   * WEINSTEIN STAGE 2 ONSET — a COARSE APPROXIMATION of the owner's ACCUMULATION
+   * state, which is the entry signal of their own four-state cycle machine.
+   *
+   * ── What this screen is, and what actually decides ──
+   *
+   * The owner's machine (`src/core/stage_history.js`, tool `stage_history`) reads
+   * a Bollinger-bandwidth PERCENTILE, a per-bar volume spike against the prior 20
+   * bars, a breakout above the BASE SEGMENT'S OWN HIGH, and the slope of the
+   * 150-day average. The TradingView scanner can serve none of the first three:
+   * it has no bandwidth percentile, no per-bar volume ratio, and no notion of the
+   * machine's own base. So this screen approximates only the SHAPE of the state —
+   * an advance the long averages agree on, not yet extended — and the DETECTOR
+   * GIVES THE VERDICT. That is stage 1 of the design in docs/screening.md: the
+   * scanner narrows the universe, our own measurement decides.
+   *
+   * ── The approximation, stated rather than hidden ──
+   *
+   * The backbone is the 30-WEEK simple moving average, ~150 daily bars. The
+   * scanner exposes SMA10, SMA20, SMA50, SMA100 and SMA200 (see FACTOR_COLUMNS)
+   * and NO SMA150, so this screen cannot compute it and does not pretend to. It
+   * BRACKETS it instead: price above SMA100 AND above SMA200, with SMA100 above
+   * SMA200. The real clauses are computed from BARS by `strategy_check` on
+   * `weinstein_stage_2` and by the machine itself. The approximation is written
+   * into `bet` and `approximation_note` so a reader of the generated parameter doc
+   * sees it too; `intraday_extension` states its EMA10-for-EMA9 substitution the
+   * same way.
+   *
+   * ── Why the extension is measured against the SLOWER bracket ──
+   *
+   * "Above the 30-week but not extended from it" needs a distance, and which
+   * average it is measured from changes the answer. Given the stacking clause this
+   * screen already requires (SMA100 > SMA200), the 150-bar average ordinarily sits
+   * BETWEEN the two — so `close/SMA200 - 1` is the LARGER of the two distances, and
+   * an upper bound applied to it is at least as strict as the same bound applied to
+   * the 150. Measuring from SMA100 would have been the permissive direction, which
+   * is the wrong way to be wrong about a "do not chase" rule.
+   *
+   * ── Both-sided, and the session ──
+   *
+   * Every threshold is bounded on both sides. RSI [45,75]: above the midline but
+   * not the extreme upper tail. Perf.1M [-5,25]: advancing recently but not
+   * vertical, and a small dip is FINE here — Weinstein's breakout level routinely
+   * gets retested, resistance flipping to support. Perf.6M [0,100]: advancing over
+   * six months but not already doubled, because bounding it is the same "do not
+   * chase" clause the extension band is. The extension band itself is bounded below
+   * by `close > SMA200` and above by EXT_MAX.
+   *
+   * NO SESSION GATE, and every field is checked against scannerTrust: `close` is
+   * `safe`; SMA100/SMA200 are `degraded` but usable — a moving average's newest
+   * input is a real quote diluted 1/N; RSI and the Perf.* windows used here are
+   * price-only. `Perf.W` is `unsafe` and is deliberately not used, and the only
+   * volume-derived field anywhere in this screen is the shared LIQUIDITY_FILTER
+   * floor, which is a coarse >1M threshold rather than a ranking input. Nothing
+   * here is RANKED on a volume field, which is the trap the session gate exists for.
+   */
+  {
+    key: 'stage2_onset',
+    direction: 'continuation',
+    name: 'Weinstein Stage 2 onset',
+    bet: 'A name advancing above its long-term averages and not yet extended from them — a COARSE approximation of '
+      + 'the owner\'s ACCUMULATION state, bracketed by SMA100/SMA200 because the scanner has no SMA150 for the '
+      + '30-week average the machine actually uses, and blind to the bandwidth percentile, the volume spike and the '
+      + 'base\'s own high. stage_history is what decides.',
+    horizon_side: 'CONTINUATION — the weak side below ~21 trading days. Its strategy executes MONTHLY (weeks to '
+      + 'months), which is the horizon Weinstein wrote for and the side of the boundary where continuation '
+      + 'evidence begins (~63 days). Run horizon_prior anyway.',
+    evidence: 'C. The owner\'s own criteria over a Weinstein (1988) lineage, UNTESTED HERE at its own horizon. Two '
+      + 'measured numbers travel with it. The machine\'s ACCUMULATION state — the entry signal this screen '
+      + 'approximates — is reached by 43.0% of random walks on dispersed volume and 52.5% with gap bars elevated '
+      + '(CYCLE_NOISE_BASELINE, 200 walks x 600 bars). And the Shannon stage GATE, a DIFFERENT construct on a '
+      + '10/20/50 triple with no volume in it, was forward-tested NEGATIVE at a 20-bar hold (long 33.5% vs a 36.4% '
+      + 'direction-matched baseline, short 21.2% vs 28.9%, four configurations, none favouring it). That test '
+      + 'measured a swing horizon and a different backbone, so it does not refute this — and an untested variant '
+      + 'of a refuted idea is not evidence for it either. See REJECTED_stage_gate_as_edge, which stays.',
+    columns: ['SMA100', 'SMA200'],
+    filter: [
+      ...LIQUIDITY_FILTER,
+      { left: 'market_cap_basic', operation: 'greater', right: 1e9 },
+      // Advancing over six months, but not already doubled. Bounded on both sides
+      // for the same reason the extension band is: this is a do-not-chase rule.
+      { left: 'Perf.6M', operation: 'in_range', right: [0, 100] },
+      // Above the midline, below the extreme. A Stage 2 that has just begun does
+      // not read 85, and one that reads 85 is what Weinstein calls chasing.
+      { left: 'RSI', operation: 'in_range', right: [45, 75] },
+      // Advancing recently but not vertical. The NEGATIVE side is deliberate: his
+      // breakout level routinely gets retested, so a shallow dip belongs in the set.
+      { left: 'Perf.1M', operation: 'in_range', right: [-5, 25] },
+    ],
+    /**
+     * The moving-average clauses live here, not in `filter`, because the scanner
+     * cannot compare two of its OWN columns — the same reason intraday_extension
+     * computes `close >= EMA10 * 1.05` client-side.
+     */
+    refine: (r) => {
+      const c = Number(r.close);
+      const s100 = Number(r.SMA100);
+      const s200 = Number(r.SMA200);
+      if (![c, s100, s200].every(Number.isFinite) || s100 <= 0 || s200 <= 0) return false;
+      if (!(c > s100 && c > s200)) return false;      // above BOTH brackets around the 30-week
+      if (!(s100 > s200)) return false;               // and stacked up — the rising-average stand-in
+      // Above it, but not chased. Written as a MULTIPLICATION rather than
+      // `c / s200 - 1 <= MAX`: the two are the same in exact arithmetic and not in
+      // floating point — 130 / 100 - 1 is 0.30000000000000004, so the divide-and-
+      // subtract form rejects a name sitting exactly ON the cap.
+      return c <= s200 * (1 + STAGE2_MAX_EXTENSION);
+    },
+    // LEAST extended first. Weinstein's own "do not chase": the interesting name is
+    // the one that just cleared its base, not the one 28% past it. Price-only, so
+    // this ranking carries none of the partial-day volume trap.
+    rank: (r) => {
+      const c = Number(r.close); const s200 = Number(r.SMA200);
+      return Number.isFinite(c) && Number.isFinite(s200) && s200 > 0 ? -(c / s200 - 1) : -Infinity;
+    },
+    approximation_note: 'SMA150 IS NOT A SCANNER COLUMN. The 30-week average is bracketed by SMA100 and SMA200 '
+      + `(price above both, the 100 above the 200) and the extension is capped at ${Math.round(STAGE2_MAX_EXTENSION * 100)}% above the SMA200 — `
+      + 'the slower bracket, so the cap is at least as strict as the same cap on the 150 would be. THREE OF THE '
+      + 'MACHINE\'S FOUR ENTRY CLAUSES ARE NOT VISIBLE HERE AT ALL: the Bollinger-bandwidth percentile that defines '
+      + 'BASE, the per-bar volume spike (>= 1.5x the prior 20 bars, closing UP), and the breakout above the base '
+      + 'segment\'s own high. This screen approximates the SHAPE of an advance; stage_history runs the machine and '
+      + 'strategy_check evaluates weinstein_stage_2\'s criteria on bars.',
+    session_note: 'Runs at ANY hour and needs no session gate. close is scannerTrust-safe; SMA100/SMA200 are '
+      + 'DEGRADED but usable (a moving average dilutes the forming day 1/N); RSI and Perf.6M/Perf.1M are '
+      + 'price-only. Perf.W is scannerTrust-unsafe and is not used. The only volume-derived field is the shared '
+      + 'liquidity floor, and nothing is RANKED on volume.',
   },
 
 ];

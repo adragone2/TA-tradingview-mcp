@@ -1,8 +1,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { offHighPct, daysToEarnings, movedSinceBar, UNIVERSES, DEFAULT_UNIVERSE, LIQUIDITY_FILTER } from '../src/core/scanner.js';
 import { parseSections, flattenSections, buildWithPreserved } from '../src/core/watchlist_rewrite.js';
-import { SCREENS, INTRADAY_SCREENS, veto, VETO_DEFAULTS, mergeByConfluence, overlapMatrix, DEFAULT_SLOTS } from '../src/core/screens.js';
+import {
+  SCREENS, INTRADAY_SCREENS, veto, VETO_DEFAULTS, mergeByConfluence, overlapMatrix, DEFAULT_SLOTS,
+  STAGE2_MAX_EXTENSION,
+} from '../src/core/screens.js';
 
 const row = (o = {}) => ({
   symbol: 'NASDAQ:TEST', name: 'TEST', close: 100,
@@ -263,7 +267,7 @@ describe('the four screens added for catalogue coverage', () => {
     for (const k of ['breakout', 'short_term_reversal', 'group_leadership', 'premarket_gap']) {
       assert.ok(byKey(k), `screen ${k} missing`);
     }
-    assert.equal(SCREENS.length, 8, 'eight swing screens');
+    assert.equal(SCREENS.length, 9, 'nine swing screens');
     /**
      * The invariant is the SEPARATION, not a count.
      *
@@ -393,5 +397,100 @@ describe('the four screens added for catalogue coverage', () => {
       assert.ok(s.evidence && s.evidence.length > 20, `${s.key} has no evidence`);
       assert.ok(s.bet && s.filter && s.refine && s.rank, `${s.key} is incomplete`);
     }
+  });
+});
+
+describe('stage2_onset — the Weinstein screen, and the column it does not have', () => {
+  const s = SCREENS.find((x) => x.key === 'stage2_onset');
+  /** A clean Stage 2 row: above both brackets, stacked up, ~17.6% above the SMA200. */
+  const ok = (o = {}) => ({
+    symbol: 'NASDAQ:TEST', close: 100, SMA100: 92, SMA200: 85,
+    RSI: 60, 'Perf.6M': 25, 'Perf.1M': 4, market_cap_basic: 5e9,
+    average_volume_10d_calc: 2_000_000, ...o,
+  });
+
+  test('it exists, is continuation, and carries no session gate', () => {
+    assert.ok(s, 'stage2_onset missing');
+    assert.equal(s.direction, 'continuation');
+    assert.equal(s.session, undefined,
+      'every field it reads is price-only or the shared liquidity floor — a gate here would be cargo cult');
+  });
+
+  test('THE APPROXIMATION IS STATED, not hidden', () => {
+    /**
+     * The scanner exposes SMA10/20/50/100/200 and no SMA150, so Weinstein's 30-week
+     * average is unreachable here. An approximation stated is fine; one hidden is
+     * the `breakout_continuation -> momentum_pullback` defect wearing a new hat.
+     * It must appear where the PARAMETERS are read, which is the generated doc.
+     */
+    assert.ok(!s.filter.some((f) => f.left === 'SMA150'), 'SMA150 is not a scanner column');
+    assert.ok(s.approximation_note, 'the substitution must be declared on the screen itself');
+    assert.match(s.approximation_note, /SMA150 IS NOT A SCANNER COLUMN/);
+    assert.match(s.approximation_note, /SMA100 and SMA200/);
+    assert.deepEqual(s.columns, ['SMA100', 'SMA200'], 'and it must actually request them');
+    const doc = readFileSync(`${process.cwd()}/docs/screening-parameters.md`, 'utf8');
+    assert.ok(doc.includes(s.approximation_note),
+      'the generated parameter doc must carry the approximation — `describeRefine` truncates an '
+      + 'unparseable refine to 90 characters, which is exactly where a substitution goes unnoticed. '
+      + 'Re-run node scripts/gen-screens-doc.js');
+  });
+
+  test('it needs price above BOTH brackets AND them stacked up', () => {
+    assert.equal(s.refine(ok()), true);
+    assert.equal(s.refine(ok({ close: 90 })), false, 'below the SMA100 is not a Stage 2 advance');
+    assert.equal(s.refine(ok({ close: 80 })), false, 'below the SMA200 either');
+    assert.equal(s.refine(ok({ SMA100: 80, SMA200: 90 })), false,
+      'crossed averages are the stacking clause failing — a separate clause from position, '
+      + 'exactly as classifyStage keeps them separate');
+  });
+
+  test('the extension band is bounded on BOTH sides', () => {
+    /**
+     * The module header's own lesson, applied to a do-not-chase rule. The lower
+     * bound is `close > SMA200`; the upper is STAGE2_MAX_EXTENSION. Unbounded above,
+     * this screen would rank the most extended names in the index as Stage 2 onsets.
+     */
+    assert.equal(STAGE2_MAX_EXTENSION, 0.30);
+    // Integer prices against a 100 average, so the boundary assertion is about the
+    // RULE and not about float representation. (The refine multiplies rather than
+    // divide-and-subtracts for the same reason: 130 / 100 - 1 is 0.30000000000000004.)
+    const at = (close) => ok({ SMA200: 100, SMA100: 101, close });
+    assert.equal(s.refine(at(129)), true, 'inside the band');
+    assert.equal(s.refine(at(130)), true, 'the boundary itself is inside — 30% above IS 30% above');
+    assert.equal(s.refine(at(130.01)), false, 'past it is chasing, not an onset');
+    assert.equal(s.refine(at(99)), false, 'and below the average is the other side of the band');
+  });
+
+  test('a missing SMA column is a REJECT, never a pass by coercion', () => {
+    // Number(undefined) is NaN and every comparison against it is false, so this
+    // would behave correctly by accident. The guard makes it deliberate, and `0`
+    // is the case that is not an accident: Number(null) is 0, and 0 > 0 is false
+    // but 100 > 0 is true — a null SMA200 would otherwise pass the position clause.
+    assert.equal(s.refine({ close: 100 }), false);
+    assert.equal(s.refine(ok({ SMA100: null })), false);
+    assert.equal(s.refine(ok({ SMA200: null })), false);
+    assert.equal(s.refine(ok({ SMA200: 0 })), false, 'a zero average must not read as "price is above it"');
+  });
+
+  test('it ranks LEAST extended first — Weinstein\'s own do-not-chase', () => {
+    const near = ok({ close: 100, SMA200: 95, SMA100: 97 });
+    const far = ok({ close: 100, SMA200: 80, SMA100: 90 });
+    assert.ok(s.rank(near) > s.rank(far), 'the just-cleared name must outrank the extended one');
+    assert.equal(s.rank({ close: 100 }), -Infinity, 'an unrankable row sorts last rather than NaN');
+  });
+
+  test('nothing it ranks on is a volume field', () => {
+    // The partial-day trap: relative_volume_10d_calc folds a fraction of a day and
+    // inverts a ranking. This ranks on close/SMA200, which is price-only.
+    const src = String(s.rank);
+    for (const unsafe of ['volume', 'Perf.W', 'relative_volume']) {
+      assert.ok(!src.includes(unsafe), `rank reads ${unsafe}, which scannerTrust marks unsafe intraday`);
+    }
+  });
+
+  test('it names the REJECTED sibling rather than quietly re-proposing it', () => {
+    assert.match(s.evidence, /REJECTED_stage_gate_as_edge/);
+    assert.match(s.evidence, /33\.5% vs a 36\.4%/);
+    assert.match(s.evidence, /UNTESTED HERE/);
   });
 });

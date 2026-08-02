@@ -89,6 +89,15 @@ const emitScreen = (s) => {
   }
   out.push('');
   out.push(`**Client-side refine:** ${describeRefine(s.refine)}`);
+  /**
+   * A screen standing in one column for another must SAY SO where the parameters
+   * are read. `describeRefine` falls back to a 90-character slice of the source for
+   * anything it cannot parse, and a truncated arrow function is exactly where a
+   * substitution would go unnoticed — `intraday_extension` reads EMA10 for the
+   * unavailable EMA9 and `stage2_onset` brackets the unavailable SMA150 with
+   * SMA100/SMA200. An approximation stated is fine; one hidden is not.
+   */
+  if (s.approximation_note) { out.push(''); out.push(`> **Approximation:** ${s.approximation_note}`); }
   out.push('');
 };
 

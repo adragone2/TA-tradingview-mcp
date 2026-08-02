@@ -6,11 +6,37 @@ import { normalizeBars, findSwings, alternateSwings, classifyStructure } from '.
 import { regime } from '../core/context.js';
 import { scaleTimeframe, scalingExponent } from '../core/timeframe.js';
 import * as stages from '../core/stages.js';
+import { stageHistory, stageDrawPlan, drawStageHistory, CYCLE_LABEL_GRAMMAR } from '../core/stage_history.js';
+import * as drawing from '../core/drawing.js';
+import { removeOrphans } from '../core/orphans.js';
+// `atrFromBars` rather than strategy.js's `atr`: identical arithmetic, no import
+// chain. It is the same one `drawFindings` sizes its callout displacement with.
+import { atrFromBars } from '../core/level_display.js';
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
   catch (err) { return jsonResult({ success: false, error: err.message }, true); }
 };
+
+/** "10,20,50" -> [10,20,50], or Shannon's daily triple. Shared by the three stage tools. */
+function parsePeriods(periods) {
+  if (!periods) return stages.MA_SETS.daily;
+  const mas = String(periods).split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  if (mas.length !== 3) throw new Error('periods needs exactly three moving-average lengths, e.g. "10,20,50".');
+  return mas;
+}
+
+/**
+ * Median seconds per bar, for anything placed in BAR units on the time axis.
+ *
+ * Not 86400: a daily chart across a weekend measures ~120,960s and an intraday one
+ * measures its own resolution. Same derivation `drawFindings` uses.
+ */
+function barSecondsOf(bars) {
+  return (bars?.length ?? 0) > 11
+    ? Math.max(1, Math.round((bars.at(-1).time - bars.at(-11).time) / 10))
+    : 86400;
+}
 
 /** Read one screen: trend, regime, and where price sits. */
 function screenOf(bars, label, lookback) {
@@ -169,10 +195,7 @@ export function registerMtfTools(server) {
 
       const step = /^\d+$/.test(String(gate)) ? Number(gate) : String(gate);
       const agg = core.resampleBars(bars, step);
-      const mas = periods
-        ? String(periods).split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0)
-        : stages.MA_SETS.daily;
-      if (mas.length !== 3) throw new Error('periods needs exactly three moving-average lengths, e.g. "10,20,50".');
+      const mas = parsePeriods(periods);
 
       // The aggregated newest bar is usually still forming. A stage read off a
       // partial bar is read off a price that has not finished happening.
@@ -219,6 +242,130 @@ export function registerMtfTools(server) {
               ? 'Two triggers, and legs_classify reports both: the counter-trend pivot violated (a PRICE correction) or '
                 + 'the short average crossing the intermediate one (a TIME correction).'
               : 'Nothing to do on this symbol right now.',
+      };
+    }),
+  );
+
+  server.tool(
+    'stage_history',
+    'THE OWNER\'S OWN FOUR-STATE CYCLE, run bar by bar: base / accumulation / distribution / declining. BASE is sideways — Bollinger-bandwidth PERCENTILE at or under 33. ACCUMULATION is their ENTRY signal — a buying volume spike (>= 1.5x) AND a breakout above the base\'s own high AND a positive 150-SMA slope. DISTRIBUTION is their EXIT signal — volume fading (recent mean < 0.8x the trailing 120-day mean) AND the 150-SMA flattening. DECLINING is a negative 150-SMA slope with a selling volume spike. Back to BASE on fading + flat + sideways. Returns the SEGMENTS (each state and how many bars it held), the TRANSITIONS between them, and the CURRENT segment with the date it began, for the loaded timeframe and for an aggregated gate series. THIS IS NOT stage_plan. stage_plan uses Shannon\'s classifyStage — price against three moving averages, no volume, pointwise — which is FROZEN and was forward-tested AS A GATE and FAILED: LONG signal 33.5% vs baseline 36.4% (-2.9 points, 198 independent events); SHORT 21.2% vs 28.9% (-7.7 points, 103 independent events), four configurations run and NONE favoured the gate. The two are different constructs and are CROSS-REFERENCED, never merged: classifyStage is read ONCE at the last bar into shannon_cross_reference so the readings can be compared, and where they disagree that is a fact about the chart. Each state also carries weinstein_equivalent (stage 1-4) — and note the vocabulary clash, because the owner\'s ACCUMULATION is the ADVANCE (Weinstein stage 2) where Wyckoff and Weinstein both use that word for the BASE. READ THE NOISE FLOOR BEFORE QUOTING A STATE: measured over 200 random walks at 600 bars with dispersed volume, ACCUMULATION — the entry signal — is reached by 43.0% of walks (52.5% with gap bars elevated). That is a HIGH floor. DISTRIBUTION is near zero (1.5-3.5%) but NOT because it is selective: its fading clause fires on 0.2-0.5% of noise bars at all. A cycle label is a DESCRIPTION of what price, volume and the 150-day average have already done; the entry signal belongs to the strategy (weinstein_stage_2), not to this detector, and the machine is UNTESTED at any horizon. Every threshold is an option with a named default — the owner\'s numbers are defaults, not settled.',
+    {
+      count: z.coerce.number().optional().describe('Bars of the loaded timeframe to classify (default 600 — the 150-period average plus the bandwidth percentile need a long warm-up)'),
+      gate: z.string().optional().describe('How to build the aggregated gate series: "week"/"month", or a bar multiple. Default "week". The machine\'s windows are in bars OF THAT SERIES, so a 150-period average of weekly bars is ~3 years and the gate is usually empty — the cycle is meant to be read on the loaded series.'),
+      base_pctile_max: z.coerce.number().optional().describe('OWNER: the sideways threshold, bandwidth percentile <= this (default 33)'),
+      spike_mult: z.coerce.number().optional().describe('OWNER: volume spike multiple of the prior-bar average (default 1.5). BUYING when the bar closes up on the prior close, SELLING when down.'),
+      fade_ratio: z.coerce.number().optional().describe('OWNER: recent volume mean below this multiple of the trailing mean counts as fading (default 0.8)'),
+      sma_period: z.coerce.number().optional().describe('OWNER: the trend average (default 150 — the 30-week backbone in daily bars)'),
+      fade_trailing_window: z.coerce.number().optional().describe('OWNER: the trailing volume window (default 120)'),
+      pctile_window: z.coerce.number().optional().describe('OURS: bars the bandwidth is ranked against (default 252). The owner gave the threshold, not the lookback.'),
+      spike_avg_window: z.coerce.number().optional().describe('OURS: bars in the spike baseline, excluding the current bar (default 20)'),
+      fade_recent_window: z.coerce.number().optional().describe('OURS: the recent volume window (default 20)'),
+      slope_lookback: z.coerce.number().optional().describe('OURS: bars back the SMA slope is measured over, as percent per bar (default 20)'),
+      flat_slope_pct: z.coerce.number().optional().describe('HOUSE: |slope| below this percent per bar is FLAT (default 0.05 — the same number patterns.js uses for trendline and neckline flatness)'),
+      allow_base_to_declining: z.coerce.boolean().optional().describe('OURS, default false: the owner\'s literal sequence has no arrow out of BASE except the entry signal, so a base that breaks DOWN is never left. Set true to admit base -> declining on the owner\'s own declining clauses.'),
+      distribution_requires_sideways: z.coerce.boolean().optional().describe('OURS, default false: read "the 150-SMA flattens (bandwidth percentile <= 33 again)" as ALSO requiring the sideways clause, not only the slope one.'),
+    },
+    wrap(async ({ count = 600, gate = 'week', ...knobs }) => {
+      const raw = await data.getOhlcv({ count, summary: false });
+      const bars = normalizeBars(raw);
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+      return {
+        success: true,
+        // Stamped, and worth comparing to the symbol you asked for: a scan can move
+        // the chart mid-analysis, and a read that cannot be attributed is not evidence.
+        symbol: raw?.symbol ?? null,
+        timeframe: raw?.resolution ?? null,
+        ...stageHistory(bars, { gate, ...knobs }),
+      };
+    }),
+  );
+
+  server.tool(
+    'stage_draw',
+    'Draw the OWNER\'S CYCLE boundaries on the chart: one dashed vertical line per TRANSITION, labelled "cycle base>accumulation 2026-05-14", plus ONE callout for the current segment, "cycle accumulation since 2026-05-14 (34 bars)". Both label formats are REGISTERED in MCP_TEXT_SIGNATURES — a hand-drawn line with a hand-written label matches no signature and leaks an orphan that can never be swept up, because TradingView entity ids die with the desktop session and the text is the only handle left. Draws into group "stage-<TICKER>" and CLEARS THAT GROUP FIRST in both passes — clearAll for what the registry still tracks and an orphan sweep scoped to this tool\'s own signatures, so a walls overlay or the review\'s levels are never touched. Only ONE series is drawn at a time (default the loaded timeframe; pass series:"gate" for the aggregated one) because two sets of vertical lines through the same bars is overprinting. THESE ARE BOUNDARIES, NOT SIGNALS: each line marks the bar on which the owner\'s clauses changed state — volume, volatility and a 150-day average that have already moved — and the ENTRY belongs to the strategy (weinstein_stage_2), not to this detector. QUOTE THE NOISE FLOOR beside any ACCUMULATION line: measured over 200 random walks at 600 bars, the entry state is reached by 43.0% of walks on dispersed volume and 52.5% with gap bars elevated. The machine is UNTESTED at any horizon. It is also NOT stage_plan: that tool uses Shannon\'s frozen classifyStage, a different construct with no volume in it, which was forward-tested AS A GATE and FAILED — LONG signal 33.5% vs baseline 36.4% (-2.9 points, 198 independent events); SHORT 21.2% vs 28.9% (-7.7 points, 103 independent events), four configurations, NONE favoured the gate. stage_history carries that reading separately as a cross-reference.',
+    {
+      count: z.coerce.number().optional().describe('Bars of the loaded timeframe to classify (default 600)'),
+      gate: z.string().optional().describe('How to build the aggregated gate series (default "week")'),
+      series: z.enum(['trigger', 'gate']).optional().describe('Which history to draw: "trigger" is the loaded timeframe (default), "gate" the aggregated one. Never both — that is two sets of lines through the same bars.'),
+      base_pctile_max: z.coerce.number().optional().describe('OWNER: the sideways threshold, bandwidth percentile <= this (default 33)'),
+      spike_mult: z.coerce.number().optional().describe('OWNER: volume spike multiple (default 1.5)'),
+      fade_ratio: z.coerce.number().optional().describe('OWNER: recent/trailing volume mean below this counts as fading (default 0.8)'),
+      sma_period: z.coerce.number().optional().describe('OWNER: the trend average (default 150)'),
+      allow_base_to_declining: z.coerce.boolean().optional().describe('OURS, default false: admit base -> declining, which the owner\'s literal sequence does not include'),
+      max_transitions: z.coerce.number().optional().describe('Cap on the vertical lines drawn, most recent kept (default 12). A legibility bound, not an evidence one — everything over it comes back in `skipped`.'),
+      draw_current: z.coerce.boolean().optional().describe('Also draw the current-segment callout (default true)'),
+      group: z.string().optional().describe('Group name for clearing later (default "stage-<TICKER>")'),
+    },
+    wrap(async ({
+      count = 600, gate = 'week', series = 'trigger',
+      max_transitions = 12, draw_current = true, group = null, ...knobs
+    }) => {
+      const raw = await data.getOhlcv({ count, summary: false });
+      const bars = normalizeBars(raw);
+      if (!bars.length) throw new Error('No price bars came back from the chart.');
+      const symbol = raw?.symbol ?? null;
+      const timeframe = raw?.resolution ?? null;
+
+      const history = stageHistory(bars, { gate, ...knobs });
+      const plan = stageDrawPlan(history, {
+        series,
+        max_transitions,
+        draw_current,
+        price: bars.at(-1).close,
+        last_bar_time: bars.at(-1).time,
+        bar_seconds: barSecondsOf(bars),
+        atr: atrFromBars(bars, 14),
+      });
+
+      if (!plan.shapes.length) {
+        return {
+          success: true, symbol, timeframe, drawn: 0, ...plan,
+          note: 'Nothing to draw. No transition on this window is a real answer — a series that has held one '
+            + 'state throughout has no boundary to mark. Read stage_history for the state it is in.',
+        };
+      }
+
+      const groupName = group || `stage-${String(symbol || 'chart').replace(/^.*:/, '')}`;
+
+      /**
+       * CLEAR OUR OWN GROUP FIRST, IN BOTH PASSES.
+       *
+       * `clearAll` only removes what the registry still tracks, and TradingView
+       * entity ids are SESSION-scoped — so anything drawn before the app last
+       * restarted is invisible to it and would stack. The orphan pass catches
+       * exactly those, and it is scoped to `sources: ['stage']` so it can only
+       * ever claim this tool's own two label formats.
+       */
+      const cleared = { tracked: 0, orphaned: 0, group: groupName, sources: ['stage'] };
+      try { cleared.tracked = (await drawing.clearAll({ scope: 'mcp', group: groupName }))?.removed || 0; }
+      catch (e) { cleared.tracked_error = e.message; }
+      try { cleared.orphaned = (await removeOrphans({ dry_run: false, sources: ['stage'] }))?.removed || 0; }
+      catch (e) { cleared.orphaned_error = e.message; }
+
+      const drawn = []; const failed = [];
+      const put = async (fn, label) => {
+        try {
+          const r = await fn();
+          if (r?.success || r?.entity_id) drawn.push({ shape: label, entity_id: r?.entity_id ?? null });
+          else failed.push({ shape: label, why: 'created but could not be identified' });
+        } catch (e) { failed.push({ shape: label, why: e.message }); }
+      };
+      await drawStageHistory(plan, groupName, put, drawing.drawShape);
+
+      return {
+        success: failed.length === 0,
+        symbol,
+        timeframe,
+        group: groupName,
+        cleared,
+        drawn: drawn.length,
+        shapes: drawn,
+        ...plan,
+        ...(failed.length ? { failed, warning: `${failed.length} shape(s) failed to draw.` } : {}),
+        label_grammar: CYCLE_LABEL_GRAMMAR,
+        clear_hint: `Remove with draw_clear group="${groupName}".`,
+        current_reading: history.current || null,
+        gate_reading: history.gate?.current || null,
       };
     }),
   );

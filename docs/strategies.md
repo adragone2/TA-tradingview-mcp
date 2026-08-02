@@ -6,12 +6,12 @@ Every strategy the toolchain can express, grouped by **execution tier** (when th
 tagged with an **evidence tier** (how much to believe it). Each row names its screener, entry and exit rules,
 TradingView indicators, and the skills, tools and risk rules to invoke.
 
-21 strategies — 14 machine-scannable, 7 tiered REJECTED.
+22 strategies — 15 machine-scannable, 7 tiered REJECTED.
 
 | | |
 |---|---|
-| By execution | monthly 7 · weekly 11 · intraday 3 |
-| By evidence | A 3 · B 4 · C 7 · REJECTED 7 |
+| By execution | monthly 8 · weekly 11 · intraday 3 |
+| By evidence | A 3 · B 4 · C 8 · REJECTED 7 |
 
 ## How to read this
 
@@ -620,6 +620,39 @@ The cup GEOMETRY is not expressible as operands — rim tolerance, U-shape and h
 | `close` | `>` | `sma(50)` |  |
 
 Group membership and leadership are not OPERANDS — they come from group_context, which resolves them from the scanner's industry field. The criteria here gate the individual name only.
+
+</details>
+
+### Weinstein Stage 2 advance (30-week MA)  ·  C
+
+`weinstein_stage_2` · long
+
+**Evidence.** THE OWNER'S OWN CRITERIA (2026-07-31), rendered as data. Their four-state cycle: BASE is sideways (Bollinger-bandwidth percentile <= 33); ACCUMULATION is the ENTRY — a buying volume spike >= 1.5x AND a breakout above the base's high AND a positive 150-SMA slope; DISTRIBUTION is the EXIT — volume fading (recent mean < 0.8x the trailing 120-day mean) with the 150-SMA flattening; DECLINING is a negative 150-SMA slope with a selling volume spike. The lineage is Weinstein, Secrets for Profiting in Bull and Bear Markets (1988) — the 30-WEEK average, ~150 daily bars — with volume and volatility clauses the owner has made numeric. src/core/stage_history.js implements it; stage_history and stage_draw are the tools. UNTESTED HERE at its own horizon: nothing in this repo has measured a weeks-to-months hold on it, and no return evidence is claimed.
+
+**Caveat.** TWO NUMBERS TO CARRY, AND BOTH CUT AGAINST OPTIMISM. (1) THE MEASURED NOISE FLOOR: over 200 random walks at 600 bars, the ACCUMULATION state — the entry signal itself — is reached by 43.0% of walks on dispersed volume and 52.5% with gap bars elevated (CYCLE_NOISE_BASELINE, node scripts/stage-cycle-noise.js). That is a HIGH floor — nearer a breakout of a prior high (32.5%) than to springs, VCP or pennants (0%) — so an ACCUMULATION reading on its own is close to a coin flip and must be quoted with the floor beside it. (2) READ THIS BESIDE REJECTED_stage_gate_as_edge, WHICH STAYS. That entry rejects SHANNON'S STAGE GATE AS A SWING-HORIZON EDGE, on a well-powered forward test: triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline on the same bars, long 33.5% vs 36.4% and short 21.2% vs 28.9%, four configurations and none favouring the gate. Its barriers were 20 and 40 BARS — a swing hold — and its classifier was Shannon's 10/20/50 triple, which reads no volume and no volatility. The owner's machine is a DIFFERENT CONSTRUCT on a different horizon and a different backbone, so that test does not refute it; equally, an untested variant of a refuted idea is not evidence for it. The honest word is UNTESTED. Also true: below ~21 trading days the documented effect is REVERSAL and continuation evidence only begins around ~63 days, which is why this is filed monthly; and every confirmation gate measured in this repo has failed. Run horizon_prior and edge_breadth before quoting anything.
+
+| | |
+|---|---|
+| **Screener** | `screens:stage2_onset` |
+| **Entry** | The owner's ACCUMULATION state: a CLOSE above the base's own high on a buying volume spike of at least 1.5x the prior 20 bars, with the 150-day average sloping up. Weinstein's own multiple is 2-3x average volume, which is stricter than the owner's 1.5x — both are stated so neither is mistaken for the other. Big base, big move: the longer the base, the larger the expected advance. The breakout level often gets RETESTED — resistance turning support — and breakout_check reports that as `throwback.status`, which is a DESCRIPTION and not a sixth check: 58% of Bulkowski's 10,305 upward breakouts returned to the breakout price within 30 calendar days, so a throwback discriminates nothing on its own. Quote the arm (held at or above the level, 40% average rise, versus dropped below, 29%), never the bare rate. And quote the noise floor: this state is reached by 43-52% of random walks. |
+| **Exit** | The owner's DISTRIBUTION state is the exit signal: volume fading — the recent 20-bar mean below 0.8x the trailing 120-day mean — with the 150-day average flattening. DECLINING (a negative 150-SMA slope with a selling volume spike) is the harder stop. stage_history reports which state the machine is in, when it entered, and whether the current state is `weakening` — at least one clause of an exit satisfied but not all. Note the measured asymmetry: DISTRIBUTION fires on only 1.5-3.5% of random walks, but that is because its fade clause fires on 0.2-0.5% of noise bars at all, NOT because it is selective about structure. A trailing stop via pivot_trail is a bet on persistence, so check stopping_premium before assuming it helps. |
+| **Exit reason keys** | `trend_broken`, `ma_crossover`, `stop_hit`, `target_hit`, `time_elapsed` — log these, `exit_mix` reads them |
+| **TradingView indicators** | `Simple Moving Average (150)`, `Simple Moving Average (200)`, `Volume`, _Mansfield Relative Strength vs S&P 500 — not a TV study_ |
+| **Skills** | [market-structure](../skills/market-structure/SKILL.md), [risk-sizing](../skills/risk-sizing/SKILL.md), [backtest-strategy](../skills/backtest-strategy/SKILL.md) |
+| **Tools** | `stage_history`, `stage_draw`, `stage_plan`, `relative_strength`, `breakout_check`, `horizon_prior`, `edge_breadth`, `turnover_cost`, `stopping_premium`, `position_size_constrained` |
+| **Risk rules** | `max_risk_per_trade`, `min_rr`, `concentration_cap`, `max_portfolio_heat` |
+
+<details><summary>Machine-evaluable criteria</summary>
+
+| Left | Op | Right | Note |
+|---|---|---|---|
+| `close` | `>` | `sma(150)` | the 30-week average in daily bars — the owner's backbone |
+| `sma_slope(150)` | `>` | `0` | the owner's 'sma150 slope positive'. Slope is a separate clause from position: an average can be above price and falling |
+| `volume_ratio(20)` | `>=` | `1.5` | the owner's volume spike, >= 1.5x the prior 20 bars. volume_ratio is the operand added for this machine — rvol is intraday-only, so a daily volume clause had none |
+| `close` | `>` | `prev_day_close` | and a BUYING spike rather than a selling one — the machine's own sign convention, a bar that closed up on the prior close |
+| `close` | `>` | `sma(200)` | the 200-day, used interchangeably with the 30-week in Weinstein-derived sources. Requiring both means an advance the intermediate and long averages agree on |
+
+FOUR THINGS ARE DELIBERATELY NOT FAKED AS CRITERIA. (1) The BREAKOUT is above the BASE SEGMENT'S OWN HIGH — the machine's own base, which only exists once the machine has run. It is a history question and stage_history answers it; a last-bar criteria check cannot. (2) The BASE PRECONDITION, bb_bandwidth_pctile(252) <= 33, is deliberately NOT asserted here: at the breakout bar the bandwidth is EXPANDING out of compression, so a clause that is true at the base is false at the trigger. The operand EXISTS (added with volume_ratio for this machine) so a base-scanning strategy can use it, and stage_history reports which state the machine is in. (3) Relative strength versus the S&P — Weinstein's Mansfield RS crossing zero — needs a second series; relative_strength answers it and assess() carries it as its own block. (4) Weinstein's 2-3x breakout volume is his number; the owner's is 1.5x, and the criterion above is the OWNER'S, with his in the prose entry. ONE MISMATCH WORTH KNOWING: the DSL's sma_slope(150) measures the 150-bar average's change over 150 BARS, while the machine measures it over 20 (slope_lookback, ours). Both are 'is it rising'; they are not the same number, the 150-bar version is the stricter test, and the machine is the authority. sma_slope(150) also needs ~300 bars, below which it is UNKNOWN — which makes the whole strategy unknown rather than failed.
 
 </details>
 

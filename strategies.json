@@ -1204,6 +1204,107 @@
         "max_portfolio_heat"
       ]
     },
+    "weinstein_stage_2": {
+      "label": "Weinstein Stage 2 advance (30-week MA)",
+      "execution": "monthly",
+      "direction": "long",
+      "evidence_tier": "C",
+      "evidence": "THE OWNER'S OWN CRITERIA (2026-07-31), rendered as data. Their four-state cycle: BASE is sideways (Bollinger-bandwidth percentile <= 33); ACCUMULATION is the ENTRY — a buying volume spike >= 1.5x AND a breakout above the base's high AND a positive 150-SMA slope; DISTRIBUTION is the EXIT — volume fading (recent mean < 0.8x the trailing 120-day mean) with the 150-SMA flattening; DECLINING is a negative 150-SMA slope with a selling volume spike. The lineage is Weinstein, Secrets for Profiting in Bull and Bear Markets (1988) — the 30-WEEK average, ~150 daily bars — with volume and volatility clauses the owner has made numeric. src/core/stage_history.js implements it; stage_history and stage_draw are the tools. UNTESTED HERE at its own horizon: nothing in this repo has measured a weeks-to-months hold on it, and no return evidence is claimed.",
+      "evidence_caveat": "TWO NUMBERS TO CARRY, AND BOTH CUT AGAINST OPTIMISM. (1) THE MEASURED NOISE FLOOR: over 200 random walks at 600 bars, the ACCUMULATION state — the entry signal itself — is reached by 43.0% of walks on dispersed volume and 52.5% with gap bars elevated (CYCLE_NOISE_BASELINE, node scripts/stage-cycle-noise.js). That is a HIGH floor — nearer a breakout of a prior high (32.5%) than to springs, VCP or pennants (0%) — so an ACCUMULATION reading on its own is close to a coin flip and must be quoted with the floor beside it. (2) READ THIS BESIDE REJECTED_stage_gate_as_edge, WHICH STAYS. That entry rejects SHANNON'S STAGE GATE AS A SWING-HORIZON EDGE, on a well-powered forward test: triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline on the same bars, long 33.5% vs 36.4% and short 21.2% vs 28.9%, four configurations and none favouring the gate. Its barriers were 20 and 40 BARS — a swing hold — and its classifier was Shannon's 10/20/50 triple, which reads no volume and no volatility. The owner's machine is a DIFFERENT CONSTRUCT on a different horizon and a different backbone, so that test does not refute it; equally, an untested variant of a refuted idea is not evidence for it. The honest word is UNTESTED. Also true: below ~21 trading days the documented effect is REVERSAL and continuation evidence only begins around ~63 days, which is why this is filed monthly; and every confirmation gate measured in this repo has failed. Run horizon_prior and edge_breadth before quoting anything.",
+      "screener": "screens:stage2_onset",
+      "screener_note": "The screen APPROXIMATES the owner's ENTRY state with scanner-safe fields, and the detector gives the verdict — stage 1 of the design in docs/screening.md. It states its own approximation: the TradingView scanner exposes SMA10/20/50/100/200 and NO SMA150, so it brackets the 30-week average with SMA100 and SMA200 (price above both, the 100 above the 200) and bounds the extension against the SMA200. It cannot see the base's own high, the Bollinger-bandwidth percentile or a per-bar volume spike either. stage_history runs the real machine on bars, and strategy_check evaluates the criteria below.",
+      "criteria": [
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(150)",
+          "note": "the 30-week average in daily bars — the owner's backbone"
+        },
+        {
+          "left": "sma_slope(150)",
+          "op": ">",
+          "right": 0,
+          "note": "the owner's 'sma150 slope positive'. Slope is a separate clause from position: an average can be above price and falling"
+        },
+        {
+          "left": "volume_ratio(20)",
+          "op": ">=",
+          "right": 1.5,
+          "note": "the owner's volume spike, >= 1.5x the prior 20 bars. volume_ratio is the operand added for this machine — rvol is intraday-only, so a daily volume clause had none"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "prev_day_close",
+          "note": "and a BUYING spike rather than a selling one — the machine's own sign convention, a bar that closed up on the prior close"
+        },
+        {
+          "left": "close",
+          "op": ">",
+          "right": "sma(200)",
+          "note": "the 200-day, used interchangeably with the 30-week in Weinstein-derived sources. Requiring both means an advance the intermediate and long averages agree on"
+        }
+      ],
+      "criteria_note": "FOUR THINGS ARE DELIBERATELY NOT FAKED AS CRITERIA. (1) The BREAKOUT is above the BASE SEGMENT'S OWN HIGH — the machine's own base, which only exists once the machine has run. It is a history question and stage_history answers it; a last-bar criteria check cannot. (2) The BASE PRECONDITION, bb_bandwidth_pctile(252) <= 33, is deliberately NOT asserted here: at the breakout bar the bandwidth is EXPANDING out of compression, so a clause that is true at the base is false at the trigger. The operand EXISTS (added with volume_ratio for this machine) so a base-scanning strategy can use it, and stage_history reports which state the machine is in. (3) Relative strength versus the S&P — Weinstein's Mansfield RS crossing zero — needs a second series; relative_strength answers it and assess() carries it as its own block. (4) Weinstein's 2-3x breakout volume is his number; the owner's is 1.5x, and the criterion above is the OWNER'S, with his in the prose entry. ONE MISMATCH WORTH KNOWING: the DSL's sma_slope(150) measures the 150-bar average's change over 150 BARS, while the machine measures it over 20 (slope_lookback, ours). Both are 'is it rising'; they are not the same number, the 150-bar version is the stricter test, and the machine is the authority. sma_slope(150) also needs ~300 bars, below which it is UNKNOWN — which makes the whole strategy unknown rather than failed.",
+      "entry": "The owner's ACCUMULATION state: a CLOSE above the base's own high on a buying volume spike of at least 1.5x the prior 20 bars, with the 150-day average sloping up. Weinstein's own multiple is 2-3x average volume, which is stricter than the owner's 1.5x — both are stated so neither is mistaken for the other. Big base, big move: the longer the base, the larger the expected advance. The breakout level often gets RETESTED — resistance turning support — and breakout_check reports that as `throwback.status`, which is a DESCRIPTION and not a sixth check: 58% of Bulkowski's 10,305 upward breakouts returned to the breakout price within 30 calendar days, so a throwback discriminates nothing on its own. Quote the arm (held at or above the level, 40% average rise, versus dropped below, 29%), never the bare rate. And quote the noise floor: this state is reached by 43-52% of random walks.",
+      "exit": "The owner's DISTRIBUTION state is the exit signal: volume fading — the recent 20-bar mean below 0.8x the trailing 120-day mean — with the 150-day average flattening. DECLINING (a negative 150-SMA slope with a selling volume spike) is the harder stop. stage_history reports which state the machine is in, when it entered, and whether the current state is `weakening` — at least one clause of an exit satisfied but not all. Note the measured asymmetry: DISTRIBUTION fires on only 1.5-3.5% of random walks, but that is because its fade clause fires on 0.2-0.5% of noise bars at all, NOT because it is selective about structure. A trailing stop via pivot_trail is a bet on persistence, so check stopping_premium before assuming it helps.",
+      "exit_reason_keys": [
+        "trend_broken",
+        "ma_crossover",
+        "stop_hit",
+        "target_hit",
+        "time_elapsed"
+      ],
+      "indicators": [
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (150)",
+          "inputs": {
+            "length": 150
+          }
+        },
+        {
+          "study": "Moving Average",
+          "label": "Simple Moving Average (200)",
+          "inputs": {
+            "length": 200
+          }
+        },
+        {
+          "study": "Volume",
+          "label": "Volume"
+        },
+        {
+          "study": null,
+          "label": "Mansfield Relative Strength vs S&P 500",
+          "external": true
+        }
+      ],
+      "indicators_note": "Only ONE of these has to be added. The chart budget is Volume plus the Moving Average Ribbon permanently and five studies maximum, and the Ribbon already plots SMA 50 and SMA 200 — so coveredByPermanent matches Volume and MA(200), and chart_indicators_for_strategy adds MA(150) alone. Mansfield RS is not a TradingView study under that name; relative_strength computes the equivalent.",
+      "skills": [
+        "market-structure",
+        "risk-sizing",
+        "backtest-strategy"
+      ],
+      "tools": [
+        "stage_history",
+        "stage_draw",
+        "stage_plan",
+        "relative_strength",
+        "breakout_check",
+        "horizon_prior",
+        "edge_breadth",
+        "turnover_cost",
+        "stopping_premium",
+        "position_size_constrained"
+      ],
+      "risk_rules": [
+        "max_risk_per_trade",
+        "min_rr",
+        "concentration_cap",
+        "max_portfolio_heat"
+      ]
+    },
     "REJECTED_tandem_confirmation": {
       "label": "Two-leader (Key Price) confirmation as a filter",
       "execution": "weekly",

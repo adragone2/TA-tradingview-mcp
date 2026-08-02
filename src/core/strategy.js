@@ -74,6 +74,117 @@ export function atr(bars, length = 14) {
   return a;
 }
 
+/**
+ * ── Bollinger bandwidth, and its percentile ──────────────────────────────────
+ *
+ * Added for the owner's cycle machine (`stage_history.js`), whose BASE state is
+ * "sideways — Bollinger-bandwidth PERCENTILE <= 33". They live HERE, beside
+ * sma/ema/rsi/atr, because this file is the indicator library and the machine
+ * must not grow a private copy: two implementations of "how wide are the bands"
+ * would drift, and `bb_bandwidth_pctile` the DSL operand would then disagree with
+ * the detector that shares its name.
+ *
+ * Conventions, each stated because each moves the answer:
+ *
+ *   - BB(20, 2) on CLOSES. The bands are mid +/- mult * sd.
+ *   - `sd` is the POPULATION standard deviation (divide by N), which is what
+ *     TradingView's `ta.stdev` and therefore its own Bollinger Bands study use.
+ *     Sample sd (N-1) would make every bandwidth ~2.6% wider at length 20.
+ *   - bandwidth = (upper - lower) / middle = 2 * mult * sd / mid. Normalised by
+ *     price, so it is comparable across symbols and across time on one symbol.
+ *   - Null, never 0, when the window is short or the middle band is non-positive.
+ *     `Number(null)` is 0 and a bandwidth of 0 reads as maximal compression —
+ *     the exact shape of the breadth bug that conjured a finding from a missing
+ *     field.
+ */
+export function bbBandwidthSeries(values, { length = 20, mult = 2 } = {}) {
+  const out = new Array(Array.isArray(values) ? values.length : 0).fill(null);
+  if (!Array.isArray(values) || values.length < length || length < 2) return out;
+  for (let i = length - 1; i < values.length; i += 1) {
+    const win = values.slice(i - length + 1, i + 1);
+    const mid = win.reduce((a, b) => a + b, 0) / length;
+    if (!(mid > 0)) continue;
+    const varr = win.reduce((a, b) => a + (b - mid) ** 2, 0) / length;   // POPULATION
+    out[i] = (2 * mult * Math.sqrt(varr)) / mid;
+  }
+  return out;
+}
+
+/** The newest bandwidth reading. Defined as the last of the series, so the two cannot diverge. */
+export function bbBandwidth(values, opts = {}) {
+  return bbBandwidthSeries(values, opts).at(-1) ?? null;
+}
+
+/**
+ * Percentile RANK of each bandwidth reading against its own trailing window.
+ *
+ * WEAK ranking — `count(x <= v) / n` — so a tie inflates the rank rather than
+ * deflating it. That is the conservative direction for a compression test:
+ * a HIGHER percentile is a WIDER band, so weak ranking admits FEWER bars to
+ * "sideways" than strict ranking would.
+ *
+ * `window` and `min_samples` are OURS, not the owner's: they specified the
+ * threshold (<= 33) and not the lookback the rank is taken over. 252 bars is one
+ * trading year, and a rank over fewer than `min_samples` readings is null rather
+ * than a percentile computed from a handful of points.
+ */
+export function bbBandwidthPercentileSeries(values, {
+  length = 20, mult = 2, window = 252, min_samples = 60,
+} = {}) {
+  const bw = bbBandwidthSeries(values, { length, mult });
+  const out = new Array(bw.length).fill(null);
+  for (let i = 0; i < bw.length; i += 1) {
+    const v = bw[i];
+    if (v == null) continue;
+    const from = Math.max(0, i - window + 1);
+    let n = 0; let le = 0;
+    for (let j = from; j <= i; j += 1) {
+      if (bw[j] == null) continue;
+      n += 1;
+      if (bw[j] <= v) le += 1;
+    }
+    if (n < min_samples) continue;
+    out[i] = (le / n) * 100;
+  }
+  return out;
+}
+
+export function bbBandwidthPercentile(values, opts = {}) {
+  return bbBandwidthPercentileSeries(values, opts).at(-1) ?? null;
+}
+
+/**
+ * This bar's volume against the mean of the PRIOR `length` bars.
+ *
+ * The current bar is EXCLUDED from its own baseline. Including it makes the test
+ * partly self-referential — a bar four times the average lifts the average it is
+ * being compared to by 15% at length 20 — which quietly weakens exactly the
+ * spikes the clause exists to find.
+ *
+ * Distinct from `rvol`, which is INTRADAY-only and time-matched within a session:
+ * on a daily chart rvol is null by construction, so a daily volume clause had no
+ * operand at all before this.
+ */
+export function volumeRatioSeries(bars, length = 20) {
+  const out = new Array(Array.isArray(bars) ? bars.length : 0).fill(null);
+  if (!Array.isArray(bars) || length < 1) return out;
+  for (let i = length; i < bars.length; i += 1) {
+    let sum = 0; let n = 0;
+    for (let j = i - length; j < i; j += 1) {
+      const v = Number(bars[j]?.volume);
+      if (Number.isFinite(v) && v >= 0) { sum += v; n += 1; }
+    }
+    const v = Number(bars[i]?.volume);
+    if (n < length || !(sum > 0) || !Number.isFinite(v)) continue;
+    out[i] = v / (sum / n);
+  }
+  return out;
+}
+
+export function volumeRatio(bars, length = 20) {
+  return volumeRatioSeries(bars, length).at(-1) ?? null;
+}
+
 /* ------------------------------ sessions ---------------------------- */
 
 /**
@@ -206,7 +317,7 @@ export function relativeVolume(sessions, lookback = 20) {
 
 /* ------------------------------ operands ---------------------------- */
 
-const FUNC = /^(sma|ema|rsi|atr|opening_range_high|opening_range_low|sma_slope|ema_slope|rsi_slope)\((\d+)\)$/i;
+const FUNC = /^(sma|ema|rsi|atr|opening_range_high|opening_range_low|sma_slope|ema_slope|rsi_slope|bb_bandwidth_pctile|volume_ratio)\((\d+)\)$/i;
 /** Cross operands: `ema(8) crosses_above ema(20)` is an EVENT, not a state. */
 const CROSS = /^(.+?)\s+(crosses_above|crosses_below)\s+(.+)$/i;
 // A trailing "<operator> <number>", e.g. "ema(8) * 0.98". Anchored on a numeric
@@ -224,6 +335,18 @@ export const OPERANDS = [
   'opening_range_high(MINUTES)', 'opening_range_low(MINUTES)',
   // Slope in percent per bar — a level says nothing about direction.
   'sma_slope(N)', 'ema_slope(N)', 'rsi_slope(N)',
+  /**
+   * Volatility compression and daily volume, for the owner's cycle machine.
+   *
+   * `bb_bandwidth_pctile(N)` is the percentile RANK of today's BB(20,2) bandwidth
+   * over the trailing N bars — the owner's "sideways" clause, where <= 33 is BASE.
+   * `volume_ratio(N)` is this bar's volume over the mean of the PRIOR N bars; it
+   * exists because `rvol` is intraday-only and time-matched within a session, so a
+   * DAILY volume clause had no operand at all. Both are computed by the SAME
+   * functions stage_history's detector uses, so a criterion and the machine cannot
+   * disagree about what they measure.
+   */
+  'bb_bandwidth_pctile(N)', 'volume_ratio(N)',
   // Structure, computed elsewhere and exposed here so criteria can use them.
   'pullback_pct', 'nearest_level_tests', 'nearest_level_distance_pct',
   'in_demand_zone', 'in_supply_zone', 'nearest_zone_distance_pct',
@@ -322,6 +445,36 @@ export function resolveOperand(token, ctx) {
         return { value: null, ok: false, reason: `not enough bars to measure ${name}(${len}) — need at least ${len * 2 + 1}` };
       }
       return { value: ((now - back) / Math.abs(back)) * 100 / len, ok: true };
+    }
+
+    /**
+     * The two volatility/volume operands say WHY they are unavailable, because
+     * their warm-up requirements are much longer than an average's and "not
+     * enough bars" would otherwise be indistinguishable from a data problem.
+     * Unresolved is UNKNOWN, never false — a missing value reading as a failed
+     * criterion is how a scan quietly stops finding anything.
+     */
+    if (name === 'bb_bandwidth_pctile') {
+      const v = bbBandwidthPercentile(closes, { window: len });
+      if (v == null) {
+        return {
+          value: null, ok: false,
+          reason: `bb_bandwidth_pctile(${len}) is unavailable — it needs a BB(20,2) bandwidth on at least `
+            + `20 closes and at least 60 bandwidth readings inside the ${len}-bar window; have ${closes.length} bars`,
+        };
+      }
+      return { value: v, ok: true };
+    }
+    if (name === 'volume_ratio') {
+      const v = volumeRatio(ctx.bars || [], len);
+      if (v == null) {
+        return {
+          value: null, ok: false,
+          reason: `volume_ratio(${len}) is unavailable — it needs ${len} PRIOR bars carrying volume `
+            + `(the current bar is excluded from its own baseline); have ${(ctx.bars || []).length} bars`,
+        };
+      }
+      return { value: v, ok: true };
     }
 
     let v = null;
