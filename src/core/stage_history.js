@@ -884,6 +884,52 @@ export async function drawStageHistory(plan, group, put, drawShape) {
  * exposed for this reason, and ALL THREE modes are reported. Read the one that
  * matches the clause you are quoting.
  */
+/**
+ * The forward test the owner licensed ("if you find better ones based on data
+ * you can adjust them"), run 2026-08-02 with the decision rule stated BEFORE
+ * the data was seen. scripts/cycle-forward-test.js re-runs it.
+ */
+export const CYCLE_FORWARD_TEST = Object.freeze({
+  run: '2026-08-02',
+  method: 'triple-barrier (2x ATR profit / 1x / 20 bars), direction-matched baselines, '
+    + 'identical to STAGE_FORWARD_TEST so the two are comparable. In-sample: the stage test\'s '
+    + 'own 90 symbols. Holdout: 55 disjoint names, dual classes deduped.',
+  grid: '27 threshold configs (spike 1.25/1.5/2.0 x base-pctile 25/33/40 x fade 0.7/0.8/0.9), '
+    + 'columns computed once per symbol — the sweep split doing its job.',
+  decision_rule: 'adopt over the owner config only if in-sample delta beats it by >= 2pp at z >= 2.5 '
+    + '(the best of 27 nulls sits near 2.5, so the bar is the multiplicity, not zero) AND holdout '
+    + 'delta > 0 at z >= 1.5.',
+  verdict: 'NO CONFIG PASSED. The owner defaults stand.',
+  owner_config: Object.freeze({
+    in_sample: { long: { events: 41, independent: 41, win_pct: 37.5, baseline_pct: 36.5, delta_pp: 1.0, z: 0.14 },
+      short: { events: 36, independent: 35, win_pct: 22.2, baseline_pct: 30.4, delta_pp: -8.2, z: -1.07 } },
+    holdout: { long: { independent: 22, delta_pp: 11.7, z: 1.15 }, short: { delta_pp: 14.4, z: 1.73 } },
+  }),
+  best_config: Object.freeze({
+    config: { spike_mult: 2.0, base_pctile_max: 25, fade_ratio: 0.7 },
+    in_sample: { long: { independent: 19, delta_pp: 7.9, z: 0.70 } },
+    holdout: { long: { independent: 11, delta_pp: 29.8, z: 2.09 } },
+    why_not_adopted: 'z 0.70 in-sample on 19 events is noise-compatible and fails the rule at clause (b); '
+      + 'a 29.8pp holdout delta on ELEVEN events is the size of sample the rule exists to distrust.',
+  }),
+  reading: 'At the SWING horizon (20-bar barriers) the entry is indistinguishable from the direction-matched '
+    + 'baseline — +1.0pp at z 0.14 — which is consistent with everything measured in this repo: below ~21 '
+    + 'trading days continuation setups do not pay. The SHORT arm (base breakdown) flipped sign across arms '
+    + '(-8.2 in-sample, +14.4 holdout) on samples too small for either to mean anything. THE SYSTEM\'S OWN '
+    + 'HORIZON — weeks to months — is untestable on the ~300 bars the chart serves: a 60-bar hold leaves at '
+    + 'most ~5 independent events per symbol and the entry fires ~0.5 times per symbol per 14 months. So the '
+    + 'honest status is: descriptive machine, entry unpaid at swing horizon, monthly horizon UNTESTED (not '
+    + 'refuted), defaults unvalidated-but-standing.',
+  heartbeat_corollary: Object.freeze({
+    hypothesis: 'the longer the base, the stronger the breakout (owner; Weinstein big-base-big-move)',
+    quartiles_win_pct: Object.freeze({ 'Q1 5-95 bars': 40, 'Q2 95-102': 30, 'Q3 102-142': 30, 'Q4 144-192': 50 }),
+    n_per_quartile: 10,
+    verdict: 'UNDECIDED. Q4 (the longest bases) wins most, which leans the owner\'s way, but the middle sags '
+      + 'and ten events per bucket carries ~15pp of noise. Needs more history, not more thresholds.',
+  }),
+  reproduce: 'node scripts/cycle-forward-test.js',
+});
+
 export const CYCLE_NOISE_BASELINE = Object.freeze({
   status: 'MEASURED',
   walks: 200,

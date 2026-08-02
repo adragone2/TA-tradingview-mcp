@@ -3,7 +3,7 @@
   "_readme": [
     "THE strategy catalogue. Tracked in git, unlike rules.json which holds the owner's own criteria.",
     "strategy_list / strategy_check / strategy_scan read this AND rules.json; rules.json wins on a name clash.",
-    "docs/strategies.md is GENERATED from this file — run: node scripts/gen-strategies-doc.js",
+    "docs/strategies.md is GENERATED from this file \u2014 run: node scripts/gen-strategies-doc.js",
     "Every entry carries an evidence tier and the measurement behind it. A strategy with no edge is still",
     "listed, marked REJECTED, so nobody rediscovers it and believes it is new."
   ],
@@ -24,7 +24,7 @@
         10
       ],
       "closes_by": "within two trading weeks",
-      "horizon_evidence": "THE REVERSAL ZONE. Below ~21 trading days the documented effect is REVERSAL, not continuation (see docs/swing-evidence-review.md, docs/strategy-horizons.md). Any CONTINUATION setup placed here is fighting its own horizon — that includes breakouts, flags, triangles and VCP. Run horizon_prior before acting."
+      "horizon_evidence": "THE REVERSAL ZONE. Below ~21 trading days the documented effect is REVERSAL, not continuation (see docs/swing-evidence-review.md, docs/strategy-horizons.md). Any CONTINUATION setup placed here is fighting its own horizon \u2014 that includes breakouts, flags, triangles and VCP. Run horizon_prior before acting."
     },
     "monthly": {
       "label": "Monthly",
@@ -33,13 +33,13 @@
         252
       ],
       "closes_by": "a month or more, rebalanced monthly",
-      "horizon_evidence": "Partly the CONTESTED GAP. Continuation evidence only begins around ~63 trading days; 11 to 63 days has neither documented effect. Everything Tier A in this repo was measured at monthly cadence or longer, so this is where the evidence lives — but only past ~63 days."
+      "horizon_evidence": "Partly the CONTESTED GAP. Continuation evidence only begins around ~63 trading days; 11 to 63 days has neither documented effect. Everything Tier A in this repo was measured at monthly cadence or longer, so this is where the evidence lives \u2014 but only past ~63 days."
     }
   },
   "evidence_tiers": {
     "A": "Replicated in peer-reviewed work across many instruments, and survives costs at its stated cadence.",
     "B": "One good study, or a measured zero noise floor, but no return evidence at this repo's cadence.",
-    "C": "Practitioner source only. No measurement here either way — treat as a hypothesis.",
+    "C": "Practitioner source only. No measurement here either way \u2014 treat as a hypothesis.",
     "REJECTED": "Measured in this repo and found to have no edge over its own null. Listed so it is not rediscovered."
   },
   "strategies": {
@@ -51,7 +51,7 @@
       "evidence": "Moskowitz, Ooi & Pedersen (2012): 12-month lookback positive and significant for EVERY one of 58 futures over 25+ years. Composite Sharpe 1.28 vs 0.38 buy-and-hold.",
       "evidence_caveat": "A PORTFOLIO result on 58 diversified futures. Applied to ONE equity it retains ~13% of its information ratio (IR = IC x sqrt(breadth)) and would take ~136 years to prove. Run edge_breadth before quoting the Sharpe.",
       "screener": "morning-screen:tier_a_factors + screens:rs_leadership",
-      "screener_note": "tier_a_factors is the MONTHLY cross-sectional sort this was measured as, and remains the primary route. screens:rs_leadership is the same idea reachable on a daily screen — Perf.Y > 10 and Perf.3M > 5, within 15% of the 52-week high. It was added because rs_leadership was the only screen in the run pointing at NO strategy: the execution tier comes from the strategy, so its survivors classified as null and were dropped from the watchlist without a word.",
+      "screener_note": "tier_a_factors is the MONTHLY cross-sectional sort this was measured as, and remains the primary route. screens:rs_leadership is the same idea reachable on a daily screen \u2014 Perf.Y > 10 and Perf.3M > 5, within 15% of the 52-week high. It was added because rs_leadership was the only screen in the run pointing at NO strategy: the execution tier comes from the strategy, so its survivors classified as null and were dropped from the watchlist without a word.",
       "criteria": [
         {
           "left": "close",
@@ -68,7 +68,7 @@
       ],
       "criteria_note": "The 12-month return itself is not an OPERAND, so these criteria are a proxy gate. momentum_read computes the real thing across 12m/6m/3m/1m and reports whether the horizons AGREE.",
       "entry": "Monthly rebalance. Long the top decile of 12-month return, skipping the most recent month (the skip exists because the sub-21-day window is the reversal zone).",
-      "exit": "Monthly rerank. Exit when the name leaves the entry band — use the hysteresis exit, not a hard rank cut.",
+      "exit": "Monthly rerank. Exit when the name leaves the entry band \u2014 use the hysteresis exit, not a hard rank cut.",
       "exit_reason_keys": [
         "time_elapsed",
         "trend_broken"
@@ -119,14 +119,14 @@
       "direction": "long",
       "evidence_tier": "A",
       "evidence": "Avramov, Kaplanski & Subrahmanyam (2021): ~9% annualised, INCREMENTAL to both momentum and the 52-week high, survives institutional trading costs. Stronger on the long side.",
-      "evidence_caveat": "A monthly cross-sectional STATE, not a crossover trigger. Reranking daily is 252 round trips a year — 50.4% drag at 20bps, 5.6x the whole effect. cadence.js enforces the monthly clock.",
+      "evidence_caveat": "A monthly cross-sectional STATE, not a crossover trigger. Reranking daily is 252 round trips a year \u2014 50.4% drag at 20bps, 5.6x the whole effect. cadence.js enforces the monthly clock.",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
         {
           "left": "sma(21)",
           "op": ">",
           "right": "sma(200)",
-          "note": "short average above long — the MAD state"
+          "note": "short average above long \u2014 the MAD state"
         },
         {
           "left": "close",
@@ -242,7 +242,7 @@
       "direction": "long",
       "evidence_tier": "B",
       "evidence": "Gervais, Kaniel & Mingelgrin (2001): unusually high volume predicts higher returns over roughly the following month.",
-      "evidence_caveat": "Measured as a MONTHLY sort, not as same-day breakout confirmation. Also: relative_volume_10d_calc from the TV scanner is the least trustworthy server-side field pre-open, so this factor is SUPPRESSED before the open — see scannerTrust().",
+      "evidence_caveat": "Measured as a MONTHLY sort, not as same-day breakout confirmation. Also: relative_volume_10d_calc from the TV scanner is the least trustworthy server-side field pre-open, so this factor is SUPPRESSED before the open \u2014 see scannerTrust().",
       "screener": "morning-screen:tier_a_factors",
       "criteria": [
         {
@@ -254,7 +254,7 @@
           "left": "rvol",
           "op": ">",
           "right": 1.5,
-          "note": "intraday only — UNKNOWN on daily bars, which is correct"
+          "note": "intraday only \u2014 UNKNOWN on daily bars, which is correct"
         }
       ],
       "entry": "Monthly. Long names whose volume over the ranking window was unusually high relative to their own history.",
@@ -290,8 +290,8 @@
       "execution": "monthly",
       "direction": "long",
       "evidence_tier": "B",
-      "evidence": "Measured selectivity: ZERO detections across 200 random walks — one of only three detectors in this repo with a 0% noise floor (with springs/upthrusts and pennants).",
-      "evidence_caveat": "A 0% noise floor proves the detector is SELECTIVE, not that the setup is PROFITABLE. No return evidence at any cadence. And the breakout it sets up is a CONTINUATION bet — place it in monthly, not weekly.",
+      "evidence": "Measured selectivity: ZERO detections across 200 random walks \u2014 one of only three detectors in this repo with a 0% noise floor (with springs/upthrusts and pennants).",
+      "evidence_caveat": "A 0% noise floor proves the detector is SELECTIVE, not that the setup is PROFITABLE. No return evidence at any cadence. And the breakout it sets up is a CONTINUATION bet \u2014 place it in monthly, not weekly.",
       "screener": "screens:volatility_contraction",
       "criteria": [
         {
@@ -375,10 +375,10 @@
       "execution": "monthly",
       "direction": "long",
       "evidence_tier": "C",
-      "evidence": "Bulkowski ranks the cup with handle 3 of 39 — break-even failure 5%, average rise 54%, 61% meeting the price target, 62% throwback, over 913 perfect trades (thepatternsite.com/cup.html, read 2026-07-30). That is the best rank of any pattern this toolchain can detect. It is HIS measurement on patterns HE selected by eye, not a peer-reviewed study and not a measurement made here.",
-      "evidence_caveat": "OUR DETECTOR IS NOT SELECTIVE, and the rank makes that easy to miss. cup.js CUP_NOISE_BASELINE: a qualifying cup appears on 23.5% of 300-bar random walks — nearly one in four, at the length the workflow loads — against 0% for VCP, pennants and springs, and closer to breakout_check's 32.5%. The floor CLIMBS with series length (7/11/23.5/35% at 150/200/300/400 bars) because the detector reports the best of every rim PAIR and pairs grow quadratically; quote candidates_scored with any detection. It is also a BRACKET, not a point: 8-52% across defensible settings of the two thresholds Bulkowski declined to give (rim tolerance, U/V cut), and even the tightest of those leaves it at 8-13%. Bulkowski selected his 913 samples visually ('I visually inspected the cups', 'Use your own judgment'), so his rank describes a set a human picked and does not transfer to one this code picks. Three further gaps: the 54% average rise is measured to the ULTIMATE HIGH before a 20% reversal gross of costs and is NOT a target; the detector applies depth bounds he does not, so it is stricter than the sample his numbers came from; and the breakout is a CONTINUATION bet, which is why this sits in monthly and not weekly.",
+      "evidence": "Bulkowski ranks the cup with handle 3 of 39 \u2014 break-even failure 5%, average rise 54%, 61% meeting the price target, 62% throwback, over 913 perfect trades (thepatternsite.com/cup.html, read 2026-07-30). That is the best rank of any pattern this toolchain can detect. It is HIS measurement on patterns HE selected by eye, not a peer-reviewed study and not a measurement made here.",
+      "evidence_caveat": "OUR DETECTOR IS NOT SELECTIVE, and the rank makes that easy to miss. cup.js CUP_NOISE_BASELINE: a qualifying cup appears on 23.5% of 300-bar random walks \u2014 nearly one in four, at the length the workflow loads \u2014 against 0% for VCP, pennants and springs, and closer to breakout_check's 32.5%. The floor CLIMBS with series length (7/11/23.5/35% at 150/200/300/400 bars) because the detector reports the best of every rim PAIR and pairs grow quadratically; quote candidates_scored with any detection. It is also a BRACKET, not a point: 8-52% across defensible settings of the two thresholds Bulkowski declined to give (rim tolerance, U/V cut), and even the tightest of those leaves it at 8-13%. Bulkowski selected his 913 samples visually ('I visually inspected the cups', 'Use your own judgment'), so his rank describes a set a human picked and does not transfer to one this code picks. Three further gaps: the 54% average rise is measured to the ULTIMATE HIGH before a 20% reversal gross of costs and is NOT a target; the detector applies depth bounds he does not, so it is stricter than the sample his numbers came from; and the breakout is a CONTINUATION bet, which is why this sits in monthly and not weekly.",
       "screener": "screens:near_52w_high",
-      "screener_note": "The closest of the eight swing screens, and it works because a cup COMPLETES at its right lip: price is back at the high it left, which is exactly what off-high <= 5% selects, and RSI 45-70 spans both a rim push and a handle pullback. The limit is real and stated: that 5% band only surfaces cups whose HANDLE is shallower than 5% off the 52-week high, while a Bulkowski-legal handle may retrace to the cup midpoint — on a 25% cup that is 12.5% off the high, two and a half times the band. So this screen finds tight-handled and already-breaking-out cups and misses deep-handled ones. `breakout` is worse (off-high <= 3%, RSI 55-80, which a handle pullback fails on both counts) and `momentum_pullback` is worse again (RSI 35-55 and Perf.1M in -15/+5 would drop a cup that has already recovered to its rim).",
+      "screener_note": "The closest of the eight swing screens, and it works because a cup COMPLETES at its right lip: price is back at the high it left, which is exactly what off-high <= 5% selects, and RSI 45-70 spans both a rim push and a handle pullback. The limit is real and stated: that 5% band only surfaces cups whose HANDLE is shallower than 5% off the 52-week high, while a Bulkowski-legal handle may retrace to the cup midpoint \u2014 on a 25% cup that is 12.5% off the high, two and a half times the band. So this screen finds tight-handled and already-breaking-out cups and misses deep-handled ones. `breakout` is worse (off-high <= 3%, RSI 55-80, which a handle pullback fails on both counts) and `momentum_pullback` is worse again (RSI 35-55 and Perf.1M in -15/+5 would drop a cup that has already recovered to its rim).",
       "criteria": [
         {
           "left": "close",
@@ -403,9 +403,9 @@
           "note": "the handle is a shallow pause off the rim, never half the cup"
         }
       ],
-      "criteria_note": "The cup GEOMETRY is not expressible as operands — rim tolerance, U-shape and handle position all need the bar series, and patterns_detect computes them via src/core/cup.js. These four criteria gate the CONTEXT the geometry has to sit in, and every one of them is machine-checkable: close, sma(200), sma(50) and sma_slope(50) are OPERANDS, and pullback_pct is supplied by buildStructureContext. The shape itself comes from detectCup, which names the failing clause on a near miss.",
+      "criteria_note": "The cup GEOMETRY is not expressible as operands \u2014 rim tolerance, U-shape and handle position all need the bar series, and patterns_detect computes them via src/core/cup.js. These four criteria gate the CONTEXT the geometry has to sit in, and every one of them is machine-checkable: close, sma(200), sma(50) and sma_slope(50) are OPERANDS, and pullback_pct is supplied by buildStructureContext. The shape itself comes from detectCup, which names the failing clause on a near miss.",
       "entry": "A CLOSE above the right cup lip. Bulkowski's own handle definition is 'the distance from the right cup lip to the breakout', so the lip is both the completion level and the entry. Do not anticipate it: a forming cup is a hypothesis, and 23.5% of 300-bar random walks have one.",
-      "exit": "Stop below the handle low — which by definition sits in the upper half of the cup, so the risk is bounded by construction. Targets: HALF the cup height is Bulkowski's own recommendation and is reached 76% of the time in a bull market; the full height is reached only 50%. Trail with pivot_trail once a higher high confirms, but run stopping_premium first — a trail is a bet on persistence.",
+      "exit": "Stop below the handle low \u2014 which by definition sits in the upper half of the cup, so the risk is bounded by construction. Targets: HALF the cup height is Bulkowski's own recommendation and is reached 76% of the time in a bull market; the full height is reached only 50%. Trail with pivot_trail once a higher high confirms, but run stopping_premium first \u2014 a trail is a bet on persistence.",
       "exit_reason_keys": [
         "stop_hit",
         "target_hit",
@@ -432,7 +432,7 @@
           "label": "Volume"
         }
       ],
-      "indicators_note": "Within the chart budget with NOTHING to add: the Moving Average Ribbon already plots SMA 50 and SMA 200, and Volume is permanent, so chart_indicators_for_strategy has no work to do here. Volume is listed because the handle dry-up and the breakout expansion are worth SEEING even though cup.js keeps both out of the verdict — the synthetic null has flat volume, so a volume clause there would be decided by the fixture.",
+      "indicators_note": "Within the chart budget with NOTHING to add: the Moving Average Ribbon already plots SMA 50 and SMA 200, and Volume is permanent, so chart_indicators_for_strategy has no work to do here. Volume is listed because the handle dry-up and the breakout expansion are worth SEEING even though cup.js keeps both out of the verdict \u2014 the synthetic null has flat volume, so a volume clause there would be decided by the fixture.",
       "skills": [
         "chart-patterns",
         "market-structure",
@@ -460,7 +460,7 @@
       "direction": "long",
       "evidence_tier": "B",
       "evidence": "Nagel (2012): short-term reversal as compensation for providing liquidity. This is the one documented effect that BELONGS in the 2-10 day window rather than fighting it.",
-      "evidence_caveat": "CONDITIONAL. It 'earns essentially nothing unconditionally' — it is only active when VIX is elevated. tier_a_factors keeps it INACTIVE otherwise, and that gate is the strategy.",
+      "evidence_caveat": "CONDITIONAL. It 'earns essentially nothing unconditionally' \u2014 it is only active when VIX is elevated. tier_a_factors keeps it INACTIVE otherwise, and that gate is the strategy.",
       "screener": "screens:short_term_reversal (+ morning-screen:tier_a_factors for the VIX gate)",
       "criteria": [
         {
@@ -477,7 +477,7 @@
         }
       ],
       "entry": "Only when VIX is elevated. Buy the biggest short-horizon losers that are still above their long-term trend.",
-      "exit": "2 to 10 days, on mean reversion or the time stop — whichever comes first.",
+      "exit": "2 to 10 days, on mean reversion or the time stop \u2014 whichever comes first.",
       "exit_reason_keys": [
         "target_hit",
         "time_elapsed",
@@ -502,7 +502,7 @@
           "study": null,
           "label": "Volatility Index (external)",
           "external": true,
-          "note": "Not a TradingView study — supply from another source."
+          "note": "Not a TradingView study \u2014 supply from another source."
         }
       ],
       "skills": [
@@ -526,7 +526,7 @@
       "execution": "weekly",
       "direction": "long",
       "evidence_tier": "B",
-      "evidence": "Measured: ZERO detections across 200 random walks. The definition is what earns that — price must trade BEYOND the boundary and CLOSE back inside.",
+      "evidence": "Measured: ZERO detections across 200 random walks. The definition is what earns that \u2014 price must trade BEYOND the boundary and CLOSE back inside.",
       "evidence_caveat": "A wick below support with a close still below is a BREAKDOWN, not a spring. wyckoff_spring returns those separately as unconfirmed, never mixed in. Note wyckoff_phase is the opposite: it fires on 100% of random walks because it never abstains, so a PHASE is descriptive and only the spring is selective. No return evidence.",
       "screener": "screens:structural_reversal",
       "criteria": [
@@ -534,7 +534,7 @@
           "left": "close",
           "op": ">",
           "right": "low",
-          "note": "reclaim — the close must be back inside"
+          "note": "reclaim \u2014 the close must be back inside"
         },
         {
           "left": "nearest_level_distance_pct",
@@ -684,7 +684,7 @@
       "direction": "long",
       "evidence_tier": "C",
       "evidence": "No positive measurement. breakout_check applies 5 measurements and its noise floor is 32.5% on random walks (17.5% passing 3+ checks), so a bare breakout is close to a coin flip.",
-      "evidence_caveat": "A CONTINUATION bet at the horizon where continuation is weakest. Also: the TOUCH COUNT of the level carries nothing — the break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3. 'Tested three times so it is strong' is unsupported in both directions.",
+      "evidence_caveat": "A CONTINUATION bet at the horizon where continuation is weakest. Also: the TOUCH COUNT of the level carries nothing \u2014 the break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3. 'Tested three times so it is strong' is unsupported in both directions.",
       "screener": "screens:breakout",
       "criteria": [
         {
@@ -703,7 +703,7 @@
           "right": "ema(8)"
         }
       ],
-      "entry": "A CLOSE beyond the level, with volume at least normal for the period. Shannon is explicit that volume CONFIRMS and never triggers — waiting for expansion produces late entries.",
+      "entry": "A CLOSE beyond the level, with volume at least normal for the period. Shannon is explicit that volume CONFIRMS and never triggers \u2014 waiting for expansion produces late entries.",
       "exit": "Reclaimed next bar means it failed. Stop just beyond the broken level; measured move as the first target.",
       "exit_reason_keys": [
         "stop_hit",
@@ -826,7 +826,7 @@
         "max_risk_per_trade",
         "max_daily_loss"
       ],
-      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
+      "screener_note": "The intraday tier previously had NO screener \u2014 the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "vwap_reclaim": {
       "label": "VWAP reclaim continuation (lightning bolt)",
@@ -884,7 +884,7 @@
         "max_risk_per_trade",
         "max_daily_loss"
       ],
-      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
+      "screener_note": "The intraday tier previously had NO screener \u2014 the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "parabolic_fade": {
       "label": "Parabolic reversal (fade to the 9 EMA)",
@@ -892,9 +892,9 @@
       "direction": "short",
       "evidence_tier": "C",
       "evidence": "Practitioner source. No measurement.",
-      "evidence_caveat": "A counter-trend short. Shannon's rule is that shorts in an uptrend carry 'much higher' risk, and a squeeze can be violent — check short_interest and shorts_position first, since squeeze fuel needs shorts who are LOSING.",
+      "evidence_caveat": "A counter-trend short. Shannon's rule is that shorts in an uptrend carry 'much higher' risk, and a squeeze can be violent \u2014 check short_interest and shorts_position first, since squeeze fuel needs shorts who are LOSING.",
       "screener": "intraday_screens:intraday_extension",
-      "screener_note_2": "Moved off intraday_screens:premarket_gap. A gapper and a name extended above its fast average are different populations — the same defect the catalogue already records for breakout_continuation pointed at momentum_pullback (measured ZERO shared candidates). Worse here: premarket_gap is pre-open ONLY, so the whole intraday tier could populate for at most two hours a day. intraday_extension is this strategy's OWN criteria — rsi(14) > 75 and price >= ema(9)*1.05 — run against daily scanner fields, with EMA10 standing in for EMA9 because the scanner has no EMA9. opening_range_break and vwap_reclaim stay on premarket_gap: their criteria need minutes_since_open, vwap and rvol, none of which exist before the open, so an in-play gap list is the only thing a pre-open screen can honestly give them.",
+      "screener_note_2": "Moved off intraday_screens:premarket_gap. A gapper and a name extended above its fast average are different populations \u2014 the same defect the catalogue already records for breakout_continuation pointed at momentum_pullback (measured ZERO shared candidates). Worse here: premarket_gap is pre-open ONLY, so the whole intraday tier could populate for at most two hours a day. intraday_extension is this strategy's OWN criteria \u2014 rsi(14) > 75 and price >= ema(9)*1.05 \u2014 run against daily scanner fields, with EMA10 standing in for EMA9 because the scanner has no EMA9. opening_range_break and vwap_reclaim stay on premarket_gap: their criteria need minutes_since_open, vwap and rvol, none of which exist before the open, so an in-play gap list is the only thing a pre-open screen can honestly give them.",
       "criteria": [
         {
           "left": "price",
@@ -949,16 +949,16 @@
         "max_risk_per_trade",
         "max_daily_loss"
       ],
-      "screener_note": "The intraday tier previously had NO screener — the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
+      "screener_note": "The intraday tier previously had NO screener \u2014 the catalogue claimed intraday setups cannot be screened from daily bars, which was wrong. The scanner returns gap, premarket_change and premarket_volume, so a pre-open watchlist is buildable. premarket_gap lives in INTRADAY_SCREENS rather than SCREENS on purpose: SCREENS feed a confluence merge that allocates 15 continuation and 5 reversal slots to a SWING watchlist, and an intraday gap list would take slots from it. It runs PRE-OPEN ONLY and does not rank on relative_volume_10d_calc, which is unsafe then."
     },
     "REJECTED_candlestick_reversal": {
       "label": "Candlestick reversal patterns",
       "execution": "weekly",
       "direction": "long",
       "evidence_tier": "REJECTED",
-      "evidence": "FAILED TWO INDEPENDENT ACADEMIC TESTS. Marshall, Young & Rose (2006, DJIA, random-OHLC bootstrap) and Marshall, Young & Cahan (2008, Tokyo 1975-2004) both found no value — in any sub-period, bull or bear.",
+      "evidence": "FAILED TWO INDEPENDENT ACADEMIC TESTS. Marshall, Young & Rose (2006, DJIA, random-OHLC bootstrap) and Marshall, Young & Cahan (2008, Tokyo 1975-2004) both found no value \u2014 in any sub-period, bull or bear.",
       "evidence_caveat": "Report a candle as a DESCRIPTION of what the bar did, never as a signal. candle_read exists for that and says so.",
-      "screener": "none — do not screen for this",
+      "screener": "none \u2014 do not screen for this",
       "criteria": [],
       "entry": "Do not trade this as a standalone signal.",
       "exit": "n/a",
@@ -976,7 +976,7 @@
       "execution": "weekly",
       "direction": "long",
       "evidence_tier": "REJECTED",
-      "evidence": "Measured noise floor 99.5% — zones appear on essentially every random walk. A zone alone distinguishes nothing.",
+      "evidence": "Measured noise floor 99.5% \u2014 zones appear on essentially every random walk. A zone alone distinguishes nothing.",
       "evidence_caveat": "zones_find is still useful for CONFLUENCE: quote the agreement count, never a lone zone. The 'unfilled orders' explanation is explicitly refused as evidence in the tool output.",
       "screener": "none as a standalone",
       "criteria": [],
@@ -1041,7 +1041,7 @@
       "direction": "long",
       "evidence_tier": "REJECTED",
       "evidence": "FORWARD-TESTED NEGATIVE. Triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline: long 33.5% vs 36.4%, short 21.2% vs 28.9%. Four configurations, none favouring the gate.",
-      "evidence_caveat": "Coherent rather than surprising: Stage 2 requires price above three rising stacked averages, which describes a move that ALREADY happened, and below ~21 days the effect is reversal. stage_plan is still useful to impose the universe restriction and to describe alignment — it abstains on 54% of random walks where wyckoff_phase abstains on none. It is not an edge.",
+      "evidence_caveat": "Coherent rather than surprising: Stage 2 requires price above three rising stacked averages, which describes a move that ALREADY happened, and below ~21 days the effect is reversal. stage_plan is still useful to impose the universe restriction and to describe alignment \u2014 it abstains on 54% of random walks where wyckoff_phase abstains on none. It is not an edge.",
       "screener": "none as an edge",
       "criteria": [],
       "entry": "Do not enter because the gate is open. Use it to EXCLUDE, never to justify.",
@@ -1084,7 +1084,7 @@
       "execution": "weekly",
       "direction": "long",
       "evidence_tier": "REJECTED",
-      "evidence": "Measured null in BOTH directions. The break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3 — more tests just means more exposure.",
+      "evidence": "Measured null in BOTH directions. The break hazard rises 4.5-21.2 points across real arms where a random walk rises 40.3 \u2014 more tests just means more exposure.",
       "evidence_caveat": "The pressure clause (interim retreat extremes moving toward the level) looked strong in sample at +39.1 points, z = 3.96, and collapsed to +4.6 at z = 0.73 on a FRESH universe with MORE data. level_pressure describes the approach; it does not forecast the break.",
       "screener": "none",
       "criteria": [],
@@ -1104,7 +1104,7 @@
       "execution": "weekly",
       "direction": "long",
       "evidence_tier": "REJECTED",
-      "evidence": "A narrow range IS followed by a wider one 76.4% of the time on real data — and 80.2% on a random walk, against a 50% base in both. Real data shows LESS lift than noise.",
+      "evidence": "A narrow range IS followed by a wider one 76.4% of the time on real data \u2014 and 80.2% on a random walk, against a 50% base in both. Real data shows LESS lift than noise.",
       "evidence_caveat": "volatility_state implements 2BNR/3BNR/4BNR/8BNR as a volatility STATE with the floor attached. Every pattern in it fires on 100% of random walks. Useful for saying 'coiled'; never for saying 'about to break, and upward'.",
       "screener": "screens:volatility_contraction",
       "criteria": [],
@@ -1137,7 +1137,7 @@
       "direction": "long",
       "evidence_tier": "C",
       "evidence": "Livermore's Discovery 1 and 2: trade only the leaders, and group movement is the key to individual stock movement. \"If you cannot make money out of the leading active issues, you are not going to make money out of the stock market.\" No measurement of the LEADER-selection part here either way.",
-      "evidence_caveat": "The group-CONFIRMATION half of his rule was measured and FAILED — see REJECTED_tandem_confirmation. What survives untested is the narrower idea of preferring the largest name in a strong group over a laggard. Source is a biographer's reconstruction, n = 1 trader, 1890s-1930s, and Livermore went bankrupt four times.",
+      "evidence_caveat": "The group-CONFIRMATION half of his rule was measured and FAILED \u2014 see REJECTED_tandem_confirmation. What survives untested is the narrower idea of preferring the largest name in a strong group over a laggard. Source is a biographer's reconstruction, n = 1 trader, 1890s-1930s, and Livermore went bankrupt four times.",
       "screener": "screens:group_leadership",
       "criteria": [
         {
@@ -1157,8 +1157,8 @@
           "right": "sma(50)"
         }
       ],
-      "criteria_note": "Group membership and leadership are not OPERANDS — they come from group_context, which resolves them from the scanner's industry field. The criteria here gate the individual name only.",
-      "entry": "Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm — that filter was measured and hurts.",
+      "criteria_note": "Group membership and leadership are not OPERANDS \u2014 they come from group_context, which resolves them from the scanner's industry field. The criteria here gate the individual name only.",
+      "entry": "Long the largest-cap name in a group whose median member move is positive. Prefer a leader over a laggard: 'don't play in the junkyard with the weaker stocks.' Do NOT require the sister stock to confirm \u2014 that filter was measured and hurts.",
       "exit": "Monthly rerank, or when the name's own trend breaks. His hard rule: never lose more than 10% of the capital committed to a trade, and never average down.",
       "exit_reason_keys": [
         "time_elapsed",
@@ -1209,16 +1209,16 @@
       "execution": "monthly",
       "direction": "long",
       "evidence_tier": "C",
-      "evidence": "THE OWNER'S OWN CRITERIA (2026-07-31), rendered as data. Their four-state cycle: BASE is sideways (Bollinger-bandwidth percentile <= 33); ACCUMULATION is the ENTRY — a buying volume spike >= 1.5x AND a breakout above the base's high AND a positive 150-SMA slope; DISTRIBUTION is the EXIT — volume fading (recent mean < 0.8x the trailing 120-day mean) with the 150-SMA flattening; DECLINING is a negative 150-SMA slope with a selling volume spike. The lineage is Weinstein, Secrets for Profiting in Bull and Bear Markets (1988) — the 30-WEEK average, ~150 daily bars — with volume and volatility clauses the owner has made numeric. src/core/stage_history.js implements it; stage_history and stage_draw are the tools. UNTESTED HERE at its own horizon: nothing in this repo has measured a weeks-to-months hold on it, and no return evidence is claimed.",
-      "evidence_caveat": "TWO NUMBERS TO CARRY, AND BOTH CUT AGAINST OPTIMISM. (1) THE MEASURED NOISE FLOOR: over 200 random walks at 600 bars, the ACCUMULATION state — the entry signal itself — is reached by 43.0% of walks on dispersed volume and 52.5% with gap bars elevated (CYCLE_NOISE_BASELINE, node scripts/stage-cycle-noise.js). That is a HIGH floor — nearer a breakout of a prior high (32.5%) than to springs, VCP or pennants (0%) — so an ACCUMULATION reading on its own is close to a coin flip and must be quoted with the floor beside it. (2) READ THIS BESIDE REJECTED_stage_gate_as_edge, WHICH STAYS. That entry rejects SHANNON'S STAGE GATE AS A SWING-HORIZON EDGE, on a well-powered forward test: triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline on the same bars, long 33.5% vs 36.4% and short 21.2% vs 28.9%, four configurations and none favouring the gate. Its barriers were 20 and 40 BARS — a swing hold — and its classifier was Shannon's 10/20/50 triple, which reads no volume and no volatility. The owner's machine is a DIFFERENT CONSTRUCT on a different horizon and a different backbone, so that test does not refute it; equally, an untested variant of a refuted idea is not evidence for it. The honest word is UNTESTED. Also true: below ~21 trading days the documented effect is REVERSAL and continuation evidence only begins around ~63 days, which is why this is filed monthly; and every confirmation gate measured in this repo has failed. Run horizon_prior and edge_breadth before quoting anything.",
+      "evidence": "THE OWNER'S OWN CRITERIA (2026-07-31), rendered as data. Their four-state cycle: BASE is sideways (Bollinger-bandwidth percentile <= 33); ACCUMULATION is the ENTRY \u2014 a buying volume spike >= 1.5x AND a breakout above the base's high AND a positive 150-SMA slope; DISTRIBUTION is the EXIT \u2014 volume fading (recent mean < 0.8x the trailing 120-day mean) with the 150-SMA flattening; DECLINING is a negative 150-SMA slope with a selling volume spike. The lineage is Weinstein, Secrets for Profiting in Bull and Bear Markets (1988) \u2014 the 30-WEEK average, ~150 daily bars \u2014 with volume and volatility clauses the owner has made numeric. src/core/stage_history.js implements it; stage_history and stage_draw are the tools. FORWARD-TESTED 2026-08-02 AT THE SWING HORIZON, and the entry does not pay there: triple-barrier (2x/1x/20 bars) over the stage test's own 90 symbols, the entry's 41 independent events won 37.5% against a 36.5% direction-matched baseline (+1.0pp, z 0.14) - indistinguishable, consistent with the repo's sub-21-day rule. A 27-config sweep with the trial count carried found nothing passing the pre-stated rule (best in-sample z 0.70), so the owner's numbers STAND. The short arm (base breakdown) flipped sign across arms on tiny samples. THE SYSTEM'S OWN HORIZON - weeks to months - remains UNTESTED: a 60-bar hold on ~300 served bars leaves too few independent events, so untested is a data limit, not a verdict. The heartbeat corollary (longer base -> stronger breakout) read UNDECIDED: Q4 bases won most (50% vs 40/30/30) on ten events per bucket. CYCLE_FORWARD_TEST in stage_history.js carries every number; scripts/cycle-forward-test.js re-runs it. ",
+      "evidence_caveat": "TWO NUMBERS TO CARRY, AND BOTH CUT AGAINST OPTIMISM. (1) THE MEASURED NOISE FLOOR: over 200 random walks at 600 bars, the ACCUMULATION state \u2014 the entry signal itself \u2014 is reached by 43.0% of walks on dispersed volume and 52.5% with gap bars elevated (CYCLE_NOISE_BASELINE, node scripts/stage-cycle-noise.js). That is a HIGH floor \u2014 nearer a breakout of a prior high (32.5%) than to springs, VCP or pennants (0%) \u2014 so an ACCUMULATION reading on its own is close to a coin flip and must be quoted with the floor beside it. (2) READ THIS BESIDE REJECTED_stage_gate_as_edge, WHICH STAYS. That entry rejects SHANNON'S STAGE GATE AS A SWING-HORIZON EDGE, on a well-powered forward test: triple-barrier over 90 symbols with no lookahead, against a direction-matched baseline on the same bars, long 33.5% vs 36.4% and short 21.2% vs 28.9%, four configurations and none favouring the gate. Its barriers were 20 and 40 BARS \u2014 a swing hold \u2014 and its classifier was Shannon's 10/20/50 triple, which reads no volume and no volatility. The owner's machine is a DIFFERENT CONSTRUCT on a different horizon and a different backbone, so that test does not refute it; equally, an untested variant of a refuted idea is not evidence for it. The honest word is UNTESTED. Also true: below ~21 trading days the documented effect is REVERSAL and continuation evidence only begins around ~63 days, which is why this is filed monthly; and every confirmation gate measured in this repo has failed. Run horizon_prior and edge_breadth before quoting anything.",
       "screener": "screens:stage2_onset",
-      "screener_note": "The screen APPROXIMATES the owner's ENTRY state with scanner-safe fields, and the detector gives the verdict — stage 1 of the design in docs/screening.md. It states its own approximation: the TradingView scanner exposes SMA10/20/50/100/200 and NO SMA150, so it brackets the 30-week average with SMA100 and SMA200 (price above both, the 100 above the 200) and bounds the extension against the SMA200. It cannot see the base's own high, the Bollinger-bandwidth percentile or a per-bar volume spike either. stage_history runs the real machine on bars, and strategy_check evaluates the criteria below.",
+      "screener_note": "The screen APPROXIMATES the owner's ENTRY state with scanner-safe fields, and the detector gives the verdict \u2014 stage 1 of the design in docs/screening.md. It states its own approximation: the TradingView scanner exposes SMA10/20/50/100/200 and NO SMA150, so it brackets the 30-week average with SMA100 and SMA200 (price above both, the 100 above the 200) and bounds the extension against the SMA200. It cannot see the base's own high, the Bollinger-bandwidth percentile or a per-bar volume spike either. stage_history runs the real machine on bars, and strategy_check evaluates the criteria below.",
       "criteria": [
         {
           "left": "close",
           "op": ">",
           "right": "sma(150)",
-          "note": "the 30-week average in daily bars — the owner's backbone"
+          "note": "the 30-week average in daily bars \u2014 the owner's backbone"
         },
         {
           "left": "sma_slope(150)",
@@ -1230,13 +1230,13 @@
           "left": "volume_ratio(20)",
           "op": ">=",
           "right": 1.5,
-          "note": "the owner's volume spike, >= 1.5x the prior 20 bars. volume_ratio is the operand added for this machine — rvol is intraday-only, so a daily volume clause had none"
+          "note": "the owner's volume spike, >= 1.5x the prior 20 bars. volume_ratio is the operand added for this machine \u2014 rvol is intraday-only, so a daily volume clause had none"
         },
         {
           "left": "close",
           "op": ">",
           "right": "prev_day_close",
-          "note": "and a BUYING spike rather than a selling one — the machine's own sign convention, a bar that closed up on the prior close"
+          "note": "and a BUYING spike rather than a selling one \u2014 the machine's own sign convention, a bar that closed up on the prior close"
         },
         {
           "left": "close",
@@ -1245,9 +1245,9 @@
           "note": "the 200-day, used interchangeably with the 30-week in Weinstein-derived sources. Requiring both means an advance the intermediate and long averages agree on"
         }
       ],
-      "criteria_note": "FOUR THINGS ARE DELIBERATELY NOT FAKED AS CRITERIA. (1) The BREAKOUT is above the BASE SEGMENT'S OWN HIGH — the machine's own base, which only exists once the machine has run. It is a history question and stage_history answers it; a last-bar criteria check cannot. (2) The BASE PRECONDITION, bb_bandwidth_pctile(252) <= 33, is deliberately NOT asserted here: at the breakout bar the bandwidth is EXPANDING out of compression, so a clause that is true at the base is false at the trigger. The operand EXISTS (added with volume_ratio for this machine) so a base-scanning strategy can use it, and stage_history reports which state the machine is in. (3) Relative strength versus the S&P — Weinstein's Mansfield RS crossing zero — needs a second series; relative_strength answers it and assess() carries it as its own block. (4) Weinstein's 2-3x breakout volume is his number; the owner's is 1.5x, and the criterion above is the OWNER'S, with his in the prose entry. ONE MISMATCH WORTH KNOWING: the DSL's sma_slope(150) measures the 150-bar average's change over 150 BARS, while the machine measures it over 20 (slope_lookback, ours). Both are 'is it rising'; they are not the same number, the 150-bar version is the stricter test, and the machine is the authority. sma_slope(150) also needs ~300 bars, below which it is UNKNOWN — which makes the whole strategy unknown rather than failed.",
-      "entry": "The owner's ACCUMULATION state: a CLOSE above the base's own high on a buying volume spike of at least 1.5x the prior 20 bars, with the 150-day average sloping up. Weinstein's own multiple is 2-3x average volume, which is stricter than the owner's 1.5x — both are stated so neither is mistaken for the other. Big base, big move: the longer the base, the larger the expected advance. The breakout level often gets RETESTED — resistance turning support — and breakout_check reports that as `throwback.status`, which is a DESCRIPTION and not a sixth check: 58% of Bulkowski's 10,305 upward breakouts returned to the breakout price within 30 calendar days, so a throwback discriminates nothing on its own. Quote the arm (held at or above the level, 40% average rise, versus dropped below, 29%), never the bare rate. And quote the noise floor: this state is reached by 43-52% of random walks.",
-      "exit": "The owner's DISTRIBUTION state is the exit signal: volume fading — the recent 20-bar mean below 0.8x the trailing 120-day mean — with the 150-day average flattening. DECLINING (a negative 150-SMA slope with a selling volume spike) is the harder stop. stage_history reports which state the machine is in, when it entered, and whether the current state is `weakening` — at least one clause of an exit satisfied but not all. Note the measured asymmetry: DISTRIBUTION fires on only 1.5-3.5% of random walks, but that is because its fade clause fires on 0.2-0.5% of noise bars at all, NOT because it is selective about structure. A trailing stop via pivot_trail is a bet on persistence, so check stopping_premium before assuming it helps.",
+      "criteria_note": "FOUR THINGS ARE DELIBERATELY NOT FAKED AS CRITERIA. (1) The BREAKOUT is above the BASE SEGMENT'S OWN HIGH \u2014 the machine's own base, which only exists once the machine has run. It is a history question and stage_history answers it; a last-bar criteria check cannot. (2) The BASE PRECONDITION, bb_bandwidth_pctile(252) <= 33, is deliberately NOT asserted here: at the breakout bar the bandwidth is EXPANDING out of compression, so a clause that is true at the base is false at the trigger. The operand EXISTS (added with volume_ratio for this machine) so a base-scanning strategy can use it, and stage_history reports which state the machine is in. (3) Relative strength versus the S&P \u2014 Weinstein's Mansfield RS crossing zero \u2014 needs a second series; relative_strength answers it and assess() carries it as its own block. (4) Weinstein's 2-3x breakout volume is his number; the owner's is 1.5x, and the criterion above is the OWNER'S, with his in the prose entry. ONE MISMATCH WORTH KNOWING: the DSL's sma_slope(150) measures the 150-bar average's change over 150 BARS, while the machine measures it over 20 (slope_lookback, ours). Both are 'is it rising'; they are not the same number, the 150-bar version is the stricter test, and the machine is the authority. sma_slope(150) also needs ~300 bars, below which it is UNKNOWN \u2014 which makes the whole strategy unknown rather than failed.",
+      "entry": "The owner's ACCUMULATION state: a CLOSE above the base's own high on a buying volume spike of at least 1.5x the prior 20 bars, with the 150-day average sloping up. Weinstein's own multiple is 2-3x average volume, which is stricter than the owner's 1.5x \u2014 both are stated so neither is mistaken for the other. Big base, big move: the longer the base, the larger the expected advance. The breakout level often gets RETESTED \u2014 resistance turning support \u2014 and breakout_check reports that as `throwback.status`, which is a DESCRIPTION and not a sixth check: 58% of Bulkowski's 10,305 upward breakouts returned to the breakout price within 30 calendar days, so a throwback discriminates nothing on its own. Quote the arm (held at or above the level, 40% average rise, versus dropped below, 29%), never the bare rate. And quote the noise floor: this state is reached by 43-52% of random walks.",
+      "exit": "The owner's DISTRIBUTION state is the exit signal: volume fading \u2014 the recent 20-bar mean below 0.8x the trailing 120-day mean \u2014 with the 150-day average flattening. DECLINING (a negative 150-SMA slope with a selling volume spike) is the harder stop. stage_history reports which state the machine is in, when it entered, and whether the current state is `weakening` \u2014 at least one clause of an exit satisfied but not all. Note the measured asymmetry: DISTRIBUTION fires on only 1.5-3.5% of random walks, but that is because its fade clause fires on 0.2-0.5% of noise bars at all, NOT because it is selective about structure. A trailing stop via pivot_trail is a bet on persistence, so check stopping_premium before assuming it helps.",
       "exit_reason_keys": [
         "trend_broken",
         "ma_crossover",
@@ -1280,7 +1280,7 @@
           "external": true
         }
       ],
-      "indicators_note": "Only ONE of these has to be added. The chart budget is Volume plus the Moving Average Ribbon permanently and five studies maximum, and the Ribbon already plots SMA 50 and SMA 200 — so coveredByPermanent matches Volume and MA(200), and chart_indicators_for_strategy adds MA(150) alone. Mansfield RS is not a TradingView study under that name; relative_strength computes the equivalent.",
+      "indicators_note": "Only ONE of these has to be added. The chart budget is Volume plus the Moving Average Ribbon permanently and five studies maximum, and the Ribbon already plots SMA 50 and SMA 200 \u2014 so coveredByPermanent matches Volume and MA(200), and chart_indicators_for_strategy adds MA(150) alone. Mansfield RS is not a TradingView study under that name; relative_strength computes the equivalent.",
       "skills": [
         "market-structure",
         "risk-sizing",
@@ -1311,8 +1311,8 @@
       "direction": "long",
       "evidence_tier": "REJECTED",
       "evidence": "MEASURED NEGATIVE. Livermore ch. 11: \"There is danger of being caught in a false movement by depending upon only one stock.\" Tested over 14 S&P 500 industry groups on daily bars, new 40-bar closing high as the signal, triple-barrier forward labels, no lookahead: SOLO 544 signals / 91 independent / 30.9% win rate; TANDEM (sister stock also at a new high) 228 / 56 / 21.6%. Lift -9.3 points, z -2.57. Requiring confirmation discarded 58% of signals and made the survivors WORSE.",
-      "evidence_caveat": "A bug initially hid the size of this: GOOG and GOOGL were being used as a group's two leaders — one company, 57 of 57 tautological confirmations — which diluted the effect to -5.6 at z -1.64. Deduplicating share classes strengthened it. Coherent with the other failures here: requiring two large names in one group to break out within days selects for moves already extended and already correlated. THIRD confirmation gate measured in this repo, third to fail.",
-      "screener": "none — do not screen on this",
+      "evidence_caveat": "A bug initially hid the size of this: GOOG and GOOGL were being used as a group's two leaders \u2014 one company, 57 of 57 tautological confirmations \u2014 which diluted the effect to -5.6 at z -1.64. Deduplicating share classes strengthened it. Coherent with the other failures here: requiring two large names in one group to break out within days selects for moves already extended and already correlated. THIRD confirmation gate measured in this repo, third to fail.",
+      "screener": "none \u2014 do not screen on this",
       "criteria": [],
       "entry": "Do not require the sister stock to agree before entering. It costs most of your signals and does not improve the rest.",
       "exit": "n/a",
@@ -1326,5 +1326,5 @@
       "risk_rules": []
     }
   },
-  "_indicator_schema": "indicators is a list of {study, label, inputs?, external?, unverified?}. `study` is the name chart_manage_indicator passes to TradingView and it must be EXACT — verified against the live chart, \"Moving Average\" works and \"Simple Moving Average (50)\" does not, because the parenthesised period is not part of a study name. The period goes in `inputs.length`."
+  "_indicator_schema": "indicators is a list of {study, label, inputs?, external?, unverified?}. `study` is the name chart_manage_indicator passes to TradingView and it must be EXACT \u2014 verified against the live chart, \"Moving Average\" works and \"Simple Moving Average (50)\" does not, because the parenthesised period is not part of a study name. The period goes in `inputs.length`."
 }
