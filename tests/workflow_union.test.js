@@ -677,3 +677,45 @@ describe('sizing follows the owner\'s rule: the budget IS TA\'s max heat (2026-0
     assert.match(t, /EXCEEDS the remaining heat room/);
   });
 });
+
+describe('the cycle reaches the report AND the chart through the one drawer (2026-08-02)', () => {
+  /**
+   * The owner's four-claim check: scanner in the screens, cycle in the analysis,
+   * boundaries on the chart, all of it in the Sunday report. The last three are
+   * one wiring — a `cycle` section in the orchestrator, threaded into
+   * drawFindings, executed by the SAME stageDrawPlan/drawStageHistory pair the
+   * stage_draw tool uses. A second drawer beside the tool's would be the
+   * ticker_analyze hand-rolling defect again.
+   */
+  const t = src(ORCH);
+  const d = src('src/core/assessment_draw.js');
+
+  test('the orchestrator has a cycle section built from stageHistory(bars)', () => {
+    assert.match(t, /section\(results, 'cycle'/);
+    assert.match(t, /cycleHistory = stageHistory\(bars\)/);
+  });
+
+  test('the full readings stay LOCAL — the report gets the projection, not 300 rows per ticker', () => {
+    assert.match(t, /let cycleHistory = null/);
+    assert.match(t, /\(h\.transitions \|\| \[\]\)\.slice\(-6\)/,
+      'the section must project: last transitions, not the whole reading series');
+  });
+
+  test('the history is THREADED into drawFindings, and the drawer reuses the tool\'s own pair', () => {
+    assert.match(t, /cycle: cycleHistory/);
+    assert.match(d, /stageDrawPlan\(cycle, \{/);
+    assert.match(d, /drawStageHistory\(cyclePlan, group, put, drawing\.drawShape\)/,
+      'boundaries must go through the registered put/drawShape chain — same signatures, same registry');
+  });
+
+  test('the section carries its own floor and forward-test verdict in the payload', () => {
+    assert.match(t, /43-52% of random walks/);
+    assert.match(t, /unpaid at the swing horizon/,
+      'a state machine that reads as a signal without its measured floor is the stage_plan mistake again');
+  });
+
+  test('the contract row is advisory — an intraday 5-minute chart without a cycle is not a broken analysis', () => {
+    const c = src('src/core/analysis_contract.js');
+    assert.match(c, /key: 'cycle', required: false/);
+  });
+});

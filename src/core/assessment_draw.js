@@ -1155,6 +1155,17 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
    */
   earnings = null,
   /**
+   * The owner's cycle history (`stageHistory(bars)` result), or null.
+   *
+   * When present the drawer marks the LAST FEW boundaries (max 4 — an analysis
+   * chart is not the stage_draw tool, whose default is 12) and the current
+   * state, into the ANALYSIS group so they clear with everything else. The
+   * label grammar is the registered one; the plan and executor are
+   * `stageDrawPlan`/`drawStageHistory`, the same pair the tool uses — one
+   * drawer, two callers, zero duplication.
+   */
+  cycle = null,
+  /**
    * The fixed-range volume profile — OFF by default, on request.
    *
    * It is a pane-wide overlay rather than a level, so it goes on when someone
@@ -1857,6 +1868,42 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
     };
   } else if (earnings) {
     drawn.earnings = { drawn: false, why: earnPlan.why };
+  }
+
+  /**
+   * THE CYCLE BOUNDARIES — the owner's machine, drawn where the analysis draws.
+   *
+   * Same planner and executor as the stage_draw tool; the only differences are
+   * the group (this analysis's own, so it clears with the rest) and the cap
+   * (4 transitions — an analysis chart carries levels, patterns and plans, and
+   * twelve vertical lines through them is overprinting).
+   */
+  if (cycle) {
+    const { stageDrawPlan, drawStageHistory } = await import('./stage_history.js');
+    const cyclePlan = stageDrawPlan(cycle, {
+      series: 'trigger', max_transitions: 4, draw_current: true,
+      price: a.price ?? bars?.at(-1)?.close ?? null,
+      last_bar_time: lastBarTime,
+      // Ten-bar average, the same estimate the stage_draw tool uses — a single
+      // last-gap read lands on a weekend and calls a daily chart three-daily.
+      bar_seconds: (bars?.length ?? 0) > 11
+        ? Math.max(1, Math.round((bars.at(-1).time - bars.at(-11).time) / 10))
+        : 86400,
+      atr,
+    });
+    if (cyclePlan.shapes.length) {
+      const before = drawn.items.length;
+      await drawStageHistory(cyclePlan, group, put, drawing.drawShape);
+      drawn.cycle = {
+        boundaries: cyclePlan.shapes.filter((s) => s.kind === 'transition').length,
+        current: cycle.current?.state ?? null,
+        drawn: drawn.items.length - before,
+        ...(cyclePlan.skipped?.length ? { skipped: cyclePlan.skipped.length } : {}),
+        note: 'Boundaries, not signals — the entry state fires on 43-52% of random walks.',
+      };
+    } else {
+      drawn.cycle = { drawn: 0, current: cycle.current?.state ?? null, why: cyclePlan.why ?? 'no transition on this window — a series that held one state has no boundary to mark' };
+    }
   }
 
   /**

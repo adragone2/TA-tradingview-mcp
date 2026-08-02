@@ -490,6 +490,29 @@ export async function analyzeTicker({
   // flat stored value.
   await section(results, 'atr_trail', async () => stops.atrTrail(bars, { direction: verdict?.bias === 'BEARISH' ? 'short' : 'long' }));
   /**
+   * The OWNER'S cycle machine (2026-08-02): every analysis reports which state
+   * the chart is in and where the boundaries were, and the drawer marks them.
+   * Compact projection — the full readings stay in the stage_history tool.
+   * The entry state fires on 43-52% of random walks and the forward test found
+   * it unpaid at the swing horizon; both ride in the section so no reader can
+   * quote a state without its floor.
+   */
+  let cycleHistory = null; // full readings stay LOCAL — the report gets the projection
+  await section(results, 'cycle', async () => {
+    const { stageHistory } = await import('./stage_history.js');
+    cycleHistory = stageHistory(bars);
+    const h = cycleHistory;
+    return {
+      current: h.current ?? null,
+      transitions: (h.transitions || []).slice(-6),
+      occupancy: h.occupancy ?? null,
+      flicker_segments: h.flicker_segments ?? 0,
+      gate_current: h.gate?.current ?? null,
+      noise_floor: 'entry state on 43-52% of random walks (CYCLE_NOISE_BASELINE)',
+      forward_test: 'unpaid at the swing horizon (+1.0pp z 0.14, CYCLE_FORWARD_TEST); own weeks-to-months horizon untested — a data limit, not a verdict',
+    };
+  });
+  /**
    * Same review, same disease: `stagePlan` takes `{long_bars, short_bars}`,
    * and this call site passed the bars array positionally — destructuring an
    * array yields undefined everywhere, hence "got 0 bars" on 299-bar rows.
@@ -656,7 +679,9 @@ export async function analyzeTicker({
       // alerts on the live account that nothing here can delete, so the caller's
       // false — which is every caller that does not say otherwise — must reach
       // the drawer unchanged.
-      { clear_scope, bias: verdict?.bias ?? null, earnings: earningsForDraw, auto_alerts },
+      // `cycle` is the owner's machine history (2026-08-02): the drawer marks
+      // the last few boundaries and the current state in the analysis group.
+      { clear_scope, bias: verdict?.bias ?? null, cycle: cycleHistory, earnings: earningsForDraw, auto_alerts },
     ));
   } else {
     results.drawings = { ok: false, skipped: true, reason: 'draw was false' };

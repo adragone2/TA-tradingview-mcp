@@ -31,7 +31,7 @@ it produces lives under a single `analysis` key.
 
 | Key | What it is |
 |---|---|
-| `analysis.completeness` | Score against the 45-section contract. `complete`, `missing[]` with reasons, `not_applicable[]`. **A section that did not run is now reported rather than silently absent** — the property 1.0 lacked. |
+| `analysis.completeness` | Score against the 47-section contract. `complete`, `missing[]` with reasons, `not_applicable[]`. **A section that did not run is now reported rather than silently absent** — the property 1.0 lacked. |
 | `analysis.context.portfolio_heat` | Total risk across TA's whole book, sized against the book's own equity |
 | `analysis.context.position_and_calendar` | Held? Reporting soon? **This symbol's slice only** — `held`, `earnings`, `days_to_earnings`, `regime_stage`. TA's full context and macro regime are identical across the batch and are NOT repeated per ticker; call `ta_regime` for the full block. |
 | `analysis.context.benchmark` | `{symbol, bars, reused}` — the SPY *series* is not carried per ticker. `analysis.assessment.relative_strength` is the finding. |
@@ -66,7 +66,7 @@ A `failed` ticker still carries every key, with `analysis` and `ta_validation` `
   "excluded_from_review": [ { "ticker", "side", "kind", "why" } ],
   "ta_validation_summary": { "CONFIRMED", "MIXED", "DISPUTED", "CONTRADICTED", "NO_SIGNAL" },
   "our_bias_summary":      { "BULLISH", "NEUTRAL", "BEARISH" },
-  "completeness_summary":  { "complete": 46, "incomplete": 0 },   // NEW in 2.0
+  "completeness_summary":  { "complete": 47, "incomplete": 0 },   // NEW in 2.0
   "market_condition": {
     "regime_counts":          { "choppy": 54, "mixed": 4 },
     "choppy_share_pct":       93.1,
@@ -98,7 +98,7 @@ A `failed` ticker still carries every key, with `analysis` and `ta_validation` `
     "assessment":    { ... }, //   was `assessment` in 1.0 — 28 blocks
     "verdict":       { ... }, //   was `our_view`   in 1.0 — made BEFORE consulting TA
     "drawings":      { ... }, //   was `drawings`   in 1.0
-    "completeness":  { ... }, //   NEW — scored against the 45-section contract
+    "completeness":  { ... }, //   NEW — scored against the 47-section contract
     "context":       { ... }, //   NEW — portfolio_heat, short_interest, pivot_trail, luld_band, ...
     "entry_hypothesis": {...},//   NEW — forward entry, both directions
     "primary_levels": [ ... ] //   NEW — swing-anchored support and resistance
@@ -305,3 +305,10 @@ Three additions, all ADDITIVE — nothing existing moved or renamed:
 - **`analysis.context.atr_trail`** — the chandelier trailing stop as a SERIES: `{ available, direction, mult, atr_lookback, stop, series: [{time, value}...] }`, one point per bar once the ATR is defined, already ratcheted (monotone non-decreasing for a long, non-increasing for a short). Renders beside the pivot trail's staircase. The watermark is the running extreme of the whole series — there is no entry date to anchor to — and the note says so.
 - **`analysis.assessment.key_levels.all_supports[].tests`** and **`.all_resistances[].tests`** — the test count as an INTEGER on every level entry, matching what `nearest_support`/`nearest_resistance` always carried. `reason` is unchanged; stop regex-parsing it.
 - **`analysis.drawings.pattern` — the COORDINATES of the drawn geometry.** An array, one entry per pattern that actually drew, `[]` when none did (absent never means "none"): `{ "name": "double_top", "status": "forming", "points": [{"time": <epoch seconds>, "price": <float>, "label": "peak 1"}, ...], "neckline": [{...},{...}] }`. `points` is a polyline in drawing order and renders tops and bottoms, head-and-shoulders, wedges, flags, pennants and triangles on its own; `label` is optional and carries only the drawer's own vocabulary (`peak 1`, `pole start`, `flag high`, `pivot high`). Times and prices are the exact values handed to TradingView — epoch **seconds** and the drawn price at 4dp, the same form as `drawings.elliott.pivots` and `drawings.fibonacci.from/to`. Two optional keys: **`neckline`** (2 points) appears only where one was drawn, at the neckline price across the pattern's own window (the chart line itself is a horizontal with no time); **`lines`** appears only where the shape genuinely is more than one drawn polyline — a wedge's two converging boundaries, a flag's pole beside its pause box — each exactly as drawn, because flattening two boundaries into one path would run a diagonal across the middle of the shape. When `lines` is present, `points` still renders sensibly: a wedge traces the outline, a flag joins pole to box; boxes are CLOSED polylines (last point repeats the first). The array mirrors the chart: verdict-side, inside the 21-bar max age, only what the create reported drawing. An entry with empty `points` and a `why` means the pattern drew as a level only — skip it for shape rendering rather than treating it as an error. Everything withheld is still in `drawings.patterns_skipped`.
+
+## Additive keys, 2026-08-02 (the owner's cycle machine)
+
+Two additions, both ADDITIVE — nothing existing moved or renamed:
+
+- **`analysis.context.cycle`** — the owner's four-state machine (base / accumulation / distribution / declining), advisory: `{ current: {state, since, bars}, transitions: [...last 6], occupancy: {state: {bars, pct}}, flicker_segments, gate_current, noise_floor, forward_test }`. Each transition carries `{index, time, price, from, to, from_stage, to_stage, prior_segment_bars, clauses, why, text}` — `time` epoch seconds, `text` in the drawn label grammar. The full per-bar reading series stays out of the report deliberately: 300 rows per ticker is a payload, not a summary. **Read `noise_floor` and `forward_test` before rendering the state as a signal** — the entry state fires on 43–52% of random walks, and at the swing horizon the entry signal measured +1.0pp at z 0.14 (unpaid; its own weeks-to-months horizon is untested for lack of history, a data limit rather than a verdict).
+- **`analysis.drawings.cycle`** — what reached the chart: `{ boundaries, current, drawn, note }` when transitions drew (boundary vertical lines at the last transitions plus a current-state callout, labels `cycle <from>><to> YYYY-MM-DD` and `cycle <state> since YYYY-MM-DD (N bars)`), or `{ drawn: 0, current, why }` when the window held one state and there was no boundary to mark — `drawn: 0` with a `why` is a real answer, not a failure.

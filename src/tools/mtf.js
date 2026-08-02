@@ -262,8 +262,8 @@ export function registerMtfTools(server) {
       fade_recent_window: z.coerce.number().optional().describe('OURS: the recent volume window (default 20)'),
       slope_lookback: z.coerce.number().optional().describe('OURS: bars back the SMA slope is measured over, as percent per bar (default 20)'),
       flat_slope_pct: z.coerce.number().optional().describe('HOUSE: |slope| below this percent per bar is FLAT (default 0.05 — the same number patterns.js uses for trendline and neckline flatness)'),
-      allow_base_to_declining: z.coerce.boolean().optional().describe('OURS, default false: the owner\'s literal sequence has no arrow out of BASE except the entry signal, so a base that breaks DOWN is never left. Set true to admit base -> declining on the owner\'s own declining clauses.'),
-      distribution_requires_sideways: z.coerce.boolean().optional().describe('OURS, default false: read "the 150-SMA flattens (bandwidth percentile <= 33 again)" as ALSO requiring the sideways clause, not only the slope one.'),
+      allow_base_to_declining: z.coerce.boolean().optional().describe('OWNER-RULED, default TRUE (2026-07-31: a base that breaks down is either an exit or a short signal). Set false to restore the literal arrow list, dead end and all.'),
+      distribution_requires_sideways: z.coerce.boolean().optional().describe('OWNER-RULED, default TRUE (the heartbeat reading: compression is part of DISTRIBUTION signature). Set false for the slope-only reading.'),
     },
     wrap(async ({ count = 600, gate = 'week', ...knobs }) => {
       const raw = await data.getOhlcv({ count, summary: false });
@@ -291,7 +291,7 @@ export function registerMtfTools(server) {
       spike_mult: z.coerce.number().optional().describe('OWNER: volume spike multiple (default 1.5)'),
       fade_ratio: z.coerce.number().optional().describe('OWNER: recent/trailing volume mean below this counts as fading (default 0.8)'),
       sma_period: z.coerce.number().optional().describe('OWNER: the trend average (default 150)'),
-      allow_base_to_declining: z.coerce.boolean().optional().describe('OURS, default false: admit base -> declining, which the owner\'s literal sequence does not include'),
+      allow_base_to_declining: z.coerce.boolean().optional().describe('OWNER-RULED, default TRUE: a base that breaks down is an exit or a short signal; false restores the literal arrow list'),
       max_transitions: z.coerce.number().optional().describe('Cap on the vertical lines drawn, most recent kept (default 12). A legibility bound, not an evidence one — everything over it comes back in `skipped`.'),
       draw_current: z.coerce.boolean().optional().describe('Also draw the current-segment callout (default true)'),
       group: z.string().optional().describe('Group name for clearing later (default "stage-<TICKER>")'),
