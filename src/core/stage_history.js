@@ -159,22 +159,22 @@ export const CYCLE_PARAMS = Object.freeze({
   flat_slope_pct: { value: 0.05, source: 'house', affects: 'thresholds',
     note: 'Percent of price per bar. The SAME number patterns.js uses for trendline and neckline flatness '
       + '(necklineSlope flat_slope_pct = 0.05), reused so "flat" means one thing across the repo.' },
-  allow_base_to_declining: { value: false, source: 'ours', affects: 'thresholds',
-    note: 'THE DEAD END IN THE LITERAL CYCLE, exposed rather than patched. The owner\'s sequence is '
-      + 'base -> accumulation -> distribution/declining -> base, so the only way out of BASE is the entry signal. '
-      + 'Combined with the hysteresis rule (a bar matching no transition keeps its state), a base that breaks DOWN '
-      + 'is never recognised: measured on a constructed fixture, a 200-bar decline with a selling spike out of a '
-      + 'base left the machine reading "base" throughout. Their DECLINING clause is written as a STATE definition '
-      + '("150-SMA slope negative AND selling volume spike"), not as a transition, which is also why '
-      + 'undetermined -> declining is allowed. Default FALSE because the arrow list is theirs and this is not; set '
-      + 'true to admit base -> declining on exactly the same clauses.' },
-  distribution_requires_sideways: { value: false, source: 'ours', affects: 'thresholds',
-    note: 'THE ONE AMBIGUITY IN THE OWNER\'S TEXT, exposed rather than decided silently. They wrote DISTRIBUTION as '
-      + '"volume fading AND the 150-SMA flattens (bandwidth percentile <= 33 again)", and the return to BASE as '
-      + '"volume fading AND 150-SMA flat AND sideways". Read literally the two clause sets are the same, and only the '
-      + 'SEQUENCE separates them. Default false: "flattens" is the SLOPE clause (the operationalisation this repo was '
-      + 'given), and the extra sideways requirement is what keeps the return to BASE strictly stronger than the entry '
-      + 'to DISTRIBUTION. Set true to read the parenthetical as the definition instead.' },
+  allow_base_to_declining: { value: true, source: 'owner', affects: 'thresholds',
+    note: 'RULED BY THE OWNER (2026-07-31): "a base that breaks down is either an exit or a short signal." The '
+      + 'literal arrow list had no exit from BASE except the entry signal, and the dead end was real — measured on '
+      + 'a constructed fixture, a 200-bar decline with a selling spike out of a base left the machine reading '
+      + '"base" throughout until this ruling. base -> declining fires on exactly the DECLINING clauses (falling '
+      + '150-SMA + selling spike) and the transition is a SIGNAL: exit if held, short candidate otherwise. Set '
+      + 'false to restore the literal arrow list.' },
+  distribution_requires_sideways: { value: true, source: 'owner', affects: 'thresholds',
+    note: 'RULED BY THE OWNER (2026-07-31): the cycle is "like a heartbeat" — compression (bandwidth <= 33) is part '
+      + 'of DISTRIBUTION\'s signature, not an illustration. So the parenthetical in their text IS the definition, '
+      + 'and distribution requires fading + flat + sideways. Consequence, reported rather than smoothed: '
+      + 'distribution and the return to BASE now share a clause set, so distribution is often a 1-bar waypoint '
+      + '(flicker_segments counts them) — which is faithful to a heartbeat: the exit EVENT is the transition, and '
+      + 'systole is short. The heartbeat claim carries a measurable corollary the campaign will test: THE LONGER '
+      + 'THE BASE, THE STRONGER THE BREAKOUT (Weinstein\'s own big-base-big-move) — base length is already on '
+      + 'every entry transition as prior_segment_bars. Set false to read "flattens" as the slope clause alone.' },
 });
 
 /** Defaults as a flat object, plus any caller overrides. */
@@ -311,11 +311,11 @@ export const CYCLE_TRANSITIONS = Object.freeze({
   base: [
     { to: 'accumulation', clauses: ['buy_spike', 'breakout', 'rising'],
       why: 'the owner\'s ENTRY signal — a buying spike through the base\'s own high with the 150-SMA rising' },
-    // OFF by default. See CYCLE_PARAMS.allow_base_to_declining: without it a base
-    // that breaks DOWN is never left, which is what the owner's literal arrow list
-    // says and is almost certainly not what they mean.
+    // ON by default since the owner's ruling (2026-07-31): "a base that breaks
+    // down is either an exit or a short signal." The dead end the literal arrow
+    // list carried was real — see CYCLE_PARAMS.allow_base_to_declining.
     { to: 'declining', clauses: ['falling', 'sell_spike'], requires_option: 'allow_base_to_declining',
-      why: 'the owner\'s DECLINING definition, applied out of BASE — OPT-IN, because their stated sequence does not include this arrow' },
+      why: 'the owner\'s ruling: a base that breaks down is an exit or a short signal — the DECLINING clauses applied out of BASE' },
   ],
   accumulation: [
     { to: 'declining', clauses: ['falling', 'sell_spike'], why: 'the owner\'s DECLINING definition' },

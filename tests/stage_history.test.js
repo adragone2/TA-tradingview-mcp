@@ -217,9 +217,14 @@ describe('every threshold is an option with a named default — nothing buried i
 
   test('every knob we chose is labelled OURS, and the flat threshold is the HOUSE one', () => {
     for (const k of ['bb_length', 'bb_mult', 'pctile_window', 'pctile_min_samples',
-      'spike_avg_window', 'fade_recent_window', 'slope_lookback',
-      'allow_base_to_declining', 'distribution_requires_sideways']) {
+      'spike_avg_window', 'fade_recent_window', 'slope_lookback']) {
       assert.equal(CYCLE_PARAMS[k].source, 'ours', `${k} is our operationalisation and must say so`);
+    }
+    // The two ambiguity knobs graduated from 'ours' to 'owner' when the owner
+    // ruled on both (2026-07-31): base breakdown is an exit/short signal, and
+    // the heartbeat reading makes compression part of distribution.
+    for (const k of ['allow_base_to_declining', 'distribution_requires_sideways']) {
+      assert.equal(CYCLE_PARAMS[k].source, 'owner', `${k} carries the owner's ruling and must say so`);
     }
     assert.equal(CYCLE_PARAMS.flat_slope_pct.source, 'house');
     assert.equal(CYCLE_PARAMS.flat_slope_pct.value, 0.05);
@@ -347,10 +352,12 @@ describe('the transition table — the owner\'s rules, one per test', () => {
     assert.equal(readings[0].broke_above, undefined, 'and nothing is reported when nothing was cleared');
   });
 
-  test('ACCUMULATION -> DISTRIBUTION on fading AND flat', () => {
+  test('ACCUMULATION -> DISTRIBUTION on fading AND flat AND sideways (the heartbeat ruling)', () => {
     const bars = risingBars(6);
-    const spec = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat']];
+    const spec = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat', 'sideways']];
     assert.deepEqual(run(spec, bars), ['base', 'accumulation', 'accumulation', 'distribution']);
+    assert.equal(run([['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat']], bars)[3],
+      'accumulation', 'without compression the exit does not fire under the ruling');
     assert.equal(run([['sideways'], ['buy_spike', 'rising'], [], ['fading']], bars)[3],
       'accumulation', 'fading alone is not the exit');
     assert.equal(run([['sideways'], ['buy_spike', 'rising'], [], ['flat']], bars)[3],
@@ -366,18 +373,22 @@ describe('the transition table — the owner\'s rules, one per test', () => {
      * more specific statement.
      */
     const bars = risingBars(6);
-    const both = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'falling_flat', 'sell_spike']];
+    // 'sideways' present in both specs so the softer exit is live under the
+    // heartbeat ruling — the ordering, not clause availability, decides.
+    const both = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'falling_flat', 'sell_spike', 'sideways']];
     assert.equal(run(both, bars)[3], 'declining');
     // and the same bar WITHOUT the spike takes the softer exit, proving the two
     // rows really were both live.
-    assert.equal(run([['sideways'], ['buy_spike', 'rising'], [], ['fading', 'falling_flat']], bars)[3], 'distribution');
+    assert.equal(run([['sideways'], ['buy_spike', 'rising'], [], ['fading', 'falling_flat', 'sideways']], bars)[3], 'distribution');
     assert.equal(CYCLE_TRANSITIONS.accumulation[0].to, 'declining', 'and the table must keep that order');
     assert.equal(CYCLE_TRANSITIONS.distribution[0].to, 'declining');
   });
 
   test('DISTRIBUTION and DECLINING both return to BASE on fading AND flat AND sideways', () => {
     const bars = risingBars(8);
-    const viaDist = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat'], ['fading', 'flat', 'sideways']];
+    // Under the heartbeat ruling distribution's entry needs sideways too, so it
+    // becomes the 1-bar waypoint the module documents: exit event, then base.
+    const viaDist = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat', 'sideways'], ['fading', 'flat', 'sideways']];
     assert.deepEqual(run(viaDist, bars).slice(3), ['distribution', 'base']);
     const viaDecl = [['falling', 'sell_spike'], ['fading', 'flat'], ['fading', 'flat', 'sideways']];
     assert.deepEqual(run(viaDecl, bars), ['declining', 'declining', 'base']);
@@ -425,47 +436,58 @@ describe('the transition table — the owner\'s rules, one per test', () => {
 describe('the two ambiguities are OPTIONS with stated defaults, not silent decisions', () => {
   const run = (spec, bars, opts) => runCycle(bars, columnsFor(spec), opts).readings.map((r) => r.state);
 
-  test('allow_base_to_declining is OFF by default, and the dead end is real', () => {
+  test('allow_base_to_declining is ON by the owner ruling, and off restores the literal dead end', () => {
     /**
-     * The owner's literal sequence is base -> accumulation -> distribution/declining
-     * -> base, so the only exit from BASE is the entry signal. Combined with the
-     * hysteresis rule, a base that breaks DOWN is never left. Measured on the
-     * constructed fixture: a 200-bar decline with a selling spike out of a base
-     * leaves the machine reading "base" throughout.
+     * RULED 2026-07-31: "a base that breaks down is either an exit or a short
+     * signal." The literal arrow list had no exit from BASE except the entry —
+     * measured on the constructed fixture, a decline with a selling spike out
+     * of a base left the machine reading "base" throughout. The option remains
+     * so the literal reading is one flag away, never lost.
      */
-    assert.equal(CYCLE_PARAMS.allow_base_to_declining.value, false);
+    assert.equal(CYCLE_PARAMS.allow_base_to_declining.value, true);
+    assert.equal(CYCLE_PARAMS.allow_base_to_declining.source, 'owner');
     const spec = [['sideways'], ['falling', 'sell_spike'], ['falling', 'sell_spike']];
-    assert.deepEqual(run(spec, flatBars(4)), ['base', 'base', 'base']);
-    assert.deepEqual(run(spec, flatBars(4), { allow_base_to_declining: true }),
-      ['base', 'declining', 'declining']);
-    assert.match(CYCLE_PARAMS.allow_base_to_declining.note, /dead end/i);
+    assert.deepEqual(run(spec, flatBars(4)), ['base', 'declining', 'declining']);
+    assert.deepEqual(run(spec, flatBars(4), { allow_base_to_declining: false }),
+      ['base', 'base', 'base'], 'off restores the literal arrow list, dead end and all');
+    assert.match(CYCLE_PARAMS.allow_base_to_declining.note, /exit or a short signal/);
 
-    // End to end on the price fixture: the option is what makes DECLINING reachable.
+    // End to end on the price fixture: DECLINING is reachable by default now.
     const bars = cycleFixture();
-    const literal = states(runCycle(bars, cycleColumns(bars)).readings).map((s) => s.state);
-    const opened = states(runCycle(bars, cycleColumns(bars), { allow_base_to_declining: true }).readings).map((s) => s.state);
+    const dflt = states(runCycle(bars, cycleColumns(bars)).readings).map((s) => s.state);
+    const literal = states(runCycle(bars, cycleColumns(bars), { allow_base_to_declining: false }).readings).map((s) => s.state);
+    assert.ok(dflt.includes('declining'));
     assert.ok(!literal.includes('declining'), 'the literal cycle strands the machine in base through a decline');
-    assert.ok(opened.includes('declining'));
   });
 
-  test('an opt-in row is absent from the WEAKENING test too, not only from the transition', () => {
-    // A state cannot be "weakening toward" an exit the machine is not allowed to take.
+  test('a disabled row is absent from the WEAKENING test too, not only from the transition', () => {
+    // A state cannot be "weakening toward" an exit the machine is not allowed to
+    // take. The row defaults ON now, so the disabled arm is the explicit false.
     const spec = [['sideways'], ['falling']];
-    assert.equal(runCycle(flatBars(3), columnsFor(spec), {}).readings[1].weakening, undefined);
+    assert.equal(runCycle(flatBars(3), columnsFor(spec), { allow_base_to_declining: false }).readings[1].weakening, undefined);
     assert.equal(
-      runCycle(flatBars(3), columnsFor(spec), { allow_base_to_declining: true }).readings[1].weakening_toward,
+      runCycle(flatBars(3), columnsFor(spec), {}).readings[1].weakening_toward,
       'declining',
     );
   });
 
-  test('distribution_requires_sideways ADDS a clause and can only make the exit harder', () => {
-    assert.equal(CYCLE_PARAMS.distribution_requires_sideways.value, false);
+  test('distribution_requires_sideways is ON by the owner heartbeat ruling', () => {
+    /**
+     * RULED 2026-07-31: the cycle is "like a heartbeat" — compression is part
+     * of DISTRIBUTION's signature, so the parenthetical in their text IS the
+     * definition. fading + flat alone no longer qualifies; add sideways and it
+     * does. Off restores the slope-only reading.
+     */
+    assert.equal(CYCLE_PARAMS.distribution_requires_sideways.value, true);
+    assert.equal(CYCLE_PARAMS.distribution_requires_sideways.source, 'owner');
     const bars = risingBars(6);
     const spec = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat']];
-    assert.equal(run(spec, bars)[3], 'distribution');
-    assert.equal(run(spec, bars, { distribution_requires_sideways: true })[3], 'accumulation',
-      'with the option on, the same bar no longer qualifies');
-    assert.match(CYCLE_PARAMS.distribution_requires_sideways.note, /THE ONE AMBIGUITY/);
+    assert.equal(run(spec, bars)[3], 'accumulation', 'fading + flat without compression is not distribution now');
+    assert.equal(run(spec, bars, { distribution_requires_sideways: false })[3], 'distribution',
+      'the slope-only reading is one flag away');
+    const spec2 = [['sideways'], ['buy_spike', 'rising'], [], ['fading', 'flat', 'sideways']];
+    assert.equal(run(spec2, bars)[3], 'distribution', 'with compression the exit fires by default');
+    assert.match(CYCLE_PARAMS.distribution_requires_sideways.note, /heartbeat/i);
   });
 });
 
@@ -537,9 +559,15 @@ describe('segments and transitions', () => {
   const bars = cycleFixture();
   const h = stageHistory(bars);
 
-  test('the constructed cycle walks undetermined -> base -> accumulation -> distribution -> base', () => {
+  test('the constructed cycle walks the FULL heartbeat under the owner rulings', () => {
+    /**
+     * Updated with the rulings (2026-07-31): the fixture's final decline —
+     * previously invisible from base, the dead end — now reads base ->
+     * declining -> base, which is the allow_base_to_declining ruling doing
+     * exactly what the owner said: a base that breaks down is a signal.
+     */
     assert.deepEqual(h.segments.map((s) => s.state),
-      [UNDETERMINED, 'base', 'accumulation', 'distribution', 'base']);
+      [UNDETERMINED, 'base', 'accumulation', 'distribution', 'base', 'declining', 'base']);
     assert.equal(h.current.state, 'base');
     assert.ok(h.segments.find((s) => s.state === 'accumulation').broke_above > 0,
       'the entry segment must carry the base high it cleared');
