@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-195 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+196 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 195 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 196 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 22 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), 7 of them kept as REJECTED so nobody rediscovers one, each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
@@ -87,6 +87,7 @@
 | "How much risk am I carrying?" | `portfolio_heat` + `position_correlation` — six 1% positions are not 6% if they move together |
 | "Count the waves" / "Elliott" | `elliott_survey` — returns EVERY rule-valid count, never one. Disagreement across sensitivities is the finding |
 | "What is this candle saying?" | `candle_read` — every candle is momentum, reaction or indecision. `patterns_detect` for named patterns |
+| "How fearful is the tape?" / "short-term oversold?" | `connors_rsi` — the quantified fear gauge at the ONE horizon where reversal is documented (<21d). Floor attached: noise reads <10 on 2.3% of bars (~7 per chart) and the next-5-bar lift after them is 0.0pp ± 1.26pp — a lift inside ±2.5pp is noise. Feeds no screen, gates nothing; adoption needs a campaign |
 | "Any divergence?" / "RSI divergence" | `divergence_survey` — agreement across indicators is the only thing that makes one worth reading |
 | "Is this an impulse or a pullback?" | `legs_classify` — three measurements per leg, and it flags a stale last leg. Also returns TIME corrections, the digestion a depth rule scores as "no pullback" |
 | "Is it trending?" / "how strong is the move?" | `momentum_read` — 12m/6m/3m/1m at once. The best-replicated effect here; horizons disagreeing IS the answer |

@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **195 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **196 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -382,6 +382,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### momentum_* (1)
 
 - **`momentum_read`** — Time-series momentum — the best-replicated effect in the technical literature, and the one this toolchain lacked
+
+### connors_* (1)
+
+- **`connors_rsi`** — ConnorsRSI - the quantified short-horizon FEAR gauge (public-domain formula: average of RSI(close,3), RSI(streak,2) and the 100-day percent-rank of to
 
 ### vcp_* (2)
 

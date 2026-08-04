@@ -440,4 +440,4 @@ One buildable idea came out of the same episode: ConnorsRSI (public-domain
 formula) as a QUANTIFIED short-horizon fear/reversal reading — notable because
 sub-21-day reversal is the one documented effect at the swing boundary in this
 repo, and the indicator is testable end to end (noise floor + wrds_backtest_signal)
-before it earns anything. Recorded as a candidate, not adopted.
+before it earns anything. BUILT 2026-08-03 as `connors_rsi` (src/core/connors_rsi.js, reusing divergence.js's rsiSeries — one RSI definition in the repo). Floor measured over 200 walks: noise reads <10 on 2.3% of bars (~7 per 300-bar chart), and the next-5-bar lift after those readings is -0.011pp +/- 1.256pp — the yardstick any real-data claim must clear (~+/-2.5pp). Still NOT adopted as a signal: feeds no screen, gates nothing, pending a sweep+holdout campaign. The dynamic-correlation point from the same episode landed in positionCorrelation the same day: per-pair 63/126/252-point windows, worst_window, and effective_positions_conservative.

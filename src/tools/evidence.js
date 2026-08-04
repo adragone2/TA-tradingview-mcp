@@ -4,6 +4,7 @@ import * as data from '../core/data.js';
 import { normalizeBars, findSwings, alternateSwings, classifyStructure } from '../core/structure.js';
 import * as momentum from '../core/momentum.js';
 import * as vcp from '../core/vcp.js';
+import { connorsRsi } from '../core/connors_rsi.js';
 import * as kernel from '../core/kernel.js';
 import * as lmw from '../core/lmw_patterns.js';
 import * as validation from '../core/validation.js';
@@ -50,6 +51,22 @@ export function registerEvidenceTools(server) {
         extension: momentum.extensionPercentile(bars),
         persistence_baseline: momentum.persistenceBaseline(bars),
       };
+    }),
+  );
+
+  server.tool(
+    'connors_rsi',
+    "ConnorsRSI - the quantified short-horizon FEAR gauge (public-domain formula: average of RSI(close,3), RSI(streak,2) and the 100-day percent-rank of today's return). Why it exists here: sub-21-day REVERSAL is the one documented effect at the swing boundary, and this is a fear reading pointed at exactly that horizon. The measured floor rides in every result: pure noise reads oversold (<10) on 2.3% of bars - about 7 times per 300-bar chart - and the next-5-bar lift after those readings is 0.0pp +/- 1.26pp, so a real-data lift inside +/-2.5pp is noise. NOT an adopted signal: feeds no screen, gates nothing, and adoption needs a sweep+holdout campaign first (the level_pressure lesson). One chart is not a portfolio - run edge_breadth before quoting Connors' published stats at a single symbol.",
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300; needs at least 102)'),
+      rsi_period: z.coerce.number().optional().describe('Price RSI period (default 3)'),
+      streak_period: z.coerce.number().optional().describe('Streak RSI period (default 2)'),
+      rank_period: z.coerce.number().optional().describe('Percent-rank lookback (default 100)'),
+    },
+    wrap(async ({ count = 300, ...opts }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const clean = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
+      return { success: true, symbol, timeframe, bars: bars.length, ...connorsRsi(bars, clean) };
     }),
   );
 

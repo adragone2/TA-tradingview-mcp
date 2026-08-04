@@ -114,15 +114,43 @@ export function positionCorrelation(returnsBySymbol = {}, { min_points = 20 } = 
     return dx > 0 && dy > 0 ? num / Math.sqrt(dx * dy) : null;
   };
 
+  /**
+   * DYNAMIC WINDOWS (Connors, read 2026-08-03; the point is older than him):
+   * a correlation quoted over one long window is a STATIC indicator, and it
+   * understates exactly the co-movement that appears in a selloff. So beside
+   * the full-window number, each pair is re-measured over the last 63, 126
+   * and 252 points (~3/6/12 months of daily returns), and the CONSERVATIVE
+   * read — the largest absolute correlation across all measured windows — is
+   * reported per pair and rolled into effective_positions_conservative.
+   * Windows a pair cannot fill are omitted, never zero-filled.
+   */
+  const DYNAMIC_WINDOWS = [63, 126, 252];
+  const windowCorr = (a, b) => {
+    const out = {};
+    let maxAbs = null;
+    for (const w of DYNAMIC_WINDOWS) {
+      if (Math.min(a.length, b.length) < Math.max(w, min_points)) continue;
+      const r = corr(a.slice(-w), b.slice(-w));
+      if (r == null) continue;
+      out[`w${w}`] = round(r, 3);
+      if (maxAbs == null || Math.abs(r) > Math.abs(maxAbs)) maxAbs = r;
+    }
+    return { windows: out, maxAbs };
+  };
+
   const pairs = [], unknown = [];
   for (let i = 0; i < symbols.length; i++) {
     for (let j = i + 1; j < symbols.length; j++) {
       const a = symbols[i], b = symbols[j];
       const r = corr(returnsBySymbol[a] || [], returnsBySymbol[b] || []);
       if (r == null) { unknown.push([a, b]); continue; }
+      const dyn = windowCorr(returnsBySymbol[a] || [], returnsBySymbol[b] || []);
+      const worst = dyn.maxAbs == null || Math.abs(r) > Math.abs(dyn.maxAbs) ? r : dyn.maxAbs;
       pairs.push({
         pair: [a, b],
         correlation: round(r, 3),
+        ...(Object.keys(dyn.windows).length ? { by_window: dyn.windows } : {}),
+        worst_window: round(worst, 3),
         strength: Math.abs(r) >= 0.8 ? 'very high' : Math.abs(r) >= 0.6 ? 'high' : Math.abs(r) >= 0.3 ? 'moderate' : 'low',
       });
     }
@@ -140,6 +168,9 @@ export function positionCorrelation(returnsBySymbol = {}, { min_points = 20 } = 
   const n = Object.keys(returnsBySymbol).length;
   const effective = avg <= -1 / (n - 1) ? n : n / (1 + (n - 1) * Math.max(0, avg));
 
+  const avgWorst = pairs.reduce((s, p) => s + Math.abs(p.worst_window), 0) / pairs.length;
+  const effectiveWorst = n / (1 + (n - 1) * Math.max(0, avgWorst));
+
   pairs.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
 
   return {
@@ -152,6 +183,11 @@ export function positionCorrelation(returnsBySymbol = {}, { min_points = 20 } = 
     most_correlated: pairs[0],
     position_count: n,
     effective_positions: round(effective, 2),
+    effective_positions_conservative: round(effectiveWorst, 2),
+    dynamic_windows_note: 'by_window re-measures each pair over the last 63/126/252 points; worst_window is the '
+      + 'largest absolute correlation any window showed, and effective_positions_conservative is the bet count '
+      + 'under THAT reading — the one to size against, because correlations rise in a selloff and the short '
+      + 'window sees it first.',
     interpretation: avg >= 0.6
       ? `Average pairwise correlation is ${round(avg, 2)}. These ${n} positions behave like roughly ${round(effective, 1)} independent bets — the diversification is mostly nominal, and per-trade sizing understates the real risk.`
       : avg >= 0.3
