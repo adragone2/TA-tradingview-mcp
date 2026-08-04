@@ -57,7 +57,10 @@ export const NATIVE_GROUP_PREFIX = 'MCP ';
  */
 export const CATEGORY_RULES = [
   { category: 'plans', test: (t) => /^(?:ENTRY|STOP|TARGET|TA stop) /.test(t) },
-  { category: 'levels', test: (t) => /^[SR] \d/.test(t) || /^VCP pivot \d/.test(t) },
+  // vcp before levels: the pivot line used to classify as a level, but with
+  // the contraction legs (2026-08-03) the pattern is a set worth toggling as one
+  { category: 'vcp', test: (t) => /^VCP /.test(t) },
+  { category: 'levels', test: (t) => /^[SR] \d/.test(t) },
   { category: 'zones', test: (t) => /^(?:demand|supply)\b/.test(t) },
   { category: 'cycle', test: (t) => /^cycle /.test(t) },
   { category: 'earnings', test: (t) => /^earnings \d{4}-/.test(t) },

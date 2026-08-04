@@ -452,6 +452,9 @@ export function assess(bars, spy) {
   const volatility_contraction = {
     vcp_qualifies: v.qualifies ?? false,
     contractions: v.depths_pct ?? null,
+    // The INDEXED contractions, for the drawing layer — depths alone cannot
+    // place a leg on the chart. vcpDrawPlan maps these back to bar times.
+    contraction_geometry: v.contractions ?? null,
     pivot: v.pivot ?? null,
     pivot_distance_pct: v.pivot_distance_pct ?? null,
     failed_checks: v.failed_checks ?? null,

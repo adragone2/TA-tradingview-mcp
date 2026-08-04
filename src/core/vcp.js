@@ -221,3 +221,49 @@ export function detectVCP(bars, options = {}) {
       + 'this repo cannot verify; the shape is what has been made checkable.',
   };
 }
+
+/**
+ * The drawing plan for a DETECTED pattern — the owner's replacement for the
+ * closed-source "Volatility Contraction Pattern" community indicator
+ * (2026-08-03: "create your own drawing layer for VCP so that you can draw it
+ * on the chart when present and we get rid of the indicator").
+ *
+ * Pure. Takes the assessment's volatility_contraction block (which carries
+ * `contraction_geometry`, the indexed contractions detectVCP found) and the
+ * bars, and returns trend_line legs — one per contraction, high to low, each
+ * labelled `VCP c<n> <depth>%` in the registered signature grammar so the
+ * sweep can always reclaim them. The pivot line is NOT planned here: the
+ * drawer's own `hline` draws it (first-writer-wins dedupe against levels and
+ * plan legs, which a plan produced here would bypass).
+ *
+ * Two-point shapes carry text (probed 2026-07-30) — that is what makes the
+ * legs sweepable, unlike the textless multipoint natives.
+ */
+export function vcpDrawPlan(block, { bars } = {}) {
+  if (!block?.vcp_qualifies) {
+    return { shapes: [], why: 'no qualifying VCP — nothing to draw' };
+  }
+  const geo = block.contraction_geometry;
+  if (!Array.isArray(geo) || !geo.length || !Array.isArray(bars) || !bars.length) {
+    return { shapes: [], why: 'qualifying VCP but no contraction geometry threaded — assessment.js must carry contraction_geometry' };
+  }
+  const shapes = [];
+  for (let i = 0; i < geo.length; i++) {
+    const c = geo[i];
+    const hi = bars[c.high_index];
+    const lo = bars[c.low_index];
+    if (!hi || !lo) continue; // an index outside the loaded window is a stale detection, not a drawable leg
+    shapes.push({
+      shape: 'trend_line',
+      point: { time: hi.time, price: round(c.high, 4) },
+      point2: { time: lo.time, price: round(c.low, 4) },
+      text: `VCP c${i + 1} ${round(c.depth_pct, 2)}%`,
+      overrides: { linecolor: '#7e57c2', linewidth: 2 },
+    });
+  }
+  return {
+    shapes,
+    contractions: shapes.length,
+    note: 'Legs only — the rises between them are the candles\' own story, and the pivot line is the drawer\'s hline.',
+  };
+}

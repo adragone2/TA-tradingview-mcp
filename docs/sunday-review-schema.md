@@ -316,3 +316,7 @@ Two additions, both ADDITIVE — nothing existing moved or renamed:
 ## Additive key, 2026-08-02 (drawing toggles)
 
 - **`analysis.drawings.native_groups`** — what the drawer organized into TradingView's own Object Tree: `{ groups: [{name, members}] }`, one row per category actually drawn (`MCP levels`, `MCP patterns`, `MCP cycle`, …), each carrying its own eye toggle in the TradingView UI. `{ groups: [], why }` when nothing needed organizing; `{ error }` when grouping failed — the analysis itself is unaffected either way, the step is failure-isolated. Nothing to import; it exists so a reader knows the rows on the chart are the toolchain's.
+
+## Additive key, 2026-08-03 (the VCP drawing layer)
+
+- **`analysis.drawings.vcp`** — present only when a VCP QUALIFIED and drew: `{ pivot, contractions, legs: [{from: {time, price}, to: {time, price}, label}] }` — one leg per contraction, high to low, epoch seconds and 4dp prices like `drawings.pattern`. `{ pivot, contractions: 0, why }` when the pattern qualified but no leg was drawable. Replaces the closed-source community VCP indicator: same visual, but volume-aware (the script had no volume clause), clause-diagnosable, and swept with everything else.

@@ -21,7 +21,10 @@ const FIXTURES = [
   ['R 36.99 (5.5%)', 'levels'],
   ['S 14.84 (0.07%) - 9 tests, 1.4x vol', 'levels'],
   ['R 314.6 (1.09%) - 8 tests, 1.3x vol', 'levels'],
-  ['VCP pivot 34.2', 'levels'],
+  // vcp — the pivot line and the contraction legs toggle as one set
+  ['VCP pivot 34.2', 'vcp'],
+  ['VCP c1 8.93%', 'vcp'],
+  ['VCP c3 4.1%', 'vcp'],
   // zones — review range form and zones_draw tool form, incl. nullx and n/a
   ['demand 33.16-34.2', 'zones'],
   ['supply 1411.5-1573.09', 'zones'],

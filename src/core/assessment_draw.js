@@ -1827,12 +1827,33 @@ export async function drawFindings(ticker, a, taRow, side, rawPatterns, bars, ch
     }
   }
   if (suppressedPlans.length) drawn.plans_suppressed = suppressedPlans;
-  // VCP pivot.
+  /**
+   * VCP — the pivot line plus the CONTRACTION LEGS, our own drawing layer for
+   * the pattern (2026-08-03, replacing the closed-source community indicator).
+   * `vcpDrawPlan` is pure and lives beside `detectVCP`; the legs go through
+   * the same put/drawShape chain as everything else, each labelled in the
+   * registered `VCP c<n> <d>%` grammar so the sweep can reclaim them. The
+   * pivot stays an `hline` on purpose — first-writer-wins dedupe against
+   * levels and plan legs.
+   */
   if (a.volatility_contraction.vcp_qualifies && a.volatility_contraction.pivot) {
     await hline(a.volatility_contraction.pivot, {
       overrides: JSON.stringify({ linecolor: '#7e57c2', linewidth: 2 }),
       text: `VCP pivot ${a.volatility_contraction.pivot}`,
     }, 'vcp pivot');
+    const { vcpDrawPlan } = await import('./vcp.js');
+    const vcpPlan = vcpDrawPlan(a.volatility_contraction, { bars });
+    const legPoints = [];
+    for (const s of vcpPlan.shapes) {
+      const r = await put(() => drawing.drawShape({
+        shape: s.shape, point: s.point, point2: s.point2,
+        text: s.text, overrides: JSON.stringify(s.overrides), group,
+      }), s.text);
+      if (r) legPoints.push({ from: s.point, to: s.point2, label: s.text });
+    }
+    drawn.vcp = legPoints.length || vcpPlan.shapes.length
+      ? { pivot: a.volatility_contraction.pivot, contractions: legPoints.length, legs: legPoints }
+      : { pivot: a.volatility_contraction.pivot, contractions: 0, why: vcpPlan.why ?? 'no drawable legs' };
   }
   // TA's own stop, so the report and TA can be compared visually.
   /**

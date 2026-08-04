@@ -124,6 +124,11 @@ SIGNATURES_BY_SOURCE.review.push(
   new RegExp(`^(?:${PAT}) (?:forming|confirmed) target ${NUM}$`),
   // VCP: "VCP pivot 34.2"
   new RegExp(`^VCP pivot ${NUM}$`),
+  // VCP contraction legs (2026-08-03, the drawing layer that replaced the
+  // closed-source community indicator): "VCP c1 8.93%", "VCP c3 4.1%".
+  // Two-point trend_lines carry text, which is exactly what makes these
+  // sweepable — unlike the textless multipoint natives.
+  new RegExp(`^VCP c\\d+ ${NUM}%$`),
   /**
    * The primary level WITH its evidence: "S 14.84 (0.07%) - 9 tests, 1.4x vol".
    *
