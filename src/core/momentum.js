@@ -381,3 +381,54 @@ export function versusBaseline(bars, signalAt, { horizon = 1 } = {}) {
       + 'if the signal was selected from several candidates.',
   };
 }
+
+/**
+ * EXTENSION PERCENTILE — how stretched is price from its moving average,
+ * ranked against this symbol's OWN history of that same distance.
+ *
+ * The Minervini practitioners call this "historical extension levels" and use
+ * it for the SELLING side: a stock trading further above its 50-day than it
+ * has been on ~95% of its own past days is statistically stretched, which is
+ * where their sell-into-strength policy leaks shares out (MPA podcast, read
+ * 2026-08-03). This is a DESCRIPTION of where today sits in the symbol's own
+ * distribution — deliberately not a signal: nothing here says stretched
+ * cannot get more stretched, and no forward edge has been measured.
+ *
+ * Percentile is the share of historical distances at or below today's, over
+ * every bar where the average is defined. Signed on purpose: deep BELOW the
+ * average reads as a low percentile, not as "also extended" — the selling
+ * question is one-sided.
+ */
+export function extensionPercentile(bars, { ma_period = 50, min_history = 120 } = {}) {
+  if (!Array.isArray(bars) || bars.length < ma_period + min_history) {
+    return {
+      available: false,
+      why: `needs ${ma_period + min_history} bars (${ma_period}-bar average + ${min_history} of history to rank against), got ${bars?.length ?? 0}`,
+    };
+  }
+  const closes = bars.map((b) => b.close);
+  const distances = [];
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= ma_period) sum -= closes[i - ma_period];
+    if (i >= ma_period - 1) {
+      const sma = sum / ma_period;
+      distances.push(((closes[i] - sma) / sma) * 100);
+    }
+  }
+  const today = distances[distances.length - 1];
+  const atOrBelow = distances.filter((d) => d <= today).length;
+  const r = (x) => Math.round(x * 100) / 100;
+  return {
+    available: true,
+    ma_period,
+    distance_pct: r(today),
+    percentile: r((atOrBelow / distances.length) * 100),
+    n: distances.length,
+    max_seen_pct: r(Math.max(...distances)),
+    min_seen_pct: r(Math.min(...distances)),
+    note: 'Descriptive rank of today\'s stretch within this symbol\'s own history — for the selling-into-strength '
+      + 'side, never an entry signal. Stretched can get more stretched; no forward edge is measured here.',
+  };
+}

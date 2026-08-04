@@ -47,6 +47,7 @@ export function registerEvidenceTools(server) {
           ? momentum.timeSeriesMomentum(bars, { lookback })
           : momentum.momentumProfile(bars)),
         fifty_two_week_high: momentum.fiftyTwoWeekHigh(bars),
+        extension: momentum.extensionPercentile(bars),
         persistence_baseline: momentum.persistenceBaseline(bars),
       };
     }),

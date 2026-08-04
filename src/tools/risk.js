@@ -3,6 +3,17 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/risk.js';
 import { exitMix, EXIT_REASONS, sliceTrades, DEFAULT_BUCKETS } from '../core/exits.js';
 import { accountSettings } from '../core/rules.js';
+import { holdHealth } from '../core/hold_health.js';
+import * as chartData from '../core/data.js';
+import { normalizeBars } from '../core/structure.js';
+
+/** Read bars and carry the series' own identity, so a result names its source. */
+async function loadBars(count) {
+  const series = await chartData.getOhlcv({ count, summary: false });
+  const bars = normalizeBars(series);
+  if (!bars.length) throw new Error('No price bars came back from the chart.');
+  return { bars, symbol: series.symbol, timeframe: series.resolution };
+}
 
 const wrap = (fn) => async (args = {}) => {
   try { return jsonResult(await fn(args)); }
@@ -107,6 +118,20 @@ export function registerRiskTools(server) {
         caps: core.SIZING_CAPS,
         disclaimer: DISCLAIMER,
       };
+    }),
+  );
+
+  server.tool(
+    'hold_health',
+    "Minervini's VIOLATIONS checklist for an OPEN position, every clause a number: biggest down day / down volume since entry, more down days than up, volume concentrating on the down days, 3+ consecutive lower lows, closes below the 20/50-bar averages, close back below entry. Plus the confirmations (the inverse set). A tally DESCRIBES deterioration - it is NOT an exit signal, and the measured floor is the reason: on 200 random walks a 20-bar-old position averages 2.6 violations and HALF of all walks show 3+, because the majority clauses are coin flips on noise (~50%). The selective clauses are three_plus_lower_lows (12.5%) and the two biggest-since-entry records (~23%) - weight those, never the bare count. The measured exit machinery stays the stop, pivot_trail and the owner's DISTRIBUTION state. Provenance: Minervini's published sell-rules via the MPA practitioners (read 2026-08-03); thresholds the books leave unquantified are marked ours in the clause notes.",
+    {
+      count: z.coerce.number().optional().describe('Bars to load (default 300)'),
+      entry_bars_ago: z.coerce.number().optional().describe('How many bars ago the position was entered (default 20)'),
+      entry_price: z.coerce.number().optional().describe('Entry price - enables the close_below_entry clause; omitted reports NOT CHECKED, because unknown is not satisfied'),
+    },
+    wrap(async ({ count = 300, entry_bars_ago = 20, entry_price = null }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      return { success: true, symbol, timeframe, bars: bars.length, ...holdHealth(bars, { entry_bars_ago, entry_price }) };
     }),
   );
 

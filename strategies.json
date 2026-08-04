@@ -317,7 +317,7 @@
         }
       ],
       "entry": "Buy the breakout above the base high. vcp_check names WHICH clause failed on a near miss, so a rejection is diagnosable.",
-      "exit": "Stop below the last contraction low. Target by measured base depth; trail with pivot_trail once a higher high confirms.",
+      "exit": "Stop below the last contraction low. SELL INTO STRENGTH, in pieces: first third off at the first 15-20% surge \u2014 it finances the risk and frees the hold; trail the remainder with pivot_trail once a higher high confirms; during a parabolic stretch ratchet a backstop under each gap-day low and let momentum take you out. Target the first take by measured base depth. NEVER hold an overweight position into earnings \u2014 de-risk first and keep only what the banked cushion covers. (Management policy from the Minervini practitioners' own account, MPA podcast read 2026-08-03 \u2014 a POLICY, not a measured edge; the measured pieces stay the stop, the trail and the sizing.)",
       "exit_reason_keys": [
         "stop_hit",
         "target_hit",

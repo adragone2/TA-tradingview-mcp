@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-194 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+195 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 194 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 195 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 22 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), 7 of them kept as REJECTED so nobody rediscovers one, each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
@@ -58,6 +58,7 @@
 | "Any new swing candidates?" | `node scripts/morning-screen.js` — every session-eligible scanner → top 15 each into **our detectors** → top 5 **survivors** each → classified into `INTRADAY` / `WEEKLY` / `MONTHLY` → those three watchlist sections rewritten → the **full unified analysis** on every name written. Runs weekdays 05:30 PT. All three sections rebuild every run — no rebalance clock. Any `KEEP*` section is untouched: not rewritten, not analysed, not cleared |
 | "How far can it run before it halts?" | `luld_band` — 5% Tier 1, 10% Tier 2, doubled at the open and into the close |
 | "Move this setup to another timeframe" | `timeframe_scale` — lookbacks scale LINEARLY, stops and targets as the SQUARE ROOT. Scaling a stop linearly is the common error |
+| "Is my open position acting normal?" / "should I worry about this hold?" | `hold_health` — Minervini's violations as numbers, with the floor attached: a 20-bar-old position in PURE NOISE averages 2.6 violations and HALF of random walks show 3+, because the majority clauses are coin flips (~50%). Weight the SELECTIVE clauses — 3+ lower lows (12.5%), biggest down day/volume since entry (~23%) — never the bare count. A description, not an exit signal; exits stay the stop, `pivot_trail` and DISTRIBUTION |
 | "Why did I exit?" / journal review | `exit_mix` — splits PLANNED from DISCRETIONARY exits. A backtest can only model a planned exit, so a discretionary majority means the backtest tests a different strategy |
 | "Which trades actually make money?" | `journal_slice` — by direction, share size, share price, holding time. A profitable book can contain net-negative halves; buckets under `min_n` are flagged, never ranked |
 | "Is this series trending or mean-reverting?" | `scaling_exponent` — measures the exponent the sqrt-of-time law assumes to be 0.5. Cross-checks `stopping_premium` |

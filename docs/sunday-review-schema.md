@@ -320,3 +320,7 @@ Two additions, both ADDITIVE — nothing existing moved or renamed:
 ## Additive key, 2026-08-03 (the VCP drawing layer)
 
 - **`analysis.drawings.vcp`** — present only when a VCP QUALIFIED and drew: `{ pivot, contractions, legs: [{from: {time, price}, to: {time, price}, label}] }` — one leg per contraction, high to low, epoch seconds and 4dp prices like `drawings.pattern`. `{ pivot, contractions: 0, why }` when the pattern qualified but no leg was drawable. Replaces the closed-source community VCP indicator: same visual, but volume-aware (the script had no volume clause), clause-diagnosable, and swept with everything else.
+
+## Additive keys, 2026-08-03 (the extension rank)
+
+- **`analysis.assessment.momentum.extension_pct_from_ma50`** and **`.extension_percentile`** — today's distance from the 50-day average, and where that distance ranks in the symbol's own history (0-100, signed: deep below the average is a LOW percentile, not "also extended"). The selling-into-strength read — a stretch in its own 95th+ percentile is where partials come off. Descriptive only; `null` when under ~170 bars.

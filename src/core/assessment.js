@@ -238,6 +238,7 @@ export function assess(bars, spy) {
   const mom = safe(() => momentum.momentumProfile(bars), null);
   const f52 = safe(() => momentum.fiftyTwoWeekHigh(bars), { available: false });
   const mad = safe(() => momentum.movingAverageDistance(bars), { available: false });
+  const ext = safe(() => momentum.extensionPercentile(bars), { available: false });
   const pb = safe(() => momentum.persistenceBaseline(bars), { available: false });
   const momentumBlock = {
     agreement: mom?.agreement ?? null,
@@ -248,6 +249,10 @@ export function assess(bars, spy) {
     at_new_high: f52.available ? f52.at_new_high : null,
     moving_average_distance: mad.available ? mad.mad : null,
     mad_pct: mad.available ? mad.mad_pct : null,
+    // Today's stretch from the 50-day ranked in the symbol's OWN history —
+    // the selling-side read (MPA's "historical extension levels"), descriptive only.
+    extension_pct_from_ma50: ext.available ? ext.distance_pct : null,
+    extension_percentile: ext.available ? ext.percentile : null,
     persistence_baseline_accuracy_pct: pb.available ? pb.accuracy_pct : null,
   };
 

@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **194 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **195 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -304,6 +304,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 ### drawdown_* (1)
 
 - **`drawdown_recovery`** — What a drawdown costs to recover: down 50% needs +100%, down 80% needs +400%
+
+### hold_* (1)
+
+- **`hold_health`** — Minervini's VIOLATIONS checklist for an OPEN position, every clause a number: biggest down day / down volume since entry, more down days than up, volu
 
 ### exit_* (1)
 
