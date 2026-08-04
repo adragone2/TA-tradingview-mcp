@@ -409,3 +409,35 @@ Also measured on the way through: raw `findKernelPivots` emitTED index-inverted 
 `scripts/cycle-forward-test.js` (2026-08-02), method identical to the stage-gate test so the two are comparable: triple-barrier 2×/1×/20 bars, direction-matched baselines, the stage test's own 90 symbols in-sample, 55 disjoint names as holdout, and a decision rule stated before the data was seen (beat the owner config by ≥2pp at z ≥ 2.5 in-sample — the bar the 27-way multiplicity demands — then survive the holdout at z ≥ 1.5).
 
 **No configuration passed. The owner's defaults stand.** The owner config's entry: 41 independent events, 37.5% against a 36.5% baseline (+1.0pp, z 0.14) — indistinguishable, and consistent with the repo's sub-21-day rule that continuation setups do not pay at the swing horizon. The sweep's best (spike 2.0/pct 25/fade 0.7) managed z 0.70 in-sample on 19 events; its 29.8pp holdout delta sits on ELEVEN events, which is the sample size the rule exists to distrust. The short arm (base breakdown, the owner's ruling) flipped sign across arms (−8.2 in-sample, +14.4 holdout) — no claim either way. **The system's own weeks-to-months horizon is untestable on ~300 served bars** — untested is a data limit here, not a verdict. The heartbeat corollary (longer base → stronger breakout) read UNDECIDED: the longest-base quartile won most (50% vs 40/30/30) on ten events per bucket, ~15pp of noise each. More history decides it, not more thresholds.
+
+## Practitioner corroborations — Connors (podcast, read 2026-08-03)
+
+Larry Connors (Dow Award 2020, the 2-period RSI) interviewed at length. Two of
+his published claims land directly beside measurements this repo already owns,
+and agreement from an independent line of work is worth recording — with the
+same care about what it does NOT license.
+
+**Stops degrade mean-reversion performance.** His 2009 study: S&P 500 stocks,
+stops from 1% to 50%, every level degraded the mean-reversion methodology's
+results. The mechanism he names is the one Kaminski & Lo prove from the other
+direction (`stopping_premium`): a stop exits exactly where the mean-reversion
+signal is strongest, so it "misses the moves back up while accumulating the
+losses". The two results TOGETHER sharpen the doctrine rather than replace it:
+a stop is a bet on persistence, so it belongs to the CONTINUATION side
+(pivot_trail on a breakout that ran), and it is structurally counter to a
+mean-reversion entry — where the honest risk control is SIZE (Connors sizes
+every position "assuming I lose 100%", defined-risk options in his case),
+not a price trigger. His result is his, unverified here; what it corroborates
+is the sign our own tool already reports. It does NOT license removing stops
+from continuation trades, and solvency constraints outrank all of this.
+
+**The 200-day moving average nets no alpha.** Quantified by his shop since
+1999, self-fulfilling folklore notwithstanding. Sits beside our own
+forward-test of the stage gate (long 33.5% vs 36.4% baseline): a moving-average
+position clause DESCRIBES an advanced trend; it does not pay at entry.
+
+One buildable idea came out of the same episode: ConnorsRSI (public-domain
+formula) as a QUANTIFIED short-horizon fear/reversal reading — notable because
+sub-21-day reversal is the one documented effect at the swing boundary in this
+repo, and the indicator is testable end to end (noise floor + wrds_backtest_signal)
+before it earns anything. Recorded as a candidate, not adopted.
