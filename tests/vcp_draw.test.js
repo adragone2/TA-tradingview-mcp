@@ -77,3 +77,18 @@ describe('the wiring — geometry threaded, drawer gated on qualification', () =
     assert.match(block.slice(0, 1600), /drawn\.vcp/);
   });
 });
+
+describe('the vcp_draw TOOL — on-demand, refuses to draw a non-pattern', () => {
+  const t = src('src/tools/evidence.js');
+  test('registered beside vcp_check, reusing the SAME planner — no second geometry', () => {
+    assert.match(t, /'vcp_draw',/);
+    assert.match(t, /vcp\.vcpDrawPlan\(/);
+    assert.match(t, /vcp\.detectVCP\(bars, clean\)/);
+  });
+  test('clears its OWN group before drawing, and only draws when qualifying', () => {
+    const body = t.slice(t.indexOf("'vcp_draw',"));
+    const gate = body.indexOf('if (!v.qualifies)');
+    const clear = body.indexOf("clearAll({ scope: 'mcp', group })");
+    assert.ok(gate > -1 && clear > gate, 'the non-qualifying return must come BEFORE the clear — a refusal must not wipe the prior drawing');
+  });
+});

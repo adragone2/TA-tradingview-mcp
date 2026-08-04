@@ -73,6 +73,59 @@ export function registerEvidenceTools(server) {
   );
 
   server.tool(
+    'vcp_draw',
+    'Draw the VCP on the chart — one labelled trend_line per contraction (`VCP c<n> <d>%`) plus the pivot line, into group `vcp-<TICKER>`, clearing that group\'s own prior output first. Draws ONLY a QUALIFYING pattern by default; a near miss returns the failed clauses and draws nothing, because a drawn non-pattern is indistinguishable from a finding. The tunables are the override: relax min_contractions or the dry-up deliberately and the relaxation is in the call, not hidden. Every analysis already draws a qualifying VCP automatically — this tool is for looking at ONE chart on demand, the patterns_draw/stage_draw pattern.',
+    {
+      count: z.coerce.number().optional().describe('Bars to analyse (default 300)'),
+      min_contractions: z.coerce.number().optional().describe('Minimum contractions required (default 3)'),
+      max_final_pullback_pct: z.coerce.number().optional().describe('How tight the last contraction must be (default 12%)'),
+      require_volume_dryup: z.coerce.boolean().optional().describe('Require declining volume through the contractions (default true)'),
+    },
+    wrap(async ({ count = 300, ...opts }) => {
+      const { bars, symbol, timeframe } = await loadBars(count);
+      const clean = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
+      const v = vcp.detectVCP(bars, clean);
+      const bare = String(symbol).split(':').pop();
+      const group = `vcp-${bare}`;
+      if (!v.qualifies) {
+        return {
+          success: true, symbol, timeframe, bars: bars.length,
+          qualifies: false, failed_checks: v.failed_checks ?? [], checks: v.checks,
+          drawn: { shapes: 0 },
+          why: 'no qualifying VCP — nothing drawn. Relax the tunables to draw a near miss deliberately.',
+        };
+      }
+      const drawingCore = await import('../core/drawing.js');
+      await drawingCore.clearAll({ scope: 'mcp', group });
+      const plan = vcp.vcpDrawPlan(
+        { vcp_qualifies: v.qualifies, pivot: v.pivot, contraction_geometry: v.contractions },
+        { bars },
+      );
+      const legs = [];
+      for (const s of plan.shapes) {
+        const r = await drawingCore.drawShape({
+          shape: s.shape, point: s.point, point2: s.point2,
+          text: s.text, overrides: JSON.stringify(s.overrides), group,
+        });
+        if (r?.entity_id) legs.push({ from: s.point, to: s.point2, label: s.text, entity_id: r.entity_id });
+      }
+      const pivotLine = await drawingCore.drawShape({
+        shape: 'horizontal_line', point: { time: 'last_bar', price: v.pivot },
+        text: `VCP pivot ${v.pivot}`,
+        overrides: JSON.stringify({ linecolor: '#7e57c2', linewidth: 2 }), group,
+      });
+      return {
+        success: true, symbol, timeframe, bars: bars.length,
+        qualifies: true, pivot: v.pivot, depths_pct: v.depths_pct,
+        group,
+        drawn: { shapes: legs.length + (pivotLine?.entity_id ? 1 : 0), legs, pivot_entity: pivotLine?.entity_id ?? null },
+        options_used: { ...vcp.VCP_DEFAULTS, ...clean },
+        note: 'A VCP is a SETUP, not a direction. draw_clear group:"' + group + '" removes exactly this.',
+      };
+    }),
+  );
+
+  server.tool(
     'cup_check',
     'Is this a proper CUP WITH HANDLE? Eight numbered clauses in the vcp_check style — U-shape not V (time in the bottom quarter of the cup, 35% between a V\'s 25% and a parabola\'s 50%), rim tolerance, handle in the upper half, duration 35-325 bars both sides checked, handle length and retrace bounds, completion on a CLOSE above the right lip — and a near miss names the clause that failed. Bulkowski ranks the pattern 3 of 39 (5% break-even failure, 54% average rise, 61% meeting target, 913 trades he selected BY EYE) — and the gap between an eye and eight numeric clauses is the floor: 23.5% of 300-bar random walks carry a qualifying cup, CLIMBING with series length (7/11/23.5/35% at 150/200/300/400 bars), because a cup needs a rim PAIR and pairs grow quadratically in pivot highs. NOT selective — it belongs beside breakout (32.5%), not VCP (0%). Quote candidates_scored beside any hit. Volume is SUPPORTING evidence only, never in the verdict.',
     {

@@ -1,6 +1,6 @@
 # Tools Reference
 
-All **193 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
+All **194 tools** exposed by this MCP server, generated from the live server so it cannot drift from what is actually registered.
 
 Grouped by prefix. For *when* to use these rather than *what they are*, see
 [START-HERE.md](START-HERE.md) and [routines.md](routines.md).
@@ -379,9 +379,10 @@ Grouped by prefix. For *when* to use these rather than *what they are*, see
 
 - **`momentum_read`** — Time-series momentum — the best-replicated effect in the technical literature, and the one this toolchain lacked
 
-### vcp_* (1)
+### vcp_* (2)
 
 - **`vcp_check`** — Minervini's volatility contraction pattern, as a measurable rule: successive pullbacks each tighter than the last, on declining volume, after a prior 
+- **`vcp_draw`** — Draw the VCP on the chart — one labelled trend_line per contraction (`VCP c<n> <d>%`) plus the pivot line, into group `vcp-<TICKER>`, clearing that gr
 
 ### cup_* (1)
 

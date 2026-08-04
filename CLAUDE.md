@@ -2,7 +2,7 @@
 
 **Read [docs/START-HERE.md](docs/START-HERE.md) first.** It is the entry point for this project. This file is the always-loaded index; the docs carry the detail.
 
-193 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
+194 MCP tools driving a live TradingView Desktop chart over CDP (port 9222), plus the Tactical Alpha API and a separate WRDS server.
 
 ## The three layers — don't confuse them
 
@@ -19,7 +19,7 @@
 | File | For |
 |---|---|
 | [docs/START-HERE.md](docs/START-HERE.md) | Entry point — layers, first moves, guardrails |
-| [docs/tools-reference.md](docs/tools-reference.md) | All 193 tools (generated — `node scripts/gen-tools-doc.js`) |
+| [docs/tools-reference.md](docs/tools-reference.md) | All 194 tools (generated — `node scripts/gen-tools-doc.js`) |
 | [docs/strategies.md](docs/strategies.md) | **THE strategy catalogue** — 22 strategies by execution tier (intraday / weekly 2–10d / monthly 11d+), 7 of them kept as REJECTED so nobody rediscovers one, each with its screener, entry, exit, TradingView indicators, skills, tools, risk rules and evidence tier. Generated from [strategies.json](strategies.json) — `node scripts/gen-strategies-doc.js` |
 | [docs/data-sources.md](docs/data-sources.md) | TA endpoints, WRDS datasets, **freshness rules** |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | **Analysing one ticker, end to end** — ticker to screens to strategies to plan to indicators, and where it is designed to STOP |
@@ -49,6 +49,7 @@
 | "Analyse this chart" | `chart-analysis` skill — for a chart you were already given |
 | "Which timeframe?" / swing vs day | `timeframe_plan` then `mtf_analyze` — context grants permission, structure finds the setup |
 | "Where is it in the cycle?" / "when did this base break out?" | `stage_history` — **the owner's own four-state machine** (base / accumulation / distribution / declining) run bar by bar: BASE is bandwidth percentile ≤ 33, ACCUMULATION is a 1.5× buying spike through the base's own high with the 150-SMA rising, DISTRIBUTION is volume fading with that average flattening, DECLINING is a falling average with a selling spike. NOT `stage_plan` (Shannon's frozen classifyStage, no volume in it) — cross-referenced, never merged. **The entry state fires on 43–52% of random walks**; quote the floor. UNTESTED at any horizon — the sweep+holdout campaign decides the defaults |
+| "Draw the VCP" | `vcp_draw` — legs + pivot into `vcp-<TICKER>`, clearing its own prior output. Draws ONLY a qualifying pattern; a near miss returns the failed clauses and draws nothing. The tunables are the override |
 | "Draw the cycle" | `stage_draw` — one vertical line per transition plus a callout for the current state, group `stage-<TICKER>`, clears its own group first. Boundaries, not signals |
 | "What do I DO right now?" | `stage_plan` — Shannon's gate: Stage 2 or 4 on the longer timeframe or NO setup, then ANTICIPATE / PARTICIPATE / EXIT / AVOID. Forward-tested NEGATIVE — a description of alignment, not an edge |
 | "Is it beating the market?" | `relative_strength` — the only tool that answers "compared to what" |
