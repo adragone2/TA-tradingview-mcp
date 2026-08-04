@@ -114,7 +114,16 @@ export function registerEvidenceTools(server) {
         text: `VCP pivot ${v.pivot}`,
         overrides: JSON.stringify({ linecolor: '#7e57c2', linewidth: 2 }), group,
       });
+      // Organize AFTER drawing, like drawFindings does — an on-demand draw that
+      // leaves a flat Object Tree is the gap the owner hit on MAC (2026-08-03).
+      // Failure-isolated: grouping trouble must not undo a successful draw.
+      let native_groups = null;
+      try {
+        const vis = await import('../core/draw_visibility.js');
+        native_groups = (await vis.organizeNativeGroups({})).groups ?? null;
+      } catch (e) { native_groups = { error: e.message }; }
       return {
+        native_groups,
         success: true, symbol, timeframe, bars: bars.length,
         qualifies: true, pivot: v.pivot, depths_pct: v.depths_pct,
         group,

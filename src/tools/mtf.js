@@ -352,10 +352,19 @@ export function registerMtfTools(server) {
       };
       await drawStageHistory(plan, groupName, put, drawing.drawShape);
 
+      // Organize AFTER drawing, like drawFindings — an on-demand draw that
+      // leaves a flat Object Tree is the gap the owner hit (2026-08-03).
+      let native_groups = null;
+      try {
+        const vis = await import('../core/draw_visibility.js');
+        native_groups = (await vis.organizeNativeGroups({})).groups ?? null;
+      } catch (e) { native_groups = { error: e.message }; }
+
       return {
         success: failed.length === 0,
         symbol,
         timeframe,
+        native_groups,
         group: groupName,
         cleared,
         drawn: drawn.length,

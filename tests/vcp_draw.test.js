@@ -92,3 +92,22 @@ describe('the vcp_draw TOOL — on-demand, refuses to draw a non-pattern', () =>
     assert.ok(gate > -1 && clear > gate, 'the non-qualifying return must come BEFORE the clear — a refusal must not wipe the prior drawing');
   });
 });
+
+describe('on-demand draw tools organize after drawing (2026-08-03, the flat-Object-Tree gap)', () => {
+  /**
+   * The owner drew VCP on MAC and found a flat Object Tree — only full
+   * analyses organized. Every registered tool that draws in bulk must end
+   * with a failure-isolated organizeNativeGroups, like drawFindings does.
+   */
+  for (const [file, tool] of [['src/tools/evidence.js', 'vcp_draw'], ['src/tools/mtf.js', 'stage_draw']]) {
+    test(`${tool} organizes after drawing, failure-isolated`, () => {
+      const t = src(file);
+      const body = t.slice(t.indexOf(`'${tool}',`));
+      const draw = body.search(/drawShape\(|drawStageHistory\(/);
+      const org = body.indexOf('organizeNativeGroups');
+      assert.ok(draw > -1 && org > draw, `${tool}: organize must come AFTER the draw`);
+      assert.match(body.slice(0, org + 400), /catch \(e\) \{ native_groups = \{ error: e\.message \}; \}/,
+        'a grouping failure must not undo a successful draw');
+    });
+  }
+});
